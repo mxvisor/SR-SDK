@@ -1,0 +1,4 @@
+[submodule "SR"]
+	path = SR
+	url = https://github.com/mxvisor/SR.git
+	branch = master
