@@ -86,6 +86,12 @@ game's `game/android/res/` (its icons) over that. On the first launch, and
 after each update of the APK, `GameActivity` unpacks the data from the APK's
 assets: the port reads its files with `fopen`.
 
+`tools/portable_cd.py OUT_DIR`, from the game repository's root, makes the
+game's data directory the port runs from: the files of the disc's data track
+without its installer, the files the installer would have written, and the
+audio tracks as flac, wav or ogg files with a cue sheet. What to skip and what
+to add is in `game/portable.cfg`; the script's header lists its keys.
+
 The stages are `host` (SR, built from a copy in `build/`), `input` (the
 original, checked against its sha256), `recomp` (SR), `gen` (SR's output,
 compacted), `obj` and `bin`. All output goes to `build/` of the game
@@ -136,6 +142,7 @@ scons/game.py           the whole build of one game, as one SCons graph
 tools/compact_source.py compacts the data segments of SR's output
 tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
+tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
 android/                what the APK adds to SDL's android-project
 runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         Android start-up
