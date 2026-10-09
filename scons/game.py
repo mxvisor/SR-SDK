@@ -138,6 +138,16 @@ RECOMP_DIR = os.path.join(BUILD, 'recomp', MODULE, ARCH)
 GEN_SRC_DIR = os.path.join(BUILD, 'gen', MODULE, ARCH)
 LLASM_SRC_DIR = os.path.join(ROOT, 'game', 'llasm')
 
+# The shared code: the SDK's runtime (core, then the original's platform from
+# game.cfg) and SR's own llasm-support, used in place rather than copied.
+RUNTIME_CORE = os.path.join(SDK_ROOT, 'runtime', 'core')
+RUNTIME_DIRS = [RUNTIME_CORE,
+                os.path.join(SDK_ROOT, 'runtime', CFG.get('platform', 'dos'))]
+LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
+LLASM_INC_DIRS = [LLASM_SRC_DIR,
+                  os.path.join(RUNTIME_DIRS[1], 'llasm'),
+                  LLASM_SUPPORT]
+
 # ------------------------------------------------------------------ env --
 
 vars = Variables('custom.py')
@@ -497,26 +507,69 @@ if want('obj'):
     bin_device = os.path.join(BUILD, 'bin', device)
 
     # what game/llasm/SConscript asks for: where stage 3 put the generated
-    # master, and where the hand-written includes it pulls in still live
+    # master, and where the hand-written includes it pulls in live, searched
+    # in this order -- the game's own first, so a same-named file there wins
     gen_src_dir = GEN_SRC_DIR
     gen_main = GEN_MAIN
-    llasm_src_dir = LLASM_SRC_DIR
+    llasm_inc_dirs = LLASM_INC_DIRS
+
+    # The game's sources, then the SDK's runtime, then SR's shared code. A .c
+    # of the runtime that the game has under the same relative path is not
+    # built (an override). Headers are looked up the same way for the game's
+    # .c only: a .c of the runtime finds the runtime's headers beside it first.
+    env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
+               + [os.path.join(RUNTIME_CORE, 'display'),
+                  os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
 
     VariantDir(obj_game, os.path.join(ROOT, 'game'), duplicate=0)
 
-    game_objs = SConscript(os.path.join(obj_game, 'SConscript'), exports='device env')
-    game_objs += SConscript(os.path.join(obj_game, 'display', 'SConscript'), exports='device env')
-    game_objs += SConscript(os.path.join(obj_game, 'audio', 'SConscript'), exports='device env')
-    game_objs += SConscript(os.path.join(obj_game, 'input', 'SConscript'), exports='device env')
+    def game_dir(sub):
+        # the game's SConscript of that directory if it has one, else all its .c
+        if os.path.exists(os.path.join(ROOT, 'game', sub, 'SConscript')):
+            return SConscript(os.path.join(obj_game, sub, 'SConscript'),
+                              exports='device env')
+        return env.Object(Glob(os.path.join(obj_game, sub, '*.c')))
+
+    runtime_objs = []
+    for runtime_dir in RUNTIME_DIRS:
+        obj_runtime = os.path.join(obj_device, 'runtime',
+                                   os.path.relpath(runtime_dir, os.path.join(SDK_ROOT, 'runtime')))
+        VariantDir(obj_runtime, runtime_dir, duplicate=0)
+        for source in sorted(glob.glob(os.path.join(runtime_dir, '*.c'))):
+            name = os.path.basename(source)
+            if not os.path.exists(os.path.join(ROOT, 'game', name)):
+                runtime_objs += env.Object(os.path.join(obj_runtime, name))
+
+    # llasm-support: the C half of every llasm_X.llinc the game's llasm.llinc
+    # (or SR's, if the game has none) includes, unless game/llasm/ has its own
+    support_objs = []
+    if ARCH == 'llasm':
+        obj_support = os.path.join(obj_device, 'support')
+        VariantDir(obj_support, LLASM_SUPPORT, duplicate=0)
+        llinc = os.path.join(LLASM_SRC_DIR, 'llasm.llinc')
+        if not os.path.exists(llinc):
+            llinc = os.path.join(LLASM_SUPPORT, 'llasm.llinc')
+        with open(llinc, 'rt') as stream:
+            active = re.findall(r'^include\s+(llasm_\w+)\.llinc\s*$', stream.read(), re.M)
+        for name in sorted(active):
+            if (os.path.exists(os.path.join(LLASM_SUPPORT, name + '.c'))
+                    and not os.path.exists(os.path.join(LLASM_SRC_DIR, name + '.c'))):
+                support_objs += env.Object(os.path.join(obj_support, name + '.c'))
+
+    game_objs = runtime_objs + game_dir('')
+    game_objs += game_dir('display')
+    game_objs += game_dir('audio')
+    game_objs += game_dir('input')
+    game_objs += support_objs
     game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
                             exports='device env gen_dir llasm_tool '
-                                    'gen_src_dir gen_main llasm_src_dir')
+                                    'gen_src_dir gen_main llasm_inc_dirs')
     defaults += game_objs
 
 if want('bin'):
-    # The link order is the one the byte-identical build has always had: the
-    # game's own .c, the three SDL frontends, the recompiler's .c glue, then
-    # the .llasm output of stage 3.
+    # The link order: the runtime's .c, the game's own .c, the three SDL
+    # frontends, llasm-support, the game's llasm .c glue, then the .llasm
+    # output of stage 3.
     if device == 'arm64-android':
         # SDLActivity loads libmain.so by name, so the shared object is
         # called main, not the program name from game.cfg.

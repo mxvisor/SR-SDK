@@ -11,9 +11,26 @@ what a game repository needs around it.
 SR/                     submodule: the recompiler, llasm, llasm-support
 scons/game.py           the whole build of one game, as one SCons graph
 tools/compact_source.py compresses the data segments of SR's output
-runtime/                shared runtime code (core, dos, win32) -- to come
+runtime/core/           shared runtime code of the ports (C and headers)
+runtime/dos/llasm/      shared llasm includes of the DOS ports
+runtime/win32/          the Windows-original counterpart -- to come
 skeleton/               a starting point for a new game repository -- to come
 ```
+
+What a game builds besides its own `game/`:
+
+- every `.c` of `runtime/core/` and `runtime/<platform>/` (`platform` from
+  `game.cfg`), unless `game/` has a file of the same name: that one replaces it;
+- for the llasm backend, the `.c` of each `llasm_X.llinc` its `llasm.llinc`
+  includes, straight from `SR/SR/llasm-support/` (the game's own `llasm.llinc`
+  and `llasm_X.c` in `game/llasm/` take precedence);
+- `game/`, `game/display`, `game/audio`, `game/input`: all `.c`, or the
+  directory's own `SConscript` if it has one; `game/llasm/SConscript` is
+  required.
+
+Headers are found in `game/` first, then in the runtime and in SR's
+`scaler-plugins/` and `llasm-support/`. A runtime `.c` sees the runtime's
+headers beside it first, so a header override applies to the game's code only.
 
 ## Using it in a game repository
 
