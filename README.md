@@ -29,6 +29,8 @@ plus fixes that can be offered back to it. SR-SDK does not change SR.
   cross-builds from Linux)
 - LLVM's `opt` and `llc`, for the llasm backend
 - SDL2 and SDL2_mixer
+- for Android: the Android SDK with an NDK and a JDK, CMake, Ninja and curl
+  (SDL itself is downloaded and built by `tools/android_sdl.sh`)
 
 No D compiler is needed: llasm IR is translated by `llasm/llasm.py`, a Python
 port of SR's `llasm`, which gives byte-identical output (see
@@ -53,6 +55,8 @@ input_exe=../path/to/GAME.EXE
 link=separate
 devices=pc64-linux,pc64-windows
 program=game
+android_id=io.github.user.game   # for Android: the application id
+android_name=Game                 # and the launcher's label
 ```
 
 `game/recomp/<module>/<variant>/` holds SR's inputs for the original: its
@@ -64,6 +68,23 @@ scons device=pc64-windows        # Windows, cross-built with MinGW-w64
 scons stage=gen                  # stop after SR's output
 scons input_exe=/path/to/GAME.EXE
 ```
+
+For Android, `tools/android_apk.py` makes the whole APK, from the game
+repository's root:
+
+```sh
+ANDROID_HOME=/path/to/android-sdk \
+    SR-SDK/tools/android_apk.py --data /path/to/game-data --out game.apk
+```
+
+It builds SDL2 and SDL2_mixer for arm64 once (`tools/android_sdl.sh`, into
+`build/sysroot-android-arm64/`), then `libmain.so` with
+`scons device=arm64-android`. The gradle project is put together in
+`build/android/project/` from SDL's own `android-project` of the same release,
+with `android/app.gradle` and `android/GameActivity.java` over it, and the
+game's `game/android/res/` (its icons) over that. On the first launch, and
+after each update of the APK, `GameActivity` unpacks the data from the APK's
+assets: the port reads its files with `fopen`.
 
 The stages are `host` (SR, built from a copy in `build/`), `input` (the
 original, checked against its sha256), `recomp` (SR), `gen` (SR's output,
@@ -97,6 +118,10 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_CD_MARKER` | a directory on the CD that tells a copy of the disc from an installed game |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
+On Android the game's `main` calls `Game_AndroidSetup()` (`Game_android.h`)
+first: it sends stdout and stderr to logcat and sets `GAME_ENV("DATA_DIR")`
+and `GAME_ENV("WRITE_ROOT")` to the directories `GameActivity` made.
+
 The DOS runtime (`runtime/dos/`) asks the game's own runtime for its DOS
 handle table and paths, declared in `Game_vfs.h`, and for `key_available` and
 `dos_blocking_getch`. The game also brings `main.c`, its `display` frontend,
@@ -109,7 +134,11 @@ SR/                     submodule: the recompiler, llasm, llasm-support
 llasm/                  llasm.py, the Python port of SR's llasm, and its tests
 scons/game.py           the whole build of one game, as one SCons graph
 tools/compact_source.py compacts the data segments of SR's output
-runtime/core/           threads, memory, frontends, virtual keyboard, printf
+tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
+tools/android_apk.py    the Android APK of a game
+android/                what the APK adds to SDL's android-project
+runtime/core/           threads, memory, frontends, virtual keyboard, printf,
+                        Android start-up
 runtime/dos/            WATCOM C library and file I/O, CD image, CD audio
 runtime/dos/llasm/      shared llasm includes of the DOS ports
 runtime/win32/          the Windows-original counterpart -- to come

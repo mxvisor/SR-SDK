@@ -57,11 +57,44 @@ Each of these is identical to a file of one of SR's game ports in
 | `tools/compact_source.py` | SR's per-game `compact_source*.py` (no header of their own; SR's MIT license) | Roman Pauer, mxvisor |
 | `llasm/llasm.py` | a port to Python of SR's `llasm/llasm.d` | Roman Pauer, mxvisor |
 
+## SDL
+
+SR-SDK contains no SDL sources. `tools/android_sdl.sh` downloads the release
+archives of [SDL](https://github.com/libsdl-org/SDL) and
+[SDL_mixer](https://github.com/libsdl-org/SDL_mixer) (zlib license, Sam
+Lantinga and contributors) and checks their sha256; `tools/android_apk.py`
+builds the APK from SDL's `android-project` in that archive, which keeps its
+license files. `android/app.gradle` replaces that project's
+`app/build.gradle`, of which it keeps the `android { }` settings, and is
+under SDL's zlib license:
+
+```
+Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+```
+
 ## Files written for SR-SDK
 
 `runtime/dos/Game_clib.c`, `runtime/dos/Game_cdrom.*`, `Game_file.*`,
-`Game_music.*`, `Game_sound.h`, `Game_vfs.*` and `llasm/llasm_compare.py`,
-`llasm_edge.py`, `llasm_fuzz.py`: Copyright (C) 2026 mxvisor, MIT.
+`Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `runtime/core/Game_android.*`,
+`android/GameActivity.java`, `tools/android_apk.py`, `tools/android_sdl.sh`
+and `llasm/llasm_compare.py`, `llasm_edge.py`, `llasm_fuzz.py`: Copyright (C)
+2026 mxvisor, MIT.
 
 ## SR's license
 
