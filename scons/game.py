@@ -535,10 +535,11 @@ if want('obj'):
         obj_runtime = os.path.join(obj_device, 'runtime',
                                    os.path.relpath(runtime_dir, os.path.join(SDK_ROOT, 'runtime')))
         VariantDir(obj_runtime, runtime_dir, duplicate=0)
-        for source in sorted(glob.glob(os.path.join(runtime_dir, '*.c'))):
-            name = os.path.basename(source)
-            if not os.path.exists(os.path.join(ROOT, 'game', name)):
-                runtime_objs += env.Object(os.path.join(obj_runtime, name))
+        for sub in ('', 'display', 'audio', 'input'):
+            for source in sorted(glob.glob(os.path.join(runtime_dir, sub, '*.c'))):
+                name = os.path.join(sub, os.path.basename(source))
+                if not os.path.exists(os.path.join(ROOT, 'game', name)):
+                    runtime_objs += env.Object(os.path.join(obj_runtime, name))
 
     # llasm-support: the C half of every llasm_X.llinc the game's llasm.llinc
     # (or SR's, if the game has none) includes, unless game/llasm/ has its own

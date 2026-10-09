@@ -28,6 +28,16 @@ What a game builds besides its own `game/`:
   directory's own `SConscript` if it has one; `game/llasm/SConscript` is
   required.
 
+The game provides what the runtime asks of it:
+
+- `game/Game_hooks.h`: `GAME_MAIN_FILENAME`, the original's file name as
+  `argv[0]`, and optionally `GAME_FLIP_HOOK()`, run before each frame is shown;
+- for `runtime/dos/Game_clib.c`, the WATCOM C library replacements its
+  `external_procedures.sci` routes there: `key_available` and
+  `dos_blocking_getch` from the game's runtime;
+- `Game_memory`, `main.c` and the `display` frontend, which still differ
+  between the games.
+
 Headers are found in `game/` first, then in the runtime and in SR's
 `scaler-plugins/` and `llasm-support/`. A runtime `.c` sees the runtime's
 headers beside it first, so a header override applies to the game's code only.
