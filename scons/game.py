@@ -23,7 +23,7 @@
 
 # The whole build of one game, as one SCons graph:
 #
-#     stage 1  host    build/host/<host>/sr-<arch>/  SR, .../llasm/  llasm
+#     stage 1  host    build/host/<host>/sr-<arch>/  SR
 #     stage 0  input   build/input/<module>/         the original after sha256
 #     stage 2  recomp  build/recomp/<module>/<arch>/ SR.exe's working directory
 #     stage 3  gen     build/gen/<module>/<arch>/    compact_source's output
@@ -45,6 +45,7 @@ import os
 import platform
 import re
 import shutil
+import sys
 
 # ------------------------------------------------------------- game/game.cfg --
 
@@ -125,7 +126,6 @@ if not os.path.isabs(BUILD):
     BUILD = os.path.normpath(os.path.join(ROOT, BUILD))
 
 HOST_SR = os.path.join(BUILD, 'host', HOST, 'sr-' + ARCH)
-HOST_LLASM = os.path.join(BUILD, 'host', HOST, 'llasm')
 
 # Where the recompilation input of each stage lives, the directories of the
 # layout in "Каталоги сборки": the game's own inputs are read from game/, the
@@ -157,6 +157,8 @@ vars.Add(BoolVariable('ptrofs', 'Position-independent code (PIE, llasm -pic -ptr
 vars.Add(EnumVariable('device', 'Set target device', '',
                       allowed_values=('', ) + tuple(DEVICES),
                       ignorecase=2))
+vars.Add('llasm', 'The llasm of stage 4: "py" for the SDK\'s llasm/llasm.py, '
+                  'or the path of an llasm executable (the D one of SR/llasm/)', 'py')
 vars.Add('toolprefix', 'Prefix of the MinGW-w64 tools for pc64-windows (cross builds)',
          'x86_64-w64-mingw32-')
 env = Environment(variables=vars)
@@ -283,7 +285,7 @@ else:
                    LLASMFLAGS='-m64 -inline-idiv',
                    LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
 
-for utility in ['llasm', 'opt', 'llc']:
+for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)
     if utility_path is not None:
         utility_directory = os.path.dirname(utility_path)
@@ -348,36 +350,17 @@ if want('host'):
     SConscript(os.path.join(HOST_SR, 'SConstruct'))
     defaults.append(os.path.join(HOST_SR, 'SR.exe'))
 
-    # llasm is one D file; it is built here when it is not on PATH, so the
-    # game does not depend on an installed copy.
-    if shutil.which('llasm') is None:
-        dcompiler = shutil.which('gdc') or shutil.which('ldc2') or shutil.which('dmd')
-        if dcompiler is None:
-            raise Exception('llasm not on PATH and no D compiler (gdc/ldc2/dmd) to build it')
-        if os.path.basename(dcompiler) == 'gdc':
-            llasm_compile = '$DC -O2 -Wall $SOURCE -o $TARGET'
-        else:
-            llasm_compile = '$DC -O2 $SOURCE -o $TARGET'
-        host_env = Environment()
-        host_env['ENV']['PATH'] = os.environ['PATH']
-        host_env['DC'] = dcompiler
-        defaults += host_env.Command(os.path.join(HOST_LLASM, 'llasm'),
-                                     os.path.join(SR_ROOT, 'llasm', 'llasm.d'),
-                                     llasm_compile)
-
-# The llasm driver of stage 3: PATH, then the one built here (also before it
-# exists: its users depend on it, so they wait for it and rebuild after it
-# changes), then the prebuilt one in the SDK checkout (read-only, gitignored by SR).
-llasm_tool = shutil.which('llasm')
-if llasm_tool is None and want('host'):
-    llasm_tool = os.path.join(HOST_LLASM, 'llasm')
-if llasm_tool is None:
-    for candidate in (os.path.join(HOST_LLASM, 'llasm'),
-                      os.path.join(HOST_LLASM, 'llasm.exe'),
-                      os.path.join(SR_ROOT, 'llasm', 'llasm')):
-        if os.path.exists(candidate):
-            llasm_tool = candidate
-            break
+# The llasm of stage 4: the SDK's Python port of SR/llasm/llasm.d, which gives
+# the same output (llasm/README.md), run by the Python that runs SCons -- so
+# a game needs no D compiler. llasm=<path> takes an executable instead.
+if env['llasm'] == 'py':
+    LLASM_PY = os.path.join(SDK_ROOT, 'llasm', 'llasm.py')
+    llasm_tool = '"%s" "%s"' % (sys.executable, LLASM_PY)
+    llasm_deps = [LLASM_PY]
+else:
+    llasm_path = os.path.abspath(env['llasm'])
+    llasm_tool = '"%s"' % llasm_path
+    llasm_deps = [llasm_path]
 
 # ------------------------------------------- stages 0, 2, 3: input -> gen --
 
@@ -563,7 +546,7 @@ if want('obj'):
     game_objs += game_dir('input')
     game_objs += support_objs
     game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
-                            exports='device env gen_dir llasm_tool '
+                            exports='device env gen_dir llasm_tool llasm_deps '
                                     'gen_src_dir gen_main llasm_inc_dirs')
     defaults += game_objs
 

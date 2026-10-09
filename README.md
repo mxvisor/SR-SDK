@@ -9,6 +9,7 @@ what a game repository needs around it.
 
 ```
 SR/                     submodule: the recompiler, llasm, llasm-support
+llasm/                  llasm.py, the Python port of SR's llasm, and its tests
 scons/game.py           the whole build of one game, as one SCons graph
 tools/compact_source.py compresses the data segments of SR's output
 runtime/core/           shared runtime code of the ports (C and headers)
@@ -57,12 +58,15 @@ SConscript('SR-SDK/scons/game.py')
 
 Everything about the game is in `game/game.cfg` (the original executable and
 its sha256, modules, archs, devices, program name); `scons/game.py` never names
-a game. All build output goes to `build/` of the game repository: SR and llasm
-are built from copies there, so the checkouts of SR-SDK and SR stay clean.
+a game. All build output goes to `build/` of the game repository: SR is built
+from a copy there, so the checkouts of SR-SDK and SR stay clean. The llasm IR is
+translated by `llasm/llasm.py` (see `llasm/README.md`), so the build needs
+Python, SCons, a C compiler and LLVM's `opt` and `llc`, but no D compiler.
 
 ## License
 
 MIT, see `LICENSE`. Files taken from SR keep Roman Pauer's copyright; files
-changed or written here add their own line. `tools/compact_source.py` is based
-on the per-game `compact_source*.py` scripts in SR, which carry no header of
-their own and fall under SR's MIT license.
+changed or written here add their own line. `llasm/llasm.py` is a port of
+SR's `llasm/llasm.d` and keeps its copyright. `tools/compact_source.py` is
+based on the per-game `compact_source*.py` scripts in SR, which carry no header
+of their own and fall under SR's MIT license.
