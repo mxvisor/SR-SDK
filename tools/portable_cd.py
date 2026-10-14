@@ -35,7 +35,12 @@
 #    like audio_dir: on a disc it holds entries whose extents are the audio
 #    tracks themselves, not files;
 # 2. extra_files, the files the installer would have written, as they are;
-# 3. audio_dir/: the audio tracks, one file each, and a cue sheet listing
+# 3. place=<glob> <dest>..., the files the installer would have written to
+#    subdirectories, relocated from the disc tree to OUT_DIR: each <glob> is
+#    a disc-path glob (case-insensitive fnmatch against the ISO9660 name) and
+#    <dest> is either a directory (ending in "/") or a file name; placed files
+#    are copied from the disc and not also written in their disc location;
+# 4. audio_dir/: the audio tracks, one file each, and a cue sheet listing
 #    them. flac decodes to the disc's samples bit for bit; wav is the same
 #    uncompressed; ogg is lossy, only smaller.
 #
@@ -44,6 +49,7 @@
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
+#     place=<glob1> <dest1> ...        disc-glob + destination, repeatable
 #     audio_dir=AUDIO                  where the tracks go
 #     audio_cue=<name>.cue             the tracks' cue sheet (required)
 #     audio=ogg                        flac, wav or ogg (default ogg)
@@ -80,6 +86,43 @@ def read_cfg(path):
                 key, value = line.split('=', 1)
                 cfg[key.strip()] = value.strip()
     return cfg
+
+
+def read_place_rules(path):
+    """Every `place=<glob> <dest>` line: the disc files matching <glob> are
+    written to OUT_DIR/<dest> instead of their disc location. One rule per
+    line, several lines allowed."""
+    rules = []
+    with open(path, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if not line or not line.lower().startswith('place='):
+                continue
+            _, value = line.split('=', 1)
+            value = value.strip()
+            if not value:
+                continue
+            words = value.split()
+            if len(words) < 2:
+                fail('place= needs <glob> <dest>: %s' % value)
+            rules.append((words[0], ' '.join(words[1:])))
+    return rules
+
+
+def enumerate_tree(image, lba, size):
+    """Every entry of the data track: {disc-relative path: (extent, length,
+    directory)}."""
+    result = {}
+
+    def walk(lba, size, prefix):
+        for name, extent, length, directory in records(image, lba, size):
+            rel = prefix + name
+            result[rel] = (extent, length, directory)
+            if directory:
+                walk(extent, length, rel + '/')
+
+    walk(lba, size, '')
+    return result
 
 
 def parse_msf(text):
@@ -157,13 +200,22 @@ def matches(name, patterns):
 
 
 class Copy:
-    def __init__(self, image, skip_files, skip_dirs, audio_dir):
+    def __init__(self, image, skip_files, skip_dirs, audio_dir, place_rules=None, root=''):
         self.image = image
+        self.root = root
         self.skip_files, self.skip_dirs = skip_files, skip_dirs
         self.audio_dir = audio_dir.upper()
+        self.place_rules = place_rules or []
+        self.placed = set()
         self.count = self.total = self.skipped = 0
 
-    def tree(self, lba, size, out, top=True):
+    def place_dest(self, rel):
+        for glob, dest in self.place_rules:
+            if fnmatch.fnmatchcase(rel.upper(), glob.upper()):
+                return dest
+        return None
+
+    def tree(self, lba, size, out, prefix='', top=True):
         for name, extent, length, directory in records(self.image, lba, size):
             if directory:
                 if top and name.upper() == self.audio_dir:
@@ -172,14 +224,46 @@ class Copy:
                     self.skipped += 1
                     continue
                 os.mkdir(os.path.join(out, name))
-                self.tree(extent, length, os.path.join(out, name), False)
+                self.tree(extent, length, os.path.join(out, name), prefix + name + '/', False)
             elif matches(name, self.skip_files):
                 self.skipped += 1
             else:
-                with open(os.path.join(out, name), 'wb') as target:
-                    target.write(self.image.read(extent, length))
-                self.count += 1
-                self.total += length
+                rel = prefix + name
+                dest = self.place_dest(rel)
+                if dest is not None:
+                    self.placed.add(rel)
+                    target = os.path.join(self.root, dest)
+                    if dest.endswith('/'):
+                        target = os.path.join(self.root, dest, name)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    with open(target, 'wb') as handle:
+                        handle.write(self.image.read(extent, length))
+                    self.count += 1
+                    self.total += length
+                else:
+                    with open(os.path.join(out, name), 'wb') as target:
+                        target.write(self.image.read(extent, length))
+                    self.count += 1
+                    self.total += length
+
+    def write_placed(self, tree):
+        """Files whose disc location was not visited (their directory was
+        skipped) still need to be written to their place= destination."""
+        for rel, (extent, length, directory) in tree.items():
+            if directory or rel in self.placed:
+                continue
+            dest = self.place_dest(rel)
+            if dest is None:
+                continue
+            self.placed.add(rel)
+            target = os.path.join(self.root, dest)
+            if dest.endswith('/'):
+                target = os.path.join(self.root, dest, os.path.basename(rel))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'wb') as handle:
+                handle.write(self.image.read(extent, length))
+            self.count += 1
+            self.total += length
 
 
 def main():
@@ -219,10 +303,13 @@ def main():
     if pvd[1:6] != b'CD001':
         fail('no ISO9660 volume in the data track')
     root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
-    copy = Copy(image, cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir)
+    place_rules = read_place_rules(args.cfg)
+    copy = Copy(image, cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir, place_rules, args.out)
+    tree = enumerate_tree(image, root_lba, root_size)
     copy.tree(root_lba, root_size, args.out)
-    print('data track: %d files, %.1f MB (%d installer entries skipped)'
-          % (copy.count, copy.total / 1e6, copy.skipped))
+    copy.write_placed(tree)
+    print('data track: %d files, %.1f MB (%d installer entries skipped, %d placed)'
+          % (copy.count, copy.total / 1e6, copy.skipped, len(copy.placed)))
 
     # 2. what the installer would have written
     for path in extra:
@@ -250,7 +337,8 @@ def main():
         subprocess.run(['ffmpeg', '-v', 'error', '-f', 's16le', '-ar', '44100', '-ac', '2', '-i', '-']
                        + codec + [target], input=pcm, check=True)
         cue_lines += ['FILE "%s" %s' % (name, 'WAVE' if audio_format == 'wav' else audio_format.upper()),
-                      '  TRACK %02d AUDIO' % track['number'], '    INDEX 01 00:00:00']
+                      '  TRACK %02d AUDIO' % track['number'],
+                      '    INDEX 01 00:00:00']
         print('track %2d: %6.1f s -> %s/%s' % (track['number'], (end - start) / RAW / 75, audio_dir, name))
     with open(os.path.join(music, audio_cue), 'w') as cue:
         cue.write('\n'.join(cue_lines) + '\n')
