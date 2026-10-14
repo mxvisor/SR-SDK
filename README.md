@@ -171,6 +171,8 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_cdrom.c`, `.h`: drive D: from a cue sheet (ISO9660 data track,
   CDDA or ogg/flac/wav audio tracks) or from a copy of the disc;
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
+- `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
+  buffers, the PSP) in one pool;
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
 
 ## License
