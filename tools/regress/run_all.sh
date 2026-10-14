@@ -1,12 +1,13 @@
 #!/bin/bash
 # One command that answers "did I break anything?": SR's output for the reference
 # games, a build of every game, a smoke test of every port under Linux and Wine,
-# and the hashes of the llasm output. The result is compared with ref/results.tsv,
+# several runs of each port at different load addresses (ASLR), and the hashes of
+# the llasm output. The result is compared with ref/results.tsv,
 # the reference run, and the differences are listed.
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke llasm
+#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -20,11 +21,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, llasm-gen or llasm-llvm; STATUS is ok, fail or
+# CHECK is sr, build, smoke, aslr, llasm-gen or llasm-llvm; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke llasm"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
+ONLY="sr build smoke aslr llasm"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -70,6 +71,23 @@ if want smoke; then
                 continue
             fi
             "$REGRESS_DIR/smoke.sh" "$id" "$mode" "$RUN_SECS" | while IFS=$'\t' read -r kind subject status detail; do
+                add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
+            done
+        done
+    done
+fi
+
+if want aslr; then
+    echo "## aslr: ${GAMES[*]}" >&2
+    for id in "${GAMES[@]}"; do
+        for mode in linux wine; do
+            [ "$mode" = wine ] && [ "$WINE" = 0 ] && continue
+            target=$([ $mode = wine ] && echo windows || echo linux)
+            if [ "${BUILT[$id:$target]}" = fail ]; then
+                add "$(printf 'aslr\t%s:%s\tfail\tbuild failed' "$id" "$mode")"
+                continue
+            fi
+            "$REGRESS_DIR/aslr.sh" "$id" "$mode" 3 "$((RUN_SECS / 2 + 1))" | while IFS=$'\t' read -r kind subject status detail; do
                 add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
             done
         done

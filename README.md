@@ -103,10 +103,15 @@ repository, so the checkouts of SR-SDK and SR stay clean.
 `tools/regress/run_all.sh` answers "did I break anything?" after a change to SR,
 to `llasm.py` or to the SDK: SR's output for SR's reference games, `make linux`
 and `make windows` of every game, a start-and-close smoke test of every port under
-Linux and Wine, and the hashes of the llasm output, all compared with a saved
+Linux and Wine, runs at different load addresses (ASLR) and the hashes of the llasm output, all compared with a saved
 reference run. See [`tools/regress/README.md`](tools/regress/README.md).
 
 ## What the SDK builds
+
+Every build is position-independent (Linux and Android: PIE / `-fPIC`, llasm
+`-pic -ptrofs`; Windows: dynamicbase, high-entropy VA, a `.reloc` section). Guest
+pointers are 32-bit offsets from a load-time base, never absolute host addresses,
+and there is no fixed-address mode.
 
 - every `.c` of `runtime/core/` and `runtime/<platform>/`, unless `game/` has
   a file with the same relative path: the game's file replaces it;

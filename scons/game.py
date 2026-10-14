@@ -161,8 +161,6 @@ LLASM_INC_DIRS = [LLASM_SRC_DIR,
 
 vars = Variables('custom.py')
 vars.Add(BoolVariable('debug', 'Build with debug information', False))
-vars.Add(BoolVariable('ptrofs', 'Position-independent code (PIE, llasm -pic -ptrofs); '
-                                'off restores the fixed -Ttext-segment,0x10000000 build', True))
 vars.Add(EnumVariable('device', 'Set target device', '',
                       allowed_values=('', ) + tuple(DEVICES),
                       ignorecase=2))
@@ -242,35 +240,24 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH=os.environ['PATH_LIB'].split(os.pathsep))
 
-ptrofs = env['ptrofs']
-
 env.Append(CCFLAGS='-O2 -Wall -Wextra -x c++')
 if env['debug']:
     env.Append(CCFLAGS='-g')
 
+# Every build is position-independent: guest pointers are 32-bit offsets from
+# the load-time pointer_offset (Game_memory.c initialize_pointer_offset, macro
+# PTROFS_64BIT), never absolute host addresses, so the program may be loaded
+# anywhere (ASLR). There is no fixed-address mode.
 if device == 'pc64-linux':
-    if ptrofs:
-        # Position-independent: the binary is a PIE, and the recompiled code is
-        # llasm -pic -ptrofs. Guest pointers are 32-bit offsets from the
-        # load-time pointer_offset (Game_memory.c initialize_pointer_offset),
-        # not the fixed -Ttext-segment,0x10000000 base.
-        env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -fpie',
-                   CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
-                   LINKFLAGS='-m64 -pie -Wl,-z,noexecstack',
-                   LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
-                   LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
-                   LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu --relocation-model=pic')
-    else:
-        env.Append(CCFLAGS='-m64',
-                   CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
-                   LINKFLAGS='-m64 -no-pie -Wl,-z,noexecstack,-Ttext-segment,0x10000000',
-                   LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
-                   LLASMFLAGS='-m64 -inline-idiv',
-                   LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu')
+    # a PIE; the recompiled code is llasm -pic -ptrofs
+    env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -fpie',
+               CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
+               LINKFLAGS='-m64 -pie -Wl,-z,noexecstack',
+               LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
+               LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
+               LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu --relocation-model=pic')
 elif device == 'arm64-android':
-    # Android always needs position-independent code: the NDK linker loads the
-    # .so anywhere and forbids text relocations, so llasm/llc run PIC and the
-    # guest pointers are offsets (PTROFS_64BIT) like the Linux PIE build.
+    # the NDK linker loads the .so anywhere and forbids text relocations
     env.Append(CCFLAGS='-fPIC -DPTROFS_64BIT',
                LIBS=['SDL2_mixer', 'SDL2', 'android', 'log'],
                LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
@@ -278,21 +265,14 @@ elif device == 'arm64-android':
 else:
     # a GUI program, as the other games: without a console main.c sends
     # stdout and stderr to a log in the write root, and shows its end
-    # when the game stops on an error (the CD check's among them)
-    if ptrofs:
-        env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -Dmain=SDL_main',
-                   LINKFLAGS='-m64 -mwindows -Wl,--dynamicbase,--enable-reloc-section,'
-                             '--high-entropy-va,--nxcompat,--tsaware',
-                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
-                   LLASMFLAGS='-m64 -inline-idiv -ptrofs',
-                   LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
-    else:
-        env.Append(CCFLAGS='-m64 -Dmain=SDL_main',
-                   LINKFLAGS='-m64 -mwindows -Wl,--image-base,0x10000000,--disable-dynamicbase,'
-                             '--disable-reloc-section,--disable-high-entropy-va,--nxcompat,--tsaware',
-                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
-                   LLASMFLAGS='-m64 -inline-idiv',
-                   LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
+    # when the game stops on an error (the CD check's among them).
+    # ASLR: dynamicbase + a .reloc section; high-entropy-va needs a 64-bit image.
+    env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -Dmain=SDL_main',
+               LINKFLAGS='-m64 -mwindows -Wl,--dynamicbase,--enable-reloc-section,'
+                         '--high-entropy-va,--nxcompat,--tsaware',
+               LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
+               LLASMFLAGS='-m64 -inline-idiv -ptrofs',
+               LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
 
 for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)

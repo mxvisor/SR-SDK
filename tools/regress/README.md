@@ -1,13 +1,14 @@
 # tools/regress
 
 One command, `run_all.sh`, that answers "did I break anything?" after a change to
-SR, to `llasm.py` or to the SDK. It compares four things with a saved reference run:
+SR, to `llasm.py` or to the SDK. It compares five things with a saved reference run:
 
 | Check | What | Tool |
 |---|---|---|
 | `sr` | SR's and SRW's output (hashes) for SR's reference games (`SR/SR-games/`: backends llasm/x86/arm/x64; `SR/SRW-games/`: llasm/x86/x64) | `sr-regression.sh` |
 | `build` | `make linux` and `make windows` of every game | `build_all.sh` |
 | `smoke` | the port starts under Xvfb, runs, closes by `WM_DELETE_WINDOW`, exits by itself and leaves no process; Linux and Wine | `smoke.sh`, `xclose.py` |
+| `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
 | `llasm-gen`, `llasm-llvm` | hashes of `build/gen/**` and of the LLVM IR that `llasm.py` makes of it | `llasm_hashes.py` |
 
 ```sh
@@ -55,6 +56,17 @@ tools/regress/smoke.sh GAME linux|wine [RUN_SECS] [CLOSE_WAIT]
 The exit status of a closed game is only reported (`rc=`): whether non-zero is
 acceptable is not decided here. A game that is not built, or that does not start
 under Wine, is `fail`.
+
+## aslr.sh
+
+```sh
+tools/regress/aslr.sh GAME linux|wine [RUNS=4] [RUN_SECS=6]
+```
+
+Starts the port RUNS times, reads from `/proc/<pid>/maps` where its image was
+loaded and counts the distinct base addresses. `ok`: every run is alive after
+RUN_SECS, and under Linux (PIE, kernel ASLR on) there are at least two bases.
+Under Wine a fixed base is not an error, only a run that dies is.
 
 ## Clearing a reference after an intended change
 
