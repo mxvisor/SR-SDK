@@ -47,7 +47,7 @@ echo "SConscript('SR-SDK/scons/game.py')" > SConstruct
 Everything about the game is in `game/game.cfg`:
 
 ```ini
-platform=dos            # selects runtime/dos
+platform=dos            # selects runtime/dos and SR; win32: runtime/win32 and SRW
 archs=llasm             # SR's output type
 modules=Game-main       # the modules of the original, game/recomp/<module>/
 variants=default        # recognized versions of the original, by sha256

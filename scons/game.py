@@ -23,9 +23,9 @@
 
 # The whole build of one game, as one SCons graph:
 #
-#     stage 1  host    build/host/<host>/sr-<arch>/  SR
+#     stage 1  host    build/host/<host>/sr-<arch>/  SR (or SRW)
 #     stage 0  input   build/input/<module>/         the original after sha256
-#     stage 2  recomp  build/recomp/<module>/<arch>/ SR.exe's working directory
+#     stage 2  recomp  build/recomp/<module>/<arch>/ SR.exe's (SRW.exe's) working directory
 #     stage 3  gen     build/gen/<module>/<arch>/    compact_source's output
 #     stage 4  obj     build/obj/<device>/{runtime,game,support,gen}
 #     stage 5  bin     build/bin/<device>/<program>
@@ -87,6 +87,16 @@ MODULE = MODULES[0]
 ARCH = ARCHS[0]
 VARIANT = VARIANTS[0]
 
+# The original's platform picks the runtime layer and the recompiler: an LE
+# executable of DOS is SR's (SR/SR, SR.exe), a PE executable of Windows is
+# SRW's (SR/SRW, SRW.exe) -- each with its own SR_defs.h and its own .sci files.
+PLATFORM = CFG.get('platform', 'dos')
+if PLATFORM not in ('dos', 'win32'):
+    raise NotImplementedError('game.cfg: platform=%r: known platforms are dos and win32'
+                              % PLATFORM)
+SR_SOURCE_DIR = os.path.join(SR_ROOT, 'SRW' if PLATFORM == 'win32' else 'SR')
+SR_EXE_NAME = 'SRW.exe' if PLATFORM == 'win32' else 'SR.exe'
+
 # The stages in order; "done" is what this build can actually stop at.
 STAGES = ['host', 'input', 'recomp', 'gen', 'obj', 'bin', 'dist']
 DONE = ['host', 'input', 'recomp', 'gen', 'obj', 'bin']
@@ -141,8 +151,7 @@ LLASM_SRC_DIR = os.path.join(ROOT, 'game', 'llasm')
 # The shared code: the SDK's runtime (core, then the original's platform from
 # game.cfg) and SR's own llasm-support, used in place rather than copied.
 RUNTIME_CORE = os.path.join(SDK_ROOT, 'runtime', 'core')
-RUNTIME_DIRS = [RUNTIME_CORE,
-                os.path.join(SDK_ROOT, 'runtime', CFG.get('platform', 'dos'))]
+RUNTIME_DIRS = [RUNTIME_CORE, os.path.join(SDK_ROOT, 'runtime', PLATFORM)]
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 LLASM_INC_DIRS = [LLASM_SRC_DIR,
                   os.path.join(RUNTIME_DIRS[1], 'llasm'),
@@ -274,14 +283,14 @@ else:
         env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -Dmain=SDL_main',
                    LINKFLAGS='-m64 -mwindows -Wl,--dynamicbase,--enable-reloc-section,'
                              '--high-entropy-va,--nxcompat,--tsaware',
-                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2'],
+                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
                    LLASMFLAGS='-m64 -inline-idiv -ptrofs',
                    LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
     else:
         env.Append(CCFLAGS='-m64 -Dmain=SDL_main',
                    LINKFLAGS='-m64 -mwindows -Wl,--image-base,0x10000000,--disable-dynamicbase,'
                              '--disable-reloc-section,--disable-high-entropy-va,--nxcompat,--tsaware',
-                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2'],
+                   LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
                    LLASMFLAGS='-m64 -inline-idiv',
                    LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
 
@@ -298,8 +307,9 @@ for utility in ['opt', 'llc']:
 # SDK is meant to serve several games at once, and nothing of theirs may land
 # in it. So SR is
 # built from a copy under build/host/<host>/sr-<arch>/, and that copy is where
-# OUTPUT_TYPE gets set -- the one line SR/SR_defs.h hard-codes its backend
-# through, with no way to pass it on the command line.
+# OUTPUT_TYPE gets set -- the one line SR_defs.h hard-codes its backend
+# through, with no way to pass it on the command line. The copy is of SR/SR
+# for platform=dos and of SR/SRW for platform=win32.
 SR_OUTPUT_TYPES = {'x86': 'OUT_X86', 'arm': 'OUT_ARM_LINUX',
                    'x64': 'OUT_X64', 'llasm': 'OUT_LLASM'}
 
@@ -343,12 +353,12 @@ def set_output_type(path, arch):
 defaults = []
 
 if want('host'):
-    sync_tree(os.path.join(SR_ROOT, 'SR'), HOST_SR,
+    sync_tree(SR_SOURCE_DIR, HOST_SR,
               skip={'SR.exe', 'SR.exe.llasm', 'SR.exe.x86', 'SR.exe.x64',
-                    'SR.exe.arm', '.sconsign.dblite', 'custom.py'})
+                    'SR.exe.arm', 'SRW.exe', '.sconsign.dblite', 'custom.py'})
     set_output_type(os.path.join(HOST_SR, 'SR_defs.h'), ARCH)
     SConscript(os.path.join(HOST_SR, 'SConstruct'))
-    defaults.append(os.path.join(HOST_SR, 'SR.exe'))
+    defaults.append(os.path.join(HOST_SR, SR_EXE_NAME))
 
 # The llasm of stage 4: the SDK's Python port of SR/llasm/llasm.d, which gives
 # the same output (llasm/README.md), run by the Python that runs SCons -- so
@@ -444,7 +454,7 @@ if want('recomp'):
     if not os.path.isdir(RECOMP_DIR):
         os.makedirs(RECOMP_DIR)
 
-    sr_exe = os.path.join(HOST_SR, 'SR.exe')
+    sr_exe = os.path.join(HOST_SR, SR_EXE_NAME)
     sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
     sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
     sr_sources = [INPUT_EXE, File(sr_exe),
@@ -454,6 +464,14 @@ if want('recomp'):
         glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci')))]
     if os.path.exists(_outputs):
         sr_sources.append(File(_outputs))
+
+    # SRW reads relocations.csv from its working directory, but only for a PE
+    # whose relocations were stripped (SRW_loader.c); a PE with its .reloc
+    # section never needs it, so the file is optional.
+    _relocs = os.path.join(RECOMP_SRC, 'relocations.csv')
+    if os.path.exists(_relocs):
+        copy_if_newer(_relocs, os.path.join(RECOMP_DIR, 'relocations.csv'))
+        sr_sources.append(File(_relocs))
 
     defaults += env.Command(sr_targets, sr_sources,
                             'cd %s && %s %s %s > sr.out 2> sr.err'
