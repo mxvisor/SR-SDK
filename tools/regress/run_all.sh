@@ -45,7 +45,7 @@ add() { printf '%s\n' "$1" | tee -a "$RESULTS"; }
 
 if want sr; then
     echo "## sr: $SR_COMMIT" >&2
-    "$REGRESS_DIR/sr-regression.sh" "$OUT/sr" "$SR_COMMIT" | while IFS=$'\t' read -r _ kind dir backend hash; do
+    "$REGRESS_DIR/sr-regression.sh" "$OUT/sr" "$SR_COMMIT" | tee "$OUT/sr-hashes.txt" | while IFS=$'\t' read -r _ kind dir backend hash; do
         add "$(printf 'sr\t%s:%s:%s\tok\t%s' "$kind" "$dir" "$backend" "$hash")"
     done
 fi
@@ -93,7 +93,24 @@ fi
 # ---- comparison with the reference run
 REF="$REGRESS_DIR/ref/results.tsv"
 if [ "$SAVE" = 1 ]; then
-    cp "$RESULTS" "$REF"
+    # a partial run (--only, GAME...) replaces only its own rows of the reference
+    python3 - "$REF" "$RESULTS" <<'PY2'
+import sys, os
+ref, now = sys.argv[1:3]
+def rows(path):
+    d = {}
+    if os.path.exists(path):
+        for line in open(path):
+            f = line.rstrip('\n').split('\t')
+            if len(f) >= 2:
+                d[(f[0], f[1])] = line if line.endswith('\n') else line + '\n'
+    return d
+merged = rows(ref)
+merged.update(rows(now))
+with open(ref, 'w') as out:
+    out.writelines(merged[k] for k in sorted(merged))
+PY2
+    want sr && cp "$OUT/sr-hashes.txt" "$REGRESS_DIR/ref/sr-hashes.txt"
     echo "reference saved: $REF" >&2
     exit 0
 fi
