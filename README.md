@@ -98,6 +98,14 @@ compacted), `obj` and `bin`. All output goes to `build/` of the game
 repository, so the checkouts of SR-SDK and SR stay clean.
 `scons/game.py` never names a game.
 
+## Checking a change
+
+`tools/regress/run_all.sh` answers "did I break anything?" after a change to SR,
+to `llasm.py` or to the SDK: SR's output for SR's reference games, `make linux`
+and `make windows` of every game, a start-and-close smoke test of every port under
+Linux and Wine, and the hashes of the llasm output, all compared with a saved
+reference run. See [`tools/regress/README.md`](tools/regress/README.md).
+
 ## What the SDK builds
 
 - every `.c` of `runtime/core/` and `runtime/<platform>/`, unless `game/` has
@@ -143,6 +151,7 @@ tools/compact_source.py compacts the data segments of SR's output
 tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
+tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project
 runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         Android start-up
