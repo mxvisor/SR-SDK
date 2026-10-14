@@ -30,6 +30,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "audio.h"
+#include <SDL.h>
 
 void Init_Audio(void)
 {
