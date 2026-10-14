@@ -200,6 +200,11 @@ case("mem-ops", "extern e\ndatasegment a\ndlabel l\ndb 8 dup 0\nendd\nproc t\nlo
 case("mem-ops-pic64", "extern e\ndatasegment a\ndlabel l global\ndlabel m\ndb 8 dup 0\nendd\nproc t\nload eax, e, 4\nload8s eax, l, 1\nload8z eax, m[2], 1\nstore eax, m, 4\nmov eax, m\nmov eax, t\nret\nendp\n", ["-O1", "-pic", "-m64"])
 case("mem-ops-ptrofs", "extern e\ndatasegment a\ndlabel l global\ndlabel m\ndb 8 dup 0\nendd\nproc t\nload eax, e, 4\nload8s eax, l, 1\nload8z eax, m[2], 1\nload16z ebx, ebx, 2\nstore eax, m, 4\nmov eax, m\nmov eax, t\ntcall eax\nendp\n", ["-O2", "-m64", "-ptrofs"])
 case("mem-ops-ptrofs-O1", "extern e\ndatasegment a\ndlabel l global\ndlabel m\ndb 8 dup 0\nendd\nproc t\nload eax, e, 4\nload16z ebx, ebx, 2\nstore eax, m, 4\ntcall eax\nendp\n", ["-O1", "-m64", "-ptrofs"])
+case("at-names", "proc _imp@12 external\nextern _var@4\nfunc _f@8 $, x\ndatasegment a\ndaddr _imp@12\ndlabel l@1\ndb 0 dup 4\nendd\nproc t global c@t\ncall _f@8 $, eax\nmov eax, _imp@12\nload ebx, _var@4, 4\nmov ecx, _var@4[8]\nmov edx, l@1\ntcall _imp@12\nendp\n", ["-O2"])
+case("at-names-pic64", "proc _imp@12 external\nextern _var@4\nfunc _f@8 $, x\ndatasegment a\ndaddr _imp@12\ndlabel l@1 global\ndlabel m\ndb 0 dup 4\ndaddr m+2\nendd\nproc t global c@t\ncall _f@8 $, eax\nmov eax, _imp@12\nload ebx, _var@4, 4\nmov edx, m\ntcall _imp@12\nendp\n", ["-O1", "-pic", "-m64"])
+case("at-names-notail", "proc _imp@12 external\nproc t global c@t\nmov eax, _imp@12\ntcall _imp@12\nendp\n", ["-no-tail-calls", "-O1"])
+case("digit-names", "proc 1x external\nproc t\ntcall 1x\nendp\n", ["-O1"])
+case("dash-names", "proc a-b external\nproc t\ntcall a-b\nendp\n", ["-O1"])
 
 
 def run(cmd, cwd):

@@ -34,6 +34,16 @@ import sys
 
 WS = " \t\n\v\f\r"
 
+_LL_NAME_OK = re.compile(r'[a-zA-Z$._][a-zA-Z$._0-9]*\Z')
+
+def _llref(name):
+    """LLVM IR global value reference; quote names that are not bare identifiers
+    (stdcall imports like _grBufferClear@12 contain @)."""
+    if name and _LL_NAME_OK.match(name):
+        return "@" + name
+    return '@"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
 NUM_REGS = 12
 NUM_REGS_VALID = 9
 NUM_FLOAT_REGS = 8
@@ -1145,7 +1155,7 @@ def _extern_is_direct(param):
 
 
 def _dseg_gep(addrlabel, ofs):
-    return "getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* @" + addrlabel.dataseg_name + " to i8*), i32 " + str(ofs) + ")"
+    return "getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* " + _llref(addrlabel.dataseg_name) + " to i8*), i32 " + str(ofs) + ")"
 
 
 def get_parameter_read_value(param, as_pointer=False, nullable_pointer=False):
@@ -1199,14 +1209,14 @@ def get_parameter_read_value(param, as_pointer=False, nullable_pointer=False):
         if _extern_is_direct(param):
             if param.ivalue == 0:
                 if as_pointer:
-                    return "@" + param.value
+                    return _llref(param.value)
                 else:
-                    return get_addr_to_int32("@" + param.value)
+                    return get_addr_to_int32(_llref(param.value))
             else:
                 if as_pointer:
-                    return "getelementptr (" + get_load_type("i8") + " @" + param.value + ", i32 " + str(param.ivalue) + ")"
+                    return "getelementptr (" + get_load_type("i8") + " " + _llref(param.value) + ", i32 " + str(param.ivalue) + ")"
                 else:
-                    return get_addr_to_int32("getelementptr (" + get_load_type("i8") + " @" + param.value + ", i32 " + str(param.ivalue) + ")")
+                    return get_addr_to_int32("getelementptr (" + get_load_type("i8") + " " + _llref(param.value) + ", i32 " + str(param.ivalue) + ")")
         else:
             addrlabel = G.dlabel_list[param.value]
 
@@ -1217,9 +1227,9 @@ def get_parameter_read_value(param, as_pointer=False, nullable_pointer=False):
     elif t == "procaddr":
         proctype = ("i8*" if G.no_tail_calls else "void")
         if as_pointer:
-            return "bitcast (" + proctype + "(%_cpu*)* @" + param.value + " to i8*)"
+            return "bitcast (" + proctype + "(%_cpu*)* " + _llref(param.value) + " to i8*)"
         else:
-            return get_addr_to_int32("@" + param.value, proctype + "(%_cpu*)")
+            return get_addr_to_int32(_llref(param.value), proctype + "(%_cpu*)")
     else:
         if as_pointer:
             if G.pointers_with_offset:
@@ -1235,14 +1245,14 @@ def get_parameter_read_addr(param, ptrtype):
         if _extern_is_direct(param):
             if param.ivalue == 0:
                 if ptrtype == "i8":
-                    return "@" + param.value
+                    return _llref(param.value)
                 else:
-                    return "bitcast (i8* @" + param.value + " to " + ptrtype + "*)"
+                    return "bitcast (i8* " + _llref(param.value) + " to " + ptrtype + "*)"
             else:
                 if ptrtype == "i8":
-                    return "getelementptr (" + get_load_type("i8") + " @" + param.value + ", i32 " + str(param.ivalue) + ")"
+                    return "getelementptr (" + get_load_type("i8") + " " + _llref(param.value) + ", i32 " + str(param.ivalue) + ")"
                 else:
-                    return "bitcast (i8* getelementptr (" + get_load_type("i8") + " @" + param.value + ", i32 " + str(param.ivalue) + ") to " + ptrtype + "*)"
+                    return "bitcast (i8* getelementptr (" + get_load_type("i8") + " " + _llref(param.value) + ", i32 " + str(param.ivalue) + ") to " + ptrtype + "*)"
         else:
             addrlabel = G.dlabel_list[param.value]
 
@@ -2131,7 +2141,7 @@ def process_proc_body(proc_name):
                 add_output_line("ret i8* " + addr)
             else:
                 if paramvals[0].type == "procaddr":
-                    add_output_line("musttail call fastcc void @" + paramvals[0].value + "(%_cpu* %cpu) nounwind")
+                    add_output_line("musttail call fastcc void " + _llref(paramvals[0].value) + "(%_cpu* %cpu) nounwind")
                 else:
                     dst = get_parameter_read_value(paramvals[0])
                     addr = get_int32_to_ptr(dst, "void(%_cpu*)")
@@ -2157,7 +2167,7 @@ def process_proc_body(proc_name):
                 addr = get_parameter_read_value(paramvals[1], True)
                 add_output_line("ret i8* " + addr)
             else:
-                add_output_line("musttail call fastcc void @" + paramvals[1].value + "(%_cpu* %cpu) nounwind")
+                add_output_line("musttail call fastcc void " + _llref(paramvals[1].value) + "(%_cpu* %cpu) nounwind")
 
                 add_output_line("ret void")
             add_output_line(labelf + ":")
@@ -2226,7 +2236,7 @@ def process_proc_body(proc_name):
             if func.has_return_value:
                 dst = get_new_temporary_register()
 
-                add_output_line(dst + " = call " + ("i8*" if func.return_value_is_pointer else "i32") + " @" + func.real_name + "(" + srcstr + ") nounwind")
+                add_output_line(dst + " = call " + ("i8*" if func.return_value_is_pointer else "i32") + " " + _llref(func.real_name) + "(" + srcstr + ") nounwind")
 
                 if func.return_value_is_pointer:
                     if G.pointers_with_offset:
@@ -2240,7 +2250,7 @@ def process_proc_body(proc_name):
                 else:
                     store_temporary_register_to_reg(dst, "tmp0", last_reg_write[0])
             else:
-                add_output_line("call void @" + func.real_name + "(" + srcstr + ") nounwind")
+                add_output_line("call void " + _llref(func.real_name) + "(" + srcstr + ") nounwind")
         elif word in ("imul", "umul"):
             src1 = get_parameter_read_value(paramvals[2])
             src2 = get_parameter_read_value(paramvals[3])
@@ -3384,17 +3394,17 @@ def main(args):
                     dataseg.addr_in_ctor = True
                     G.create_ctor_function = True
                 elif dd.addr in G.proc_list:
-                    dataseg_values += "ptrtoint (" + ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)* @" + dd.addr + " to i32)"
+                    dataseg_values += "ptrtoint (" + ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)* " + _llref(dd.addr) + " to i32)"
                 else:
                     if G.position_independent_code:
                         addrlabel = G.dlabel_list[dd.addr]
 
-                        dataseg_values += "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* @" + addrlabel.dataseg_name + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
+                        dataseg_values += "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* " + _llref(addrlabel.dataseg_name) + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
                     else:
                         if dd.addr_offset == 0:
-                            dataseg_values += "ptrtoint (i8* @" + dd.addr + " to i32)"
+                            dataseg_values += "ptrtoint (i8* " + _llref(dd.addr) + " to i32)"
                         else:
-                            dataseg_values += "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " @" + dd.addr + ", i32 " + str(dd.addr_offset) + ") to i32)"
+                            dataseg_values += "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " " + _llref(dd.addr) + ", i32 " + str(dd.addr_offset) + ") to i32)"
             else:
                 dataseg_type += "[" + str(dd.datalen) + " x i8]"
                 dataseg_values += "[" + str(dd.datalen) + " x i8]"
@@ -3406,16 +3416,16 @@ def main(args):
                     dataseg_values += "\""
 
         add_output_line("%_" + dataseg_name + " = type <{ " + dataseg_type + " }>")
-        add_output_line("@" + dataseg_name + " = private " + ("constant" if (dataseg.isconstant and not dataseg.addr_in_ctor) else "global") + " %_" + dataseg_name + " <{ " + dataseg_values + " }>, align 4")
+        add_output_line(_llref(dataseg_name) + " = private " + ("constant" if (dataseg.isconstant and not dataseg.addr_in_ctor) else "global") + " %_" + dataseg_name + " <{ " + dataseg_values + " }>, align 4")
 
         for label in dataseg.labels:
             if (not G.position_independent_code) or label.isglobal:
-                add_output_line("@" + label.name + " = " + ("protected" if label.isglobal else "private") + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* @" + dataseg_name + " to i8*), i32 " + str(label.offset) + ")")
+                add_output_line(_llref(label.name) + " = " + ("protected" if label.isglobal else "private") + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(label.offset) + ")")
 
     add_output_line("")
     add_output_line("; external variables")
     for extern_name in sorted(G.extern_list.keys()):
-        add_output_line("@" + extern_name + " = external global i8")
+        add_output_line(_llref(extern_name) + " = external global i8")
 
     add_output_line("")
     add_output_line("; external functions")
@@ -3435,7 +3445,7 @@ def main(args):
                 func_args += ","
             func_args += datatype
 
-        add_output_line("declare ccc " + (("i8*" if func.return_value_is_pointer else "i32") if func.has_return_value else "void") + " @" + func.real_name + "(" + func_args + ") nounwind")
+        add_output_line("declare ccc " + (("i8*" if func.return_value_is_pointer else "i32") if func.has_return_value else "void") + " " + _llref(func.real_name) + "(" + func_args + ") nounwind")
 
     add_output_line("")
     add_output_line("; external procedures")
@@ -3445,7 +3455,7 @@ def main(args):
         if not proc.isexternal:
             continue
 
-        add_output_line("declare hidden fastcc " + ("i8*" if G.no_tail_calls else "void") + " @" + proc_name + "(%_cpu*) nounwind")
+        add_output_line("declare hidden fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu*) nounwind")
 
     add_output_line("")
     add_output_line("; intrinsics")
@@ -3479,7 +3489,7 @@ def main(args):
     for proc_name in G.local_proc_names:
         proc = G.proc_list[proc_name]
 
-        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if proc.ispublic else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " @" + proc_name + "(%_cpu* %cpu) nounwind {")
+        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if proc.ispublic else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind {")
 
         if not process_proc_body(proc_name):
             return 79
@@ -3490,16 +3500,16 @@ def main(args):
             if G.return_procedure == "":
                 G.return_procedure = "__return_procedure"
                 if G.no_tail_calls:
-                    add_output_line("define private fastcc i8* @" + G.return_procedure + "(%_cpu* %cpu) nounwind {")
+                    add_output_line("define private fastcc i8* " + _llref(G.return_procedure) + "(%_cpu* %cpu) nounwind {")
                     add_output_line("ret i8* null")
                 else:
-                    add_output_line("define private fastcc void @" + G.return_procedure + "(%_cpu* %cpu) nounwind {")
+                    add_output_line("define private fastcc void " + _llref(G.return_procedure) + "(%_cpu* %cpu) nounwind {")
                     add_output_line("ret void")
                 add_output_line("}")
 
             if G.no_tail_calls and G.dispatcher_procedure == "":
                 G.dispatcher_procedure = "__dispatcher_procedure"
-                add_output_line("define private fastcc void @" + G.dispatcher_procedure + "(%_cpu* %cpu, i8*(%_cpu*)* %proc) nounwind {")
+                add_output_line("define private fastcc void " + _llref(G.dispatcher_procedure) + "(%_cpu* %cpu, i8*(%_cpu*)* %proc) nounwind {")
 
                 aligntproc = ", align " + ("8" if G.pointer_size_64 else "4")
                 add_output_line("%tproc = alloca i8*(%_cpu*)*" + aligntproc)
@@ -3515,7 +3525,7 @@ def main(args):
                     G.register64_state[k] = EMPTY
 
                 r4 = get_int32_to_ptr("%3", "i32")
-                r5 = get_addr_to_int32("@" + G.return_procedure, ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)")
+                r5 = get_addr_to_int32(_llref(G.return_procedure), ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)")
                 add_output_line("store i32 " + r5 + ", i32* " + r4 + ", align 4")
 
                 add_output_line("store i8*(%_cpu*)* %proc, i8*(%_cpu*)** %tproc" + aligntproc)
@@ -3537,10 +3547,10 @@ def main(args):
                 add_output_line("ret void")
                 add_output_line("}")
 
-            add_output_line("define protected ccc void @" + proc.global_name + "(%_cpu* %cpu) nounwind {")
+            add_output_line("define protected ccc void " + _llref(proc.global_name) + "(%_cpu* %cpu) nounwind {")
 
             if G.no_tail_calls:
-                add_output_line("tail call fastcc void @" + G.dispatcher_procedure + "(%_cpu* %cpu, i8*(%_cpu*)* @" + proc_name + ") nounwind")
+                add_output_line("tail call fastcc void " + _llref(G.dispatcher_procedure) + "(%_cpu* %cpu, i8*(%_cpu*)* " + _llref(proc_name) + ") nounwind")
             else:
                 add_output_line("%1 = getelementptr " + get_load_type("%_cpu") + " %cpu, i32 0, i32 " + G.register_numbers_str["esp"])
                 add_output_line("%2 = load " + get_load_type("i32") + " %1, align 4")
@@ -3553,10 +3563,10 @@ def main(args):
                     G.register64_state[k] = EMPTY
 
                 r4 = get_int32_to_ptr("%3", "i32")
-                r5 = get_addr_to_int32("@" + G.return_procedure, ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)")
+                r5 = get_addr_to_int32(_llref(G.return_procedure), ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)")
                 add_output_line("store i32 " + r5 + ", i32* " + r4 + ", align 4")
 
-                add_output_line("call fastcc void @" + proc_name + "(%_cpu* %cpu) nounwind")
+                add_output_line("call fastcc void " + _llref(proc_name) + "(%_cpu* %cpu) nounwind")
 
             add_output_line("ret void")
             add_output_line("}")
@@ -3599,19 +3609,19 @@ def main(args):
                     continue
 
                 if dd.addr in G.proc_list:
-                    store_value = "ptrtoint (" + ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)* @" + dd.addr + " to i32)"
+                    store_value = "ptrtoint (" + ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)* " + _llref(dd.addr) + " to i32)"
                 else:
                     if G.position_independent_code:
                         addrlabel = G.dlabel_list[dd.addr]
 
-                        store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* @" + addrlabel.dataseg_name + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
+                        store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* " + _llref(addrlabel.dataseg_name) + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
                     else:
                         if dd.addr_offset == 0:
-                            store_value = "ptrtoint (i8* @" + dd.addr + " to i32)"
+                            store_value = "ptrtoint (i8* " + _llref(dd.addr) + " to i32)"
                         else:
-                            store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " @" + dd.addr + ", i32 " + str(dd.addr_offset) + ") to i32)"
+                            store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " " + _llref(dd.addr) + ", i32 " + str(dd.addr_offset) + ") to i32)"
 
-                ptr_value = "bitcast (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* @" + dataseg_name + " to i8*), i32 " + str(dataseg_offset) + ") to i32*)"
+                ptr_value = "bitcast (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(dataseg_offset) + ") to i32*)"
 
                 align_value = 4 if (dataseg_offset % 4 == 0) else (2 if (dataseg_offset % 2 == 0) else 1)
 
