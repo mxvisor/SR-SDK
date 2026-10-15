@@ -1,13 +1,13 @@
 #!/bin/bash
 # One command that answers "did I break anything?": SR's output for the reference
 # games, a build of every game, a smoke test of every port under Linux and Wine,
-# several runs of each port at different load addresses (ASLR), and the hashes of
-# the llasm output. The result is compared with ref/results.tsv,
+# several runs of each port at different load addresses (ASLR), the hashes of
+# the llasm output, and the conversion of the disc images (tools/image). The result is compared with ref/results.tsv,
 # the reference run, and the differences are listed.
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm
+#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm image
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -21,11 +21,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, aslr, llasm-gen or llasm-llvm; STATUS is ok, fail or
+# CHECK is sr, build, smoke, aslr, llasm-gen, llasm-llvm or image; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
+ONLY="sr build smoke aslr llasm image"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -108,6 +108,13 @@ if want llasm; then
     done
 fi
 
+if want image; then
+    echo "## image: ${GAMES[*]}" >&2
+    "$REGRESS_DIR/image_check.py" "${GAMES[@]}" | while IFS=$'\t' read -r kind subject status detail; do
+        add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
+    done
+fi
+
 # ---- comparison with the reference run
 REF="$REGRESS_DIR/ref/results.tsv"
 if [ "$SAVE" = 1 ]; then
@@ -154,8 +161,8 @@ for key in sorted(now):
     else:
         rstatus, rdetail = ref[key]
         if status == rstatus:
-            # sr rows carry the output hash: a different hash is a change
-            verdict = 'CHANGED' if key[0] == 'sr' and detail != rdetail else 'same'
+            # sr and image rows carry the output hash: a different hash is a change
+            verdict = 'CHANGED' if key[0] in ('sr', 'image') and detail != rdetail else 'same'
         elif rstatus == 'ok':
             verdict = 'REGRESSION'
         elif status == 'ok':
@@ -167,7 +174,7 @@ for key in sorted(now):
     if verdict != 'same':
         print('%-10s %-10s %-45s %-8s %s' % (verdict, key[0], key[1], status, detail))
 total = len(now)
-same = sum(1 for k in now if k in ref and now[k][0] == ref[k][0] and (k[0] != 'sr' or now[k][1] == ref[k][1]))
+same = sum(1 for k in now if k in ref and now[k][0] == ref[k][0] and (k[0] not in ('sr', 'image') or now[k][1] == ref[k][1]))
 print('%d checks, %d same as the reference, %d need attention' % (total, same, bad))
 sys.exit(1 if bad else 0)
 PY

@@ -8,6 +8,7 @@ SR, to `llasm.py` or to the SDK. It compares five things with a saved reference 
 | `sr` | SR's and SRW's output (hashes) for SR's reference games (`SR/SR-games/`: backends llasm/x86/arm/x64; `SR/SRW-games/`: llasm/x86/x64) | `sr-regression.sh` |
 | `build` | `make linux` and `make windows` of every game | `build_all.sh` |
 | `smoke` | the port starts under Xvfb, runs, closes by `WM_DELETE_WINDOW`, exits by itself and leaves no process; Linux and Wine | `smoke.sh`, `xclose.py` |
+| `image` | the disc images of `images.tsv` through `tools/image/image.py`: the hash of the cue sheet, the bin, the ISO and of every file of the data track must not change | `image_check.py` |
 | `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
 | `llasm-gen`, `llasm-llvm` | hashes of `build/gen/**` and of the LLVM IR that `llasm.py` makes of it | `llasm_hashes.py` |
 

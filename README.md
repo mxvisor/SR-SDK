@@ -92,6 +92,16 @@ without its installer, the files the installer would have written, and the
 audio tracks as flac, wav or ogg files with a cue sheet. What to skip and what
 to add is in `game/portable.cfg`; the script's header lists its keys.
 
+`tools/image/image.py` turns a disc image into what the rest of the SDK takes as
+the disc, a cue sheet: `image.py disc IMAGE [-o DIR] [--iso] [--extract DIR]`
+takes a Nero `.nrg` (a cue + bin pair is written, with the audio tracks), an
+Alcohol 120% `.mds`/`.mdf` (a cue sheet that points at the `.mdf`), a raw `.bin`
+or an `.iso`. `--iso` also writes the data track as an ISO, `--extract` copies
+its files. It writes only the files it names, and deletes nothing.
+`image.py installer FILE.z OUT_DIR` unpacks an InstallShield 3 installer. The
+format modules (`nrg.py`, `mds.py`, `rawbin.py`, `installshield.py`) share
+`cdimage.py` with `portable_cd.py`.
+
 The stages are `host` (SR, built from a copy in `build/`), `input` (the
 original, checked against its sha256), `recomp` (SR), `gen` (SR's output,
 compacted), `obj` and `bin`. All output goes to `build/` of the game
@@ -103,7 +113,7 @@ repository, so the checkouts of SR-SDK and SR stay clean.
 `tools/regress/run_all.sh` answers "did I break anything?" after a change to SR,
 to `llasm.py` or to the SDK: SR's output for SR's reference games, `make linux`
 and `make windows` of every game, a start-and-close smoke test of every port under
-Linux and Wine, runs at different load addresses (ASLR) and the hashes of the llasm output, all compared with a saved
+Linux and Wine, runs at different load addresses (ASLR) the hashes of the llasm output and the conversion of the disc images, all compared with a saved
 reference run. See [`tools/regress/README.md`](tools/regress/README.md).
 
 ## What the SDK builds
@@ -155,6 +165,7 @@ scons/game.py           the whole build of one game, as one SCons graph
 tools/compact_source.py compacts the data segments of SR's output
 tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
+tools/image/            disc images and installers: image.py and its format modules
 tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project

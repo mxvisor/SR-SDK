@@ -68,8 +68,9 @@ import subprocess
 import sys
 from typing import NoReturn
 
-RAW = 2352
-DATA = 2048
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
+from cdimage import (RAW, Image, enumerate_tree, parse_cue,  # noqa: E402
+                     records)
 
 
 def fail(message) -> NoReturn:
@@ -107,91 +108,6 @@ def read_place_rules(path):
                 fail('place= needs <glob> <dest>: %s' % value)
             rules.append((words[0], ' '.join(words[1:])))
     return rules
-
-
-def enumerate_tree(image, lba, size):
-    """Every entry of the data track: {disc-relative path: (extent, length,
-    directory)}."""
-    result = {}
-
-    def walk(lba, size, prefix):
-        for name, extent, length, directory in records(image, lba, size):
-            rel = prefix + name
-            result[rel] = (extent, length, directory)
-            if directory:
-                walk(extent, length, rel + '/')
-
-    walk(lba, size, '')
-    return result
-
-
-def parse_msf(text):
-    m, s, f = (int(x) for x in text.split(':'))
-    return (m * 60 + s) * 75 + f
-
-
-def parse_cue(path):
-    """Tracks of a single-BINARY-file cue: number, mode, index0, index1."""
-    base = os.path.dirname(os.path.abspath(path))
-    files, tracks = [], []
-    for line in open(path, encoding='latin1'):
-        words = line.strip().split()
-        if not words:
-            continue
-        key = words[0].upper()
-        if key == 'FILE':
-            name = line.split('"')[1] if '"' in line else words[1]
-            files.append((os.path.join(base, os.path.basename(name.replace('\\', '/'))), words[-1].upper()))
-        elif key == 'TRACK':
-            tracks.append({'number': int(words[1]), 'mode': words[2].upper(), 'file': len(files) - 1,
-                           'index0': None, 'index1': None})
-        elif key == 'INDEX' and tracks:
-            tracks[-1]['index%d' % int(words[1])] = parse_msf(words[2])
-    if len(files) != 1 or files[0][1] != 'BINARY':
-        fail('expected one BINARY file in %s' % path)
-    return files[0][0], tracks
-
-
-def sector_layout(mode):
-    if mode.endswith('/2048'):
-        return DATA, 0
-    if mode.endswith('/2336'):
-        return 2336, 8
-    return RAW, 24 if mode.startswith('MODE2') else 16
-
-
-class Image:
-    def __init__(self, path, track):
-        self.file = open(path, 'rb')
-        self.size, self.header = sector_layout(track['mode'])
-        self.base = track['index1'] * self.size
-
-    def sector(self, lba):
-        self.file.seek(self.base + lba * self.size + self.header)
-        return self.file.read(DATA)
-
-    def read(self, lba, length):
-        out = bytearray()
-        while len(out) < length:
-            out += self.sector(lba)
-            lba += 1
-        return bytes(out[:length])
-
-
-def records(image, lba, size):
-    for n in range((size + DATA - 1) // DATA):
-        block = image.sector(lba + n)
-        at = 0
-        while at + 34 <= DATA and block[at] != 0:
-            length = block[at]
-            record = block[at:at + length]
-            name = record[33:33 + record[32]]
-            at += length
-            if name in (b'\0', b'\1'):
-                continue
-            yield (name.split(b';')[0].rstrip(b'.').decode('latin1'),
-                   struct.unpack_from('<I', record, 2)[0], struct.unpack_from('<I', record, 10)[0],
-                   bool(record[25] & 2))
 
 
 def matches(name, patterns):
