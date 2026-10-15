@@ -46,6 +46,9 @@
 #
 # game/portable.cfg (paths relative to the game repository's root):
 #     cue=<the disc's cue sheet>       one BINARY file (required)
+#     image=<the disc image>           .nrg, .mds, .bin or .iso: when the cue
+#                                      sheet is not there yet it is made from
+#                                      this, with image/image.py
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
@@ -87,6 +90,19 @@ def read_cfg(path):
                 key, value = line.split('=', 1)
                 cfg[key.strip()] = value.strip()
     return cfg
+
+
+def make_cue(image, cue):
+    """The cue sheet of a disc image, next to where the cfg wants it."""
+    if not os.path.isfile(image):
+        fail('no such disc image: %s' % image)
+    out_dir = os.path.dirname(os.path.abspath(cue))
+    name = os.path.splitext(os.path.basename(cue))[0]
+    command = [sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image', 'image.py'),
+               'disc', image, '-o', out_dir, '--name', name]
+    print('disc image: %s -> %s' % (image, cue))
+    if subprocess.run(command).returncode or not os.path.isfile(cue):
+        fail('cannot make %s from %s' % (cue, image))
 
 
 def read_place_rules(path):
@@ -205,6 +221,10 @@ def main():
         if not os.path.isfile(path):
             fail('no such file: %s' % path)
 
+    if not os.path.isfile(cue_path):
+        if not cfg.get('image'):
+            fail('%s not found (and %s has no image= to make it from)' % (cue_path, args.cfg))
+        make_cue(os.path.join(root, cfg['image']), cue_path)
     image_path, tracks = parse_cue(cue_path)
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
     if data is None:
