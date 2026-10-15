@@ -94,7 +94,14 @@ freely, subject to the following restrictions:
 `Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `runtime/core/Game_android.*`,
 `android/GameActivity.java`, `tools/android_apk.py`, `tools/android_sdl.sh`
 and `llasm/llasm_compare.py`, `llasm_edge.py`, `llasm_fuzz.py`: Copyright (C)
-2026 mxvisor, MIT.
+2026 mxvisor, MIT; so are `tools/image/*.py` and `tools/regress/*`.
+
+## blast
+
+`tools/image/blast.c` and `blast.h`: blast 1.3 by Mark Adler (zlib's
+`contrib/blast`), unchanged, under the zlib-style license in `blast.h`. It
+unpacks the PKWARE DCL data of InstallShield 3 archives. `blast_shim.c` is
+SR-SDK's, MIT.
 
 ## SR's license
 
