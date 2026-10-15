@@ -36,7 +36,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import llasm as L
+from llasmlib import tables as L
 
 HERE = Path(__file__).resolve().parent
 # the D build: $LLASM_D, else llasm beside this script (see README.md)

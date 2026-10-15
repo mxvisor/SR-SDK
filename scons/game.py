@@ -346,7 +346,8 @@ if want('host'):
 if env['llasm'] == 'py':
     LLASM_PY = os.path.join(SDK_ROOT, 'llasm', 'llasm.py')
     llasm_tool = '"%s" "%s"' % (sys.executable, LLASM_PY)
-    llasm_deps = [LLASM_PY]
+    # the script is only the entry point: the translator is the package beside it
+    llasm_deps = [LLASM_PY] + sorted(glob.glob(os.path.join(SDK_ROOT, 'llasm', 'llasmlib', '*.py')))
 else:
     llasm_path = os.path.abspath(env['llasm'])
     llasm_tool = '"%s"' % llasm_path
