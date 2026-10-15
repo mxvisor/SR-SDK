@@ -172,7 +172,11 @@ env = Environment(variables=vars)
 
 device = env['device']
 if device == '':
-    device = 'pc64-windows' if env['PLATFORM'] == 'win32' else 'pc64-linux'
+    if env['PLATFORM'] == 'win32':
+        device = 'pc64-windows'
+    else:
+        machine = platform.machine().lower()
+        device = 'arm64-linux' if machine in ('aarch64', 'arm64') else 'pc64-linux'
     if device not in DEVICES:
         device = DEVICES[0]
     env['device'] = device
@@ -189,9 +193,9 @@ Stages: host -> input -> recomp -> gen -> obj -> bin -> dist;
 scons stage=<name> stops at that one.
 """)
 
-if device not in ('pc64-linux', 'pc64-windows', 'arm64-android'):
+if device not in ('pc64-linux', 'pc64-windows', 'arm64-linux', 'arm64-android'):
     raise NotImplementedError('device %r: this build module knows pc64-linux, '
-                              'pc64-windows and arm64-android' % device)
+                              'pc64-windows, arm64-linux and arm64-android' % device)
 
 if device == 'pc64-windows':
     if env['PLATFORM'] == 'win32':
@@ -256,6 +260,17 @@ if device == 'pc64-linux':
                LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
                LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
                LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu --relocation-model=pic')
+elif device == 'arm64-linux':
+    # native aarch64 Linux: a PIE, as pc64-linux.  No -m64 in CCFLAGS or
+    # LINKFLAGS -- the aarch64 compiler does not know it; the llasm -m64 is
+    # llasm's own flag (64-bit pointers) and stays, and llc gets the width
+    # from its triple.
+    env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
+               CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
+               LINKFLAGS='-pie -Wl,-z,noexecstack',
+               LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
+               LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
+               LLVMFLAGS='-mtriple=aarch64-unknown-linux-gnu --relocation-model=pic')
 elif device == 'arm64-android':
     # the NDK linker loads the .so anywhere and forbids text relocations
     env.Append(CCFLAGS='-fPIC -DPTROFS_64BIT',
@@ -273,6 +288,10 @@ else:
                LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
                LLASMFLAGS='-m64 -inline-idiv -ptrofs',
                LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
+
+# extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
+env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
+                 if lib.strip()])
 
 for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)
