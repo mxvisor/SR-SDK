@@ -25,9 +25,9 @@
 # `jmp/call dword [IAT slot]` (FF 25 / FF 15) is also looked for in the raw bytes: a linear
 # sweep that lost its way (data between the import thunks) misses them.
 #
-# --strict-code: a constant in code whose value points into the middle of an instruction
-# of the linear disassembly is not taken for an address (a pushed flag set that falls in
-# the image).  Without it every in-image constant seen in the disassembly is a relocation.
+# --strict-code: an immediate in code (not a memory operand: tables of bytes and of
+# addresses lie in code) whose value points into the middle of an instruction of the linear
+# disassembly is not taken for an address (a pushed flag set that falls in the image).  Without it every in-image constant seen in the disassembly is a relocation.
 #
 # A jump table inside a code section (jmp [reg*4 + table]) is not instructions:
 # its entries are added while they point at the start of an instruction.
@@ -100,6 +100,7 @@ def find_relocations_in_sec(
     data: bytes, imgbase: int, imagesize: int,
     sec_va: int, sec_rsz: int, sec_rp: int,
     sec_ranges: list, secs: list, seen: set, rows: list, starts: set, tables: set,
+    immediates: set,
 ) -> None:
     raw = data[sec_rp : sec_rp + sec_rsz]
     if len(raw) == 0:
@@ -148,6 +149,8 @@ def find_relocations_in_sec(
                 continue
 
             src = code_base + off
+            if not re.search(r"\[[^\]]*" + val_str + r"\b", disasm_str):
+                immediates.add(src)
             add_relocation(val, src, imgbase, seen, rows)
 
     # indirect jumps/calls through the import table that the sweep went past
@@ -250,6 +253,7 @@ def main() -> int:
 
     starts = set()
     tables = set()
+    immediates = set()
     code_ranges = []
     for name, va, vs, rsz, rp, chars in secs:
         if rsz == 0 or name in (".rsrc", ".reloc") or not (chars & 0x20000020):
@@ -257,12 +261,13 @@ def main() -> int:
         code_ranges.append((imgbase + va, imgbase + va + max(vs, rsz)))
         find_relocations_in_sec(
             data, imgbase, imagesize, va, rsz, rp,
-            sec_ranges, secs, seen, rows, starts, tables,
+            sec_ranges, secs, seen, rows, starts, tables, immediates,
         )
     # a constant that points into the middle of an instruction is not an address
     def keep(row):
-        val = int(row.split(",")[1], 16)
-        return val in starts or not any(lo <= val < hi for lo, hi in code_ranges)
+        src, val = (int(x, 16) for x in row.split(",")[:2])
+        return (src not in immediates or val in starts
+                or not any(lo <= val < hi for lo, hi in code_ranges))
     if strict:
         rows[:] = [r for r in rows if keep(r)]
     for base in sorted(tables):
