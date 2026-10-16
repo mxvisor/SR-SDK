@@ -200,15 +200,6 @@ uint32_t CCALL CreateAcceleratorTableA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_CreateEventA
-uint32_t CCALL CreateEventA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("CreateEventA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_CreateFileA
 uint32_t CCALL CreateFileA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6)
 {
@@ -1550,15 +1541,6 @@ uint32_t CCALL ReplyMessage_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_ResetEvent
-uint32_t CCALL ResetEvent_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("ResetEvent");
-    return 0;
-}
-#endif
-
 #ifdef STUB_RtlUnwind
 uint32_t CCALL RtlUnwind_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
@@ -1645,15 +1627,6 @@ uint32_t CCALL SetEnvironmentVariableA_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("SetEnvironmentVariableA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_SetEvent
-uint32_t CCALL SetEvent_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("SetEvent");
     return 0;
 }
 #endif

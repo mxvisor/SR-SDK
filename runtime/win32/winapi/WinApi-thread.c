@@ -22,7 +22,7 @@
  *
  */
 
-/* Guest threads and semaphores (kernel32).
+/* Guest threads, semaphores and events (kernel32).
  *
  * A guest thread is an SDL thread that runs the recompiled start routine on a
  * CPU of its own (asm-cpu.c keeps one per host thread).  The functions take the
@@ -34,8 +34,7 @@
  * which is where a program that hands work over by semaphores is between two
  * pieces of work.
  *
- * WaitForSingleObject on a handle this layer does not know (0 from a stub such
- * as CreateEventA) returns WAIT_OBJECT_0, as the stub did. */
+ * An event is a flag that WaitForSingleObject polls. */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -46,6 +45,7 @@
 
 #define WAIT_OBJECT_0 0
 #define WAIT_TIMEOUT 0x102
+#define WAIT_FAILED 0xffffffffu
 #define INFINITE 0xffffffffu
 #define CREATE_SUSPENDED 4
 #define NORMAL_PRIORITY_CLASS 0x20
@@ -339,7 +339,7 @@ uint32_t CCALL WaitForSingleObject_c(uint32_t a0, uint32_t a1)
     uint32_t start;
 
     Winapi_ThreadCheckpoint();
-    if ((a0 == 0) || (a0 == PSEUDO_CURRENT_PROCESS) || (a0 == PSEUDO_CURRENT_THREAD)) return WAIT_OBJECT_0;
+    if ((a0 == 0) || (a0 == PSEUDO_CURRENT_PROCESS) || (a0 == PSEUDO_CURRENT_THREAD)) return WAIT_FAILED;
     h = (handle)GAME_GUEST32_TO_PTR(a0);
 
     switch (h->handle_type)
@@ -375,8 +375,40 @@ uint32_t CCALL WaitForSingleObject_c(uint32_t a0, uint32_t a1)
             if (!h->eh.manual_reset) h->eh.signaled = 0;
             return WAIT_OBJECT_0;
         default:
-            return WAIT_OBJECT_0;
+            return WAIT_FAILED;
     }
+}
+
+uint32_t CCALL CreateEventA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    handle h;
+
+    (void)a0; (void)a3;     /* security attributes, name */
+    h = Winapi_AllocHandle();
+    if (h == NULL) return 0;
+
+    h->handle_type = HT_EVENT;
+    h->eh.manual_reset = (a1 != 0);
+    h->eh.signaled = (a2 != 0);
+    return GAME_PTR_TO_GUEST32(h);
+}
+
+uint32_t CCALL SetEvent_c(uint32_t a0)
+{
+    handle h = guest_handle(a0, HT_EVENT);
+
+    if (h == NULL) return 0;
+    h->eh.signaled = 1;
+    return 1;
+}
+
+uint32_t CCALL ResetEvent_c(uint32_t a0)
+{
+    handle h = guest_handle(a0, HT_EVENT);
+
+    if (h == NULL) return 0;
+    h->eh.signaled = 0;
+    return 1;
 }
 
 uint32_t Winapi_CloseObject(handle hObject)
