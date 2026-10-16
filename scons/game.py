@@ -45,6 +45,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 
 # ------------------------------------------------------------- game/game.cfg --
@@ -437,7 +438,11 @@ if want('input'):
 
     if not (os.path.exists(INPUT_EXE) and sha256_of(INPUT_EXE) == expected):
         source = ARGUMENTS.get('input_exe', CFG.get('input_exe', ''))
-        if source and not os.path.isabs(source):
+        if source.startswith('disc:'):
+            # the exe is a file of the game's disc, as game/portable.cfg makes it
+            # (the image with its patch= archives over it): build/disc/
+            source = disc_file(source[len('disc:'):])
+        elif source and not os.path.isabs(source):
             source = os.path.join(ROOT, source)
         if not source or not os.path.exists(source):
             raise Exception(
@@ -532,6 +537,7 @@ if want('obj'):
     # built (an override). Headers are looked up the same way for the game's
     # .c only: a .c of the runtime finds the runtime's headers beside it first.
     env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
+               + ([os.path.join(RUNTIME_DIRS[1], 'glide', 'glad', 'include')] if GLIDE else [])
                + [os.path.join(RUNTIME_CORE, 'display'),
                   os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
 

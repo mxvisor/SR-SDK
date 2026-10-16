@@ -46,6 +46,9 @@
 #
 # game/portable.cfg (paths relative to the game repository's root):
 #     cue=<the disc's cue sheet>       one BINARY file (required)
+#     patch=<archive>[ <dir>]          archives over the disc, in order: the
+#                                      copy is taken from disc_tree.py's
+#                                      build/disc, not the bare image
 #     image=<the disc image>           .nrg, .mds, .bin or .iso: when the cue
 #                                      sheet is not there yet it is made from
 #                                      this, with image/image.py
@@ -178,6 +181,33 @@ class Copy:
                     self.count += 1
                     self.total += length
 
+    def fs_tree(self, src, out, prefix='', top=True):
+        """tree() over a directory (the disc with its patches, disc_tree.py)
+        instead of the image."""
+        for name in sorted(os.listdir(src)):
+            path = os.path.join(src, name)
+            if os.path.isdir(path):
+                if top and name.upper() == self.audio_dir:
+                    continue
+                if matches(name, self.skip_dirs):
+                    self.skipped += 1
+                    continue
+                os.mkdir(os.path.join(out, name))
+                self.fs_tree(path, os.path.join(out, name), prefix + name + '/', False)
+            elif name == '.disc_tree' or matches(name, self.skip_files):
+                self.skipped += 1
+            else:
+                rel = prefix + name
+                dest = self.place_dest(rel)
+                target = os.path.join(out, name)
+                if dest is not None:
+                    self.placed.add(rel)
+                    target = os.path.join(self.root, dest, name) if dest.endswith('/') else os.path.join(self.root, dest)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copyfile(path, target)
+                self.count += 1
+                self.total += os.path.getsize(path)
+
     def write_placed(self, tree):
         """Files whose disc location was not visited (their directory was
         skipped) still need to be written to their place= destination."""
@@ -241,9 +271,16 @@ def main():
     root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
     place_rules = read_place_rules(args.cfg)
     copy = Copy(image, cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir, place_rules, args.out)
-    tree = enumerate_tree(image, root_lba, root_size)
-    copy.tree(root_lba, root_size, args.out)
-    copy.write_placed(tree)
+    if any(line.split('#', 1)[0].strip().lower().startswith('patch=') for line in open(args.cfg)):
+        # the disc with its patch= archives over it, not the bare image
+        disc = os.path.join(root, 'build', 'disc')
+        subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
+                        disc, '--cfg', args.cfg, '--cue', cue_path], check=True)
+        copy.fs_tree(disc, args.out)
+    else:
+        tree = enumerate_tree(image, root_lba, root_size)
+        copy.tree(root_lba, root_size, args.out)
+        copy.write_placed(tree)
     print('data track: %d files, %.1f MB (%d installer entries skipped, %d placed)'
           % (copy.count, copy.total / 1e6, copy.skipped, len(copy.placed)))
 
