@@ -23,9 +23,6 @@ extern void CCALL c_RunProcECX(CPU);
 /* stack_start - used by asm-cpu.c to init cpu->stack_top */
 uint32_t stack_start = 0xF0000000u;
 
-/* game_heap_flag - referenced by Game_runtime.c (DOS-era glue) */
-uint32_t game_heap_flag = 2u;
-
 /* Referenced by CLIB-asm.llasm's _check_security_cookie_asm2c. The original
    game's /GS cookie lives in its .data; the port keeps its own. */
 uint32_t security_cookie_ = 0;

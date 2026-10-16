@@ -32,7 +32,7 @@
 #include "Game_defs.h"     /* CCALL */
 #include "Game_file.h"
 
-/* DOS file handles: one table for both the INT 21h path (Game_runtime.c) and
+/* DOS file handles: one table for the C-library layer (Game_vfs.c) and
  * the host-side C library replacements (the C library layer, CLIB.c), so a handle from
  * either side means the same file to the other -- the game reads fileno()
  * out of a FILE and hands it to filelength(). */
@@ -69,23 +69,8 @@ void Game_ReleaseHandle(int handle);
 int Game_TraceFileEnabled(void);
 void Game_DumpGuestMemory(void);
 
-int key_available(void);
-uint8_t dos_blocking_getch(void);
-uint8_t dos_scan_to_ascii(uint8_t scan_code);
 int Game_RuntimeInit(void);
 void Game_RuntimeDeinit(void);
-void Game_RequestPresent(void);
-void Game_DrainEventKeys(void);
-/* Reprogram channel 0 as a guest `out 43h/40h` sequence would (Game_sound.c's
- * AIL timers). */
-void Game_ProgramPit(uint32_t divisor);
-/* Call a guest timer callback as AIL's ISR does; 0 if it could not run now
- * (guest IF clear, or inside another guest ISR). */
-int Game_CallGuestTimerCallback(uint32_t target, uint32_t user);
-/* Guest IF set and no guest ISR running: a hardware interrupt could be taken. */
-int Game_GuestInterruptsEnabled(void);
-/* Host address of a flat address in obj2 (the game's data, 0x90000-0x110000). */
-void *Game_Obj2Pointer(uint32_t flat);
 
 #ifdef __cplusplus
 }
