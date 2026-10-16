@@ -140,8 +140,24 @@ extern void CCALL c_RunProcECX(CPU);
  * jumping to guest address 0, an unset vector. */
 extern void CCALL c_game_null_isr(CPU);
 
-/* The generated object defines this label at guest address loc_BF342 (see
- * the llasm global_aliases.sci of the port). WATCOM's c0 startup
+/* Guest addresses of the original this layer was written for (flat, in obj2's
+ * data block); a port with another layout redefines them in Game_hooks.h:
+ *   GAME_HEAP_FLAG_FLAT  the label game_heap_flag (the generated object's
+ *                        global alias), the anchor of every Game_Obj2Pointer
+ *   GAME_LANG_FLAT       the language byte (debug output only)
+ *   GAME_KEY_RING_FLAT   the key ring: count, read and write indices (trace only) */
+#ifndef GAME_HEAP_FLAG_FLAT
+#define GAME_HEAP_FLAG_FLAT 0xBF342u
+#endif
+#ifndef GAME_LANG_FLAT
+#define GAME_LANG_FLAT 0xBC8D0u
+#endif
+#ifndef GAME_KEY_RING_FLAT
+#define GAME_KEY_RING_FLAT 0xE0700u
+#endif
+
+/* The generated object defines this label at the guest address
+ * GAME_HEAP_FLAG_FLAT (see the llasm global_aliases.sci of the port). WATCOM's c0 startup
  * normally fills it in from its DOS-extender probe (INT 21h AH=30h, BL = ASCII
  * major version); we call main_ directly and skip c0, so Game_RuntimeInit seeds
  * it instead. Its value selects which allocator loc_738E0/loc_73990 use:
@@ -152,16 +168,16 @@ extern void CCALL c_game_null_isr(CPU);
  * (EXTERNAL_CVAR, C linkage) - same storage asm-cpu.c/llasm_pushx.c declare. */
 
 extern "C" uint8_t game_heap_flag;
-/* TEMP: language byte loc_BC8D0 shares dseg03 base with loc_BF342 (game_heap_flag). */
+/* the language byte shares dseg03's base with game_heap_flag */
 static uint8_t game_debug_lang(void)
 {
-    return *(const uint8_t *)((uintptr_t)&game_heap_flag - 0x2A72u);
+    return *(const uint8_t *)((uintptr_t)&game_heap_flag - GAME_HEAP_FLAG_FLAT + GAME_LANG_FLAT);
 }
 /* obj2 is two blocks here: its file-backed part [0x90000, 0xF4000) is dseg03,
  * one contiguous piece of the linked .data, and the rest (BSS and stack, up
  * to 0x100E00, bssborder.csv) is useg05 in .bss. A flat address is its
- * distance from a label SR exports in the same block: loc_BF342
- * (game_heap_flag) in dseg03, stack_start (flat 0x100E00, the end of useg05)
+ * distance from a label SR exports in the same block: game_heap_flag
+ * (GAME_HEAP_FLAG_FLAT) in dseg03, stack_start (flat 0x100E00, the end of useg05)
  * in useg05. */
 extern "C" uint8_t stack_start;
 #define GAME_OBJ2_FLAT 0x90000u
@@ -171,7 +187,7 @@ extern "C" void *Game_Obj2Pointer(uint32_t flat)
 {
     /* integer arithmetic: the result lies outside the label's own object */
     if (flat >= GAME_OBJ2_BSS_FLAT) return (void *)((uintptr_t)&stack_start - GAME_OBJ2_STACK_END_FLAT + flat);
-    return (void *)((uintptr_t)&game_heap_flag - 0xBF342u + flat);
+    return (void *)((uintptr_t)&game_heap_flag - GAME_HEAP_FLAG_FLAT + flat);
 }
 uint32_t game_cr0 = 0x13;
 /* `lsl eax, ds` (instruction_replacements.sci).  Its one reader is in WATCOM's
@@ -1110,10 +1126,9 @@ static void deliver_keyboard_irq(void)
     }
     kbd_irq_pending = (key_queue_read != key_queue_write);
     if (delivered && trace_enabled(TRACE_KEYS)) {
-        /* dseg03 lives in linked .data, not at the DOS flat address.
-         * loc_E0700 (count), loc_E0704 (r), loc_E0708 (w) share the same
-         * base as the exported loc_BF342 == game_heap_flag. */
-        uint32_t *ring = (uint32_t *)((uintptr_t)&game_heap_flag + 0x213beu);
+        /* dseg03 lives in linked .data, not at the DOS flat address; the ring
+         * (count, r, w) shares the base of the exported game_heap_flag. */
+        uint32_t *ring = (uint32_t *)((uintptr_t)&game_heap_flag - GAME_HEAP_FLAG_FLAT + GAME_KEY_RING_FLAT);
         fprintf(stderr, "KEY ring count=%u r=%u w=%u bios=%u port60=%u\n",
                 ring[0], ring[1], ring[2],
                 (bios_key_write + GAME_KEY_QUEUE_SIZE - bios_key_read) % GAME_KEY_QUEUE_SIZE,
@@ -1950,7 +1965,7 @@ static void handle_dos_interrupt(interrupt_frame *frame)
          * first heap growth ends up chasing a null pointer. */
         frame->eax = 0x44580700u;
         /* RBIL: BL is the ASCII major DOS version. c0's extender detector does
-         * `sub bl, 0x30` and stores the result at loc_BF342, so report a
+         * `sub bl, 0x30` and stores the result at game_heap_flag, so report a
          * version loc_74773's DOS/4GW 2.x path accepts (2..8). */
         frame->ebx = (frame->ebx & 0xffffff00u) | '2';
         break;
