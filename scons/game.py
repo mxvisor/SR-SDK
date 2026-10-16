@@ -554,6 +554,19 @@ if want('obj'):
                 name = os.path.join(sub, os.path.basename(source))
                 if (not os.path.exists(os.path.join(ROOT, 'game', name))
                         and os.path.basename(source) not in RUNTIME_SKIP):
+                    if os.path.basename(source) == 'WinApi-stubs.c':
+                        # one object per stub, in a library: only the stubs
+                        # that the game does not define itself are linked
+                        with open(source, 'rt') as stream:
+                            stubs = re.findall(r'^#ifdef STUB_(\w+)$', stream.read(), re.M)
+                        stub_objs = [env.Object(os.path.join(obj_runtime, 'stubs', stub + '.o'),
+                                                os.path.join(obj_runtime, name),
+                                                CPPDEFINES=['STUB_' + stub])[0]
+                                     for stub in stubs]
+                        env.StaticLibrary(os.path.join(obj_runtime, 'winapistubs'),
+                                                     stub_objs)
+                        env.Append(LIBPATH=[obj_runtime], LIBS=['winapistubs'])
+                        continue
                     runtime_objs += env.Object(os.path.join(obj_runtime, name))
 
     # llasm-support: the C half of every llasm_X.llinc the game's llasm.llinc
