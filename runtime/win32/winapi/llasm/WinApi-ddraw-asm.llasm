@@ -48,6 +48,7 @@ func IDirectDraw_Initialize_c *lpThis, *param1
 func IDirectDraw_RestoreDisplayMode_c *lpThis
 func IDirectDraw_SetCooperativeLevel_c *lpThis, *param1, param2
 func IDirectDraw_SetDisplayMode_c *lpThis, param1, param2, param3
+func IDirectDraw2_SetDisplayMode_c *lpThis, param1, param2, param3, param4, param5
 func IDirectDraw_WaitForVerticalBlank_c *lpThis, param1, *param2
 func IDirectDraw_GetAvailableVidMem_c *lpThis, *lpDDSCaps, *lpdwTotal, *lpdwFree
 
@@ -419,6 +420,23 @@ proc IDirectDraw_SetDisplayMode_asm2c public
         Call_Asm_Return 4
 
 endp ; end procedure IDirectDraw_SetDisplayMode_asm2c
+
+
+proc IDirectDraw2_SetDisplayMode_asm2c public
+
+; [esp + 6*4] = DWORD dwFlags
+; [esp + 5*4] = DWORD dwRefreshRate
+; [esp + 4*4] = DWORD dwBPP
+; [esp + 3*4] = DWORD dwHeight
+; [esp + 2*4] = DWORD dwWidth
+; [esp +   4] = struct IDirectDraw2 *lpThis
+; [esp      ] = return address
+
+        Call_Asm_Stack6 IDirectDraw2_SetDisplayMode_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirectDraw2_SetDisplayMode_asm2c
 
 
 proc IDirectDraw_WaitForVerticalBlank_asm2c public
@@ -1135,6 +1153,33 @@ daddr IDirectDraw_Initialize_asm2c
 daddr IDirectDraw_RestoreDisplayMode_asm2c
 daddr IDirectDraw_SetCooperativeLevel_asm2c
 daddr IDirectDraw_SetDisplayMode_asm2c
+daddr IDirectDraw_WaitForVerticalBlank_asm2c
+daddr IDirectDraw_GetAvailableVidMem_asm2c
+
+; IDirectDraw2: the same methods, but SetDisplayMode takes the refresh rate and flags too
+dlabel IDirectDraw2Vtbl_asm2c global
+daddr IDirectDraw_QueryInterface_asm2c
+daddr IDirectDraw_AddRef_asm2c
+daddr IDirectDraw_Release_asm2c
+daddr IDirectDraw_Compact_asm2c
+daddr IDirectDraw_CreateClipper_asm2c
+daddr IDirectDraw_CreatePalette_asm2c
+daddr IDirectDraw_CreateSurface_asm2c
+daddr IDirectDraw_DuplicateSurface_asm2c
+daddr IDirectDraw_EnumDisplayModes_asm2c
+daddr IDirectDraw_EnumSurfaces_asm2c
+daddr IDirectDraw_FlipToGDISurface_asm2c
+daddr IDirectDraw_GetCaps_asm2c
+daddr IDirectDraw_GetDisplayMode_asm2c
+daddr IDirectDraw_GetFourCCCodes_asm2c
+daddr IDirectDraw_GetGDISurface_asm2c
+daddr IDirectDraw_GetMonitorFrequency_asm2c
+daddr IDirectDraw_GetScanLine_asm2c
+daddr IDirectDraw_GetVerticalBlankStatus_asm2c
+daddr IDirectDraw_Initialize_asm2c
+daddr IDirectDraw_RestoreDisplayMode_asm2c
+daddr IDirectDraw_SetCooperativeLevel_asm2c
+daddr IDirectDraw2_SetDisplayMode_asm2c
 daddr IDirectDraw_WaitForVerticalBlank_asm2c
 daddr IDirectDraw_GetAvailableVidMem_asm2c
 

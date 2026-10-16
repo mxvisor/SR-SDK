@@ -67,6 +67,7 @@ uint32_t CCALL IDirectDraw_Initialize_c(struct IDirectDraw_c *lpThis, void * par
 uint32_t CCALL IDirectDraw_RestoreDisplayMode_c(struct IDirectDraw_c *lpThis);
 uint32_t CCALL IDirectDraw_SetCooperativeLevel_c(struct IDirectDraw_c *lpThis, void * hWnd, uint32_t dwFlags);
 uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP);
+uint32_t CCALL IDirectDraw2_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP, uint32_t dwRefreshRate, uint32_t dwFlags);
 uint32_t CCALL IDirectDraw_GetAvailableVidMem_c(struct IDirectDraw_c *lpThis, void * lpDDSCaps, uint32_t * lpdwTotal, uint32_t * lpdwFree);
 uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, uint32_t param1, void * param2);
 

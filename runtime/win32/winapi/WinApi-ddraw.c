@@ -389,6 +389,7 @@ void Winapi_DestroyDirectDrawWindow(void)
 }
 
 extern uint32_t IDirectDrawVtbl_asm2c;
+extern uint32_t IDirectDraw2Vtbl_asm2c;
 extern uint32_t IDirectDrawSurfaceVtbl_asm2c;
 extern uint32_t IDirectDrawPaletteVtbl_asm2c;
 extern uint32_t IDirectDrawClipperVtbl_asm2c;
@@ -671,6 +672,9 @@ uint32_t CCALL IDirectDraw_QueryInterface_c(struct IDirectDraw_c *lpThis, void *
         /* IDirectDraw2 differs from IDirectDraw only in SetDisplayMode's arguments and in
          * GetAvailableVidMem, which the vtable carries as its last slot; one object serves both. */
         lpThis->RefCount++;
+        /* a caller of IDirectDraw2 pushes two more arguments to SetDisplayMode: from here on
+         * the object answers with the vtable that pops them (a program uses one of the two) */
+        if (memcmp(riid, IID_IDirectDraw2, 16) == 0) lpThis->lpVtbl = &IDirectDraw2Vtbl_asm2c;
         *ppvObj = (void *)lpThis;
         return DD_OK;
     }
@@ -1025,6 +1029,12 @@ uint32_t CCALL IDirectDraw_SetCooperativeLevel_c(struct IDirectDraw_c *lpThis, v
 
     if (lpThis == NULL) return DDERR_INVALIDPARAMS;
     return DD_OK;
+}
+
+uint32_t CCALL IDirectDraw2_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP, uint32_t dwRefreshRate, uint32_t dwFlags)
+{
+    (void)dwRefreshRate; (void)dwFlags;
+    return IDirectDraw_SetDisplayMode_c(lpThis, dwWidth, dwHeight, dwBPP);
 }
 
 uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP)
