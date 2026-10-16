@@ -182,6 +182,10 @@ tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
+tools/flagfix.py        Win32 ports: resolves SRW's "unknown flags on start of region" in instruction_flags.sci
+tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (tools/import_args.tsv)
+tools/run_common.sh     the common part of a game's run-sdl.sh / run_sdl_wine.sh
+tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project
 runtime/core/           threads, memory, frontends, virtual keyboard, printf,
