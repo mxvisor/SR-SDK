@@ -132,6 +132,12 @@ uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context);
 /* Destroy the DirectDraw window (the one created by SetDisplayMode) */
 void Winapi_DestroyDirectDrawWindow(void);
 
+/* The window of a renderer that is not DirectDraw (Glide): a window for
+ * OpenGL, shown with the display settings of the game; null if it cannot be
+ * made. Close hides it again. */
+struct SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height);
+void Winapi_ScreenCloseGL(void);
+
 #ifdef __cplusplus
 }
 #endif

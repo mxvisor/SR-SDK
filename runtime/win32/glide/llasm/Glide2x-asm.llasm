@@ -1,0 +1,376 @@
+;;
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+;;
+
+;; The bridges of glide2x.dll (stdcall): the guest's arguments to Glide2x.c.
+
+include llasm.llinc
+include Game-asm-calls.llinc
+
+func guTexMemReset_c
+
+proc guTexMemReset_asm2c public
+
+        Call_Asm_Stack0 guTexMemReset_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure guTexMemReset_asm2c
+
+func guTexDownloadMipMap_c mmid, *src, *nccTable
+
+proc guTexDownloadMipMap_asm2c public
+
+        Call_Asm_Stack3 guTexDownloadMipMap_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure guTexDownloadMipMap_asm2c
+
+func guTexAllocateMemory_c tmu, odd_even_mask, width, height, format, mm_mode, smallest_lod, largest_lod, aspect, s_clamp_mode, t_clamp_mode, minfilter_mode, magfilter_mode, lod_bias, trilinear
+
+proc guTexAllocateMemory_asm2c public
+
+        Call_Asm_Stack15 guTexAllocateMemory_c
+
+        Call_Asm_Return 15
+
+endp ; end procedure guTexAllocateMemory_asm2c
+
+func grSstVRetraceOn_c
+
+proc grSstVRetraceOn_asm2c public
+
+        Call_Asm_Stack0 grSstVRetraceOn_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstVRetraceOn_asm2c
+
+func grBufferClear_c color, alpha, depth
+
+proc grBufferClear_asm2c public
+
+        Call_Asm_Stack3 grBufferClear_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grBufferClear_asm2c
+
+func grLfbUnlock_c type, buffer
+
+proc grLfbUnlock_asm2c public
+
+        Call_Asm_Stack2 grLfbUnlock_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grLfbUnlock_asm2c
+
+func grConstantColorValue_c value
+
+proc grConstantColorValue_asm2c public
+
+        Call_Asm_Stack1 grConstantColorValue_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grConstantColorValue_asm2c
+
+func guColorCombineFunction_c function
+
+proc guColorCombineFunction_asm2c public
+
+        Call_Asm_Stack1 guColorCombineFunction_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure guColorCombineFunction_asm2c
+
+func grAlphaBlendFunction_c rgb_sf, rgb_df, alpha_sf, alpha_df
+
+proc grAlphaBlendFunction_asm2c public
+
+        Call_Asm_Stack4 grAlphaBlendFunction_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure grAlphaBlendFunction_asm2c
+
+func guAlphaSource_c mode
+
+proc guAlphaSource_asm2c public
+
+        Call_Asm_Stack1 guAlphaSource_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure guAlphaSource_asm2c
+
+func grAADrawLine_c *v1, *v2
+
+proc grAADrawLine_asm2c public
+
+        Call_Asm_Stack2 grAADrawLine_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grAADrawLine_asm2c
+
+func guDrawTriangleWithClip_c *a, *b, *c
+
+proc guDrawTriangleWithClip_asm2c public
+
+        Call_Asm_Stack3 guDrawTriangleWithClip_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure guDrawTriangleWithClip_asm2c
+
+func guTexCombineFunction_c tmu, function
+
+proc guTexCombineFunction_asm2c public
+
+        Call_Asm_Stack2 guTexCombineFunction_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure guTexCombineFunction_asm2c
+
+func guTexSource_c mmid
+
+proc guTexSource_asm2c public
+
+        Call_Asm_Stack1 guTexSource_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure guTexSource_asm2c
+
+func grChromakeyValue_c value
+
+proc grChromakeyValue_asm2c public
+
+        Call_Asm_Stack1 grChromakeyValue_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grChromakeyValue_asm2c
+
+func grChromakeyMode_c mode
+
+proc grChromakeyMode_asm2c public
+
+        Call_Asm_Stack1 grChromakeyMode_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grChromakeyMode_asm2c
+
+func grCullMode_c mode
+
+proc grCullMode_asm2c public
+
+        Call_Asm_Stack1 grCullMode_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grCullMode_asm2c
+
+func grDepthBufferFunction_c function
+
+proc grDepthBufferFunction_asm2c public
+
+        Call_Asm_Stack1 grDepthBufferFunction_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDepthBufferFunction_asm2c
+
+func grDepthMask_c mask
+
+proc grDepthMask_asm2c public
+
+        Call_Asm_Stack1 grDepthMask_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDepthMask_asm2c
+
+func grDepthBufferMode_c mode
+
+proc grDepthBufferMode_asm2c public
+
+        Call_Asm_Stack1 grDepthBufferMode_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDepthBufferMode_asm2c
+
+func grRenderBuffer_c buffer
+
+proc grRenderBuffer_asm2c public
+
+        Call_Asm_Stack1 grRenderBuffer_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grRenderBuffer_asm2c
+
+func grGlideShutdown_c
+
+proc grGlideShutdown_asm2c public
+
+        Call_Asm_Stack0 grGlideShutdown_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grGlideShutdown_asm2c
+
+func grSstWinOpen_c hWnd, resolution, refresh, color_format, origin, nColBuffers, nAuxBuffers
+
+proc grSstWinOpen_asm2c public
+
+        Call_Asm_Stack7 grSstWinOpen_c
+
+        Call_Asm_Return 7
+
+endp ; end procedure grSstWinOpen_asm2c
+
+func grSstSelect_c which_sst
+
+proc grSstSelect_asm2c public
+
+        Call_Asm_Stack1 grSstSelect_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grSstSelect_asm2c
+
+func grSstQueryHardware_c *hwconfig
+
+proc grSstQueryHardware_asm2c public
+
+        Call_Asm_Stack1 grSstQueryHardware_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grSstQueryHardware_asm2c
+
+func grGlideInit_c
+
+proc grGlideInit_asm2c public
+
+        Call_Asm_Stack0 grGlideInit_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grGlideInit_asm2c
+
+func grSstWinClose_c
+
+proc grSstWinClose_asm2c public
+
+        Call_Asm_Stack0 grSstWinClose_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstWinClose_asm2c
+
+func grSstIdle_c
+
+proc grSstIdle_asm2c public
+
+        Call_Asm_Stack0 grSstIdle_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstIdle_asm2c
+
+func grTexDownloadTable_c tmu, type, *data
+
+proc grTexDownloadTable_asm2c public
+
+        Call_Asm_Stack3 grTexDownloadTable_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grTexDownloadTable_asm2c
+
+func grLfbLock_c type, buffer, writeMode, origin, pixelPipeline, *info
+
+proc grLfbLock_asm2c public
+
+        Call_Asm_Stack6 grLfbLock_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure grLfbLock_asm2c
+
+func grBufferSwap_c swap_interval
+
+proc grBufferSwap_asm2c public
+
+        Call_Asm_Stack1 grBufferSwap_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grBufferSwap_asm2c
+
+func grGlideSetState_c *state
+
+proc grGlideSetState_asm2c public
+
+        Call_Asm_Stack1 grGlideSetState_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grGlideSetState_asm2c
+
+func grGlideGetState_c *state
+
+proc grGlideGetState_asm2c public
+
+        Call_Asm_Stack1 grGlideGetState_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grGlideGetState_asm2c
+
+func grClipWindow_c minx, miny, maxx, maxy
+
+proc grClipWindow_asm2c public
+
+        Call_Asm_Stack4 grClipWindow_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure grClipWindow_asm2c
+
+func grAADrawPoint_c *p
+
+proc grAADrawPoint_asm2c public
+
+        Call_Asm_Stack1 grAADrawPoint_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grAADrawPoint_asm2c

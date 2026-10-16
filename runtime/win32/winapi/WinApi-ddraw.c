@@ -365,6 +365,8 @@ extern int sdl_versionnum;
 static struct IDirectDraw_c *winapi_dd_screen = NULL;
 /* the window of a released DirectDraw object, kept for the next one (IDirectDraw_Release) */
 static SDL_Window *dd_spare_window = NULL;
+/* the window of Winapi_ScreenOpenGL */
+static SDL_Window *dd_gl_window = NULL;
 /* window ID of the active DirectDraw window, for focus events */
 static uint32_t winapi_dd_window_id = 0;
 
@@ -389,6 +391,11 @@ void Winapi_DestroyDirectDrawWindow(void)
     {
         SDL_DestroyWindow(dd_spare_window);
         dd_spare_window = NULL;
+    }
+    if (dd_gl_window != NULL)
+    {
+        SDL_DestroyWindow(dd_gl_window);
+        dd_gl_window = NULL;
     }
     winapi_dd_window_id = 0;
 }
@@ -1779,4 +1786,54 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpTh
     /* a palette change shows at once on the screen */
     if (winapi_dd_screen != NULL) Present(winapi_dd_screen);
     return DD_OK;
+}
+
+
+/* The screen of a renderer that is not DirectDraw (Glide): the window, renderer
+ * and ARGB8888 texture of a DirectDraw display mode, held by an object the
+ * program never sees. */
+static struct IDirectDraw_c *dd_own_screen = NULL;
+
+SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
+{
+    if (dd_gl_window != NULL) return dd_gl_window;
+
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO))
+    {
+        eprintf("Error: SDL_InitSubSystem: Video: %s\n", SDL_GetError());
+        return NULL;
+    }
+
+    /* a window of the spare one's kind has no OpenGL */
+    if (dd_spare_window != NULL)
+    {
+        SDL_DestroyWindow(dd_spare_window);
+        dd_spare_window = NULL;
+    }
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    dd_gl_window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height, SDL_WINDOW_OPENGL | ((Display_Resizable && (Display_Mode == 0))?SDL_WINDOW_RESIZABLE:0) | ((Display_Mode == 1)?SDL_WINDOW_FULLSCREEN_DESKTOP:0) | ((Display_Mode == 2)?SDL_WINDOW_FULLSCREEN:0) | SDL_WINDOW_HIDDEN);
+    if (dd_gl_window == NULL)
+    {
+        eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
+        return NULL;
+    }
+
+    SDL_ShowWindow(dd_gl_window);
+    winapi_dd_window_id = SDL_GetWindowID(dd_gl_window);
+    Winapi_PostActivateApp(1);
+    return dd_gl_window;
+}
+
+void Winapi_ScreenCloseGL(void)
+{
+    if (dd_gl_window != NULL)
+    {
+        /* hidden, not destroyed, as in IDirectDraw_Release; Winapi_DestroyDirectDrawWindow
+         * and SDL_Quit take it down */
+        SDL_HideWindow(dd_gl_window);
+    }
 }

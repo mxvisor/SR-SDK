@@ -161,12 +161,19 @@ RUNTIME_DIRS = [RUNTIME_CORE, os.path.join(SDK_ROOT, 'runtime', PLATFORM)]
 WINAPI = PLATFORM == 'win32' and CFG.get('winapi', 'yes') != 'no'
 if WINAPI:
     RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi'))
+# runtime/win32/glide/ is Glide 2.x (glide2x.dll), drawn in the window of the
+# winapi layer's DirectDraw: for a game that says glide=yes in game.cfg.
+GLIDE = WINAPI and CFG.get('glide', 'no') == 'yes'
+if GLIDE:
+    RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'glide'))
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 # the runtime's llasm/ directories: includes, and (for a game without its own
 # game/llasm/SConscript) the .llasm and .c of its glue
 SDK_LLASM_DIRS = [os.path.join(RUNTIME_DIRS[1], 'llasm')]
 if WINAPI:
     SDK_LLASM_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi', 'llasm'))
+if GLIDE:
+    SDK_LLASM_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'glide', 'llasm'))
 SDK_LLASM_DIRS = [path for path in SDK_LLASM_DIRS if os.path.isdir(path)]
 LLASM_INC_DIRS = [LLASM_SRC_DIR] + SDK_LLASM_DIRS + [LLASM_SUPPORT]
 
@@ -306,6 +313,9 @@ else:
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
                  if lib.strip()])
+if GLIDE:
+    # Glide is drawn with OpenGL (runtime/win32/glide/glad.c loads it)
+    env.Append(LIBS=['opengl32' if device.endswith('windows') else 'GL'])
 
 for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)
@@ -405,6 +415,22 @@ def copy_if_newer(source, target):
     if directory and not os.path.isdir(directory):
         os.makedirs(directory)
     shutil.copy2(source, target)
+
+
+def disc_file(name):
+    """A file of the game's disc tree, made by tools/disc_tree.py, found
+    without regard to case: build/disc/<name>."""
+    disc = os.path.join(BUILD, 'disc')
+    if subprocess.call([sys.executable, '-I', os.path.join(SDK_ROOT, 'tools', 'disc_tree.py'), disc],
+                       cwd=ROOT) != 0:
+        raise Exception('stage 0: cannot make %s from game/portable.cfg' % disc)
+    path = disc
+    for part in name.split('/'):
+        entry = next((e for e in os.listdir(path) if e.lower() == part.lower()), None)
+        if entry is None:
+            raise Exception('stage 0: no %s in %s' % (name, disc))
+        path = os.path.join(path, entry)
+    return path
 
 
 def shell_quote(path):
