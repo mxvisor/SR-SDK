@@ -150,6 +150,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_NAME` | the game's name in the port's messages |
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
 | `GAME_CD_MARKER` | a directory on the CD that tells a copy of the disc from an installed game |
+| `GAME_DATA_MARKERS` | Win32 ports: file names, one of which the game directory holds (`"A.DAT", "B.BAT"`) |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
 The Win32 API layer (`runtime/win32/winapi/`) also takes, all optional:
@@ -193,7 +194,9 @@ runtime/win32/          what every port of a Windows original needs: platform.h,
                         llasm/ (asm-cpu.c, Game-asm.c)
 runtime/win32/winapi/   the Win32 API layer: kernel32, user32, gdi32, DirectDraw, DirectInput,
                         DirectSound, winmm, MCI, avifile, msvfw, the registry and the
-                        game's config file; winapi/llasm/ is its llasm glue
+                        game's config file; Game_runtime (the DOS/DPMI/MSCDEX services of
+                        the guest), Game_hires (enhanced 3D), Game_sound, Game_RuntimeGlue;
+                        winapi/llasm/ is its llasm glue
 skeleton/               a starting point for a new game repository -- to come
 ```
 
