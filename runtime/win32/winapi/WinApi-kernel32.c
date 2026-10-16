@@ -117,6 +117,7 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 
 
 #define HIGH_PRIORITY_CLASS 0x00000080
+#define REALTIME_PRIORITY_CLASS 0x00000100
 
 #define THREAD_PRIORITY_TIME_CRITICAL 15
 
@@ -233,6 +234,61 @@ static void redirect_d_drive(const char *src, char *dst)
     }
 #endif
     snprintf(dst, MAX_PATH, "%s%s", disc_dir, src + 3);
+}
+
+/* D: when the disc is an image, not a directory: its files are inside the
+ * image, so there is no host path for them */
+static int is_d_drive_image_path(const char *path)
+{
+    return is_d_drive_path(path) && Game_CdDiscDir()[0] == 0 && Game_CdPresent();
+}
+
+/* A file of the image, read-only, as a host FILE: a temporary copy, which
+ * ReadFile, SetFilePointer and the file mappings take like any other file */
+static FILE *open_d_drive_image_file(const char *path)
+{
+    game_file *source;
+    FILE *copy;
+    char buffer[16384];
+    size_t length;
+
+    source = Game_CdOpen(path + 3);
+    if (source == NULL) return NULL;
+
+#ifdef _WIN32
+    {
+        /* msvcrt's tmpfile() writes into the root of the drive; 'D' deletes
+         * the file when it is closed */
+        char directory[MAX_PATH], name[MAX_PATH];
+
+        copy = NULL;
+        if (GetTempPathA(sizeof(directory), directory) != 0 &&
+            GetTempFileNameA(directory, "cd", 0, name) != 0)
+        {
+            copy = fopen(name, "w+bD");
+        }
+    }
+#else
+    copy = tmpfile();
+#endif
+    if (copy == NULL)
+    {
+        game_fclose(source);
+        return NULL;
+    }
+
+    while ((length = game_fread(buffer, sizeof(buffer), source)) != 0)
+    {
+        if (fwrite(buffer, 1, length, copy) != length)
+        {
+            game_fclose(source);
+            fclose(copy);
+            return NULL;
+        }
+    }
+    game_fclose(source);
+    rewind(copy);
+    return copy;
 }
 
 /* the directory the game thinks it is in, "" for the process's own */
@@ -517,6 +573,9 @@ uint32_t CCALL CloseHandle_c(void *hObject)
             x86_free(hObject);
 
             return 1;
+        case HT_THREAD:
+        case HT_SEMAPHORE:
+            return Winapi_CloseObject((handle)hObject);
         case HT_PIPE:
 #define hPipe ((pipe_handle)hObject)
 
@@ -671,6 +730,35 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
 #endif
         Winapi_SetLastError(ERROR_NOT_SUPPORTED);
         return INVALID_HANDLE32_VALUE;
+    }
+
+    if (is_d_drive_image_path(lpFileName))
+    {
+        game_cd_entry entry;
+
+        if (Game_CdFind(lpFileName + 3, &entry) != 0 || entry.directory)
+        {
+            Winapi_SetLastError((dwDesiredAccess & GENERIC_WRITE) ? ERROR_ACCESS_DENIED : ERROR_FILE_NOT_FOUND);
+            return INVALID_HANDLE32_VALUE;
+        }
+        if ((dwDesiredAccess & GENERIC_WRITE) || dwCreationDistribution == CREATE_NEW ||
+            dwCreationDistribution == CREATE_ALWAYS || dwCreationDistribution == TRUNCATE_EXISTING)
+        {
+            Winapi_SetLastError(ERROR_ACCESS_DENIED);
+            return INVALID_HANDLE32_VALUE;
+        }
+
+        ret = Winapi_AllocHandle();
+        if (ret == NULL) return NULL;
+        ret->handle_type = HT_FILE;
+        ret->fh.f = open_d_drive_image_file(lpFileName);
+        if (ret->fh.f == NULL)
+        {
+            x86_free(ret);
+            Winapi_SetLastError(ERROR_ACCESS_DENIED);
+            return INVALID_HANDLE32_VALUE;
+        }
+        return ret;
     }
 
     resolve_path(lpFileName, resolved_path);
@@ -2125,11 +2213,13 @@ uint32_t CCALL SetPriorityClass_c(void *hProcess, uint32_t fdwPriority)
     if (hProcess == PSEUDO_HANDLE_CURRENT_PROCESS)
     {
         // pseudo handle
-        if (fdwPriority == HIGH_PRIORITY_CLASS)
+        if ((fdwPriority == HIGH_PRIORITY_CLASS) || (fdwPriority == REALTIME_PRIORITY_CLASS))
         {
             // function is failing
             return 0;
         }
+        // the priority is left as it is
+        return 1;
     }
 
     eprintf("Unsupported method: %s\n", "SetPriorityClass");
@@ -2141,6 +2231,11 @@ uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority)
 #ifdef DEBUG_KERNEL32
     eprintf("SetThreadPriority: 0x%" PRIxPTR ", %i\n", (uintptr_t) hThread, nPriority);
 #endif
+
+    if ((hThread != NULL) && (hThread != PSEUDO_HANDLE_CURRENT_THREAD) && (((handle)hThread)->handle_type == HT_THREAD))
+    {
+        return Winapi_SetThreadPriority((handle)hThread, nPriority);
+    }
 
     if (hThread == PSEUDO_HANDLE_CURRENT_THREAD)
     {
@@ -2154,6 +2249,7 @@ uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority)
             // function is failing
             return 0;
         }
+        return Winapi_SetThreadPriority(NULL, nPriority);
 #endif
     }
 
@@ -2166,6 +2262,8 @@ void CCALL Sleep_c(uint32_t cMilliseconds)
 #ifdef DEBUG_KERNEL32
     eprintf("Sleep: %i\n", cMilliseconds);
 #endif
+
+    Winapi_ThreadCheckpoint();
 
 #ifdef _WIN32
     Sleep(cMilliseconds);

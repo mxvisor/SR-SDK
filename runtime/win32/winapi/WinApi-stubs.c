@@ -245,24 +245,6 @@ uint32_t CCALL CreateRectRgn_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a
 }
 #endif
 
-#ifdef STUB_CreateSemaphoreA
-uint32_t CCALL CreateSemaphoreA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("CreateSemaphoreA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_CreateThread
-uint32_t CCALL CreateThread_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
-    GAME_STUBLOG("CreateThread");
-    return 0;
-}
-#endif
-
 #ifdef STUB_CreateWindowExA
 uint32_t CCALL CreateWindowExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9, uint32_t a10, uint32_t a11)
 {
@@ -832,15 +814,6 @@ uint32_t CCALL GetOEMCP_c(void)
 }
 #endif
 
-#ifdef STUB_GetPriorityClass
-uint32_t CCALL GetPriorityClass_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetPriorityClass");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetProcAddress
 uint32_t CCALL GetProcAddress_c(uint32_t a0, uint32_t a1)
 {
@@ -945,15 +918,6 @@ uint32_t CCALL GetSystemTime_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("GetSystemTime");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetThreadPriority
-uint32_t CCALL GetThreadPriority_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetThreadPriority");
     return 0;
 }
 #endif
@@ -1577,15 +1541,6 @@ uint32_t CCALL ReleaseDC_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_ReleaseSemaphore
-uint32_t CCALL ReleaseSemaphore_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("ReleaseSemaphore");
-    return 0;
-}
-#endif
-
 #ifdef STUB_ReplyMessage
 uint32_t CCALL ReplyMessage_c(uint32_t a0)
 {
@@ -1600,15 +1555,6 @@ uint32_t CCALL ResetEvent_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("ResetEvent");
-    return 0;
-}
-#endif
-
-#ifdef STUB_ResumeThread
-uint32_t CCALL ResumeThread_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("ResumeThread");
     return 0;
 }
 #endif
@@ -1847,15 +1793,6 @@ uint32_t CCALL Sleep_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_SuspendThread
-uint32_t CCALL SuspendThread_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("SuspendThread");
-    return 0;
-}
-#endif
-
 #ifdef STUB_SystemParametersInfoA
 uint32_t CCALL SystemParametersInfoA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
@@ -1951,15 +1888,6 @@ uint32_t CCALL WaitForInputIdle_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("WaitForInputIdle");
-    return 0;
-}
-#endif
-
-#ifdef STUB_WaitForSingleObject
-uint32_t CCALL WaitForSingleObject_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("WaitForSingleObject");
     return 0;
 }
 #endif

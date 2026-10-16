@@ -173,6 +173,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
 | `GAME_CD_MARKER` | a directory on the CD that tells a copy of the disc from an installed game |
 | `GAME_DATA_MARKERS` | Win32 ports: file names, one of which the game directory holds (`"A.DAT", "B.BAT"`) |
+| `GAME_DATA_SUBDIR` | Win32 ports, optional: the directory of a copy of the disc that is the game directory (`"DATA"`), so `<PREFIX>_DATA_DIR` may name the disc |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
 The Win32 API layer (`runtime/win32/winapi/`) also takes, all optional:

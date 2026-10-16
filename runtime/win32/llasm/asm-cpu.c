@@ -28,9 +28,17 @@
 #include "llasm_cpu.h"
 #include <stdlib.h>
 
-static _cpu *global_cpu_ptr = NULL;
-static void *global_cpu_block = NULL;
-static void *global_stack_block = NULL;
+#if defined(__cplusplus)
+#define THREAD_LOCAL thread_local
+#else
+#define THREAD_LOCAL _Thread_local
+#endif
+
+/* one CPU and guest stack per host thread: a guest thread (WinApi-thread.c)
+ * runs on its own registers */
+static THREAD_LOCAL _cpu *thread_cpu_ptr = NULL;
+static THREAD_LOCAL void *thread_cpu_block = NULL;
+static THREAD_LOCAL void *thread_stack_block = NULL;
 
 EXTERNCVAR uint32_t X86_InterruptFlag;
 EXTERNCVAR uint8_t stack_start;
@@ -45,21 +53,21 @@ EXTERNC _cpu *x86_initialize_cpu(void)
     void *cpu_block;
     void *stack_block;
 
-    cpu = global_cpu_ptr;
+    cpu = thread_cpu_ptr;
     if (cpu != NULL) return cpu;
 
     cpu_block = x86_malloc(4088);
     if (cpu_block == NULL) exit(2);
 
     cpu = (_cpu *)((2048 + (uintptr_t)cpu_block) & ~(uintptr_t)127);
-    global_cpu_block = cpu_block;
+    thread_cpu_block = cpu_block;
 
     /* The guest stack lives in its own 1 MB guest allocation: pointing
      * stack_top at a small host global (as SR's template did) makes the
      * stack grow down through the host binary's .data/.got. */
     stack_block = x86_malloc(1024 * 1024 - 8);
     if (stack_block == NULL) exit(2);
-    global_stack_block = stack_block;
+    thread_stack_block = stack_block;
 
     cpu->stack_bottom = stack_block;
     cpu->stack_top = (void *)(1024 * 1020 + (uintptr_t)stack_block);
@@ -78,7 +86,7 @@ EXTERNC _cpu *x86_initialize_cpu(void)
     eflags = 0x3202;
     X86_InterruptFlag = 1;
 
-    global_cpu_ptr = cpu;
+    thread_cpu_ptr = cpu;
     return cpu;
 }
 
@@ -87,24 +95,24 @@ EXTERNC void x86_deinitialize_cpu(void)
     _cpu *cpu;
     void *cpu_block;
 
-    cpu = global_cpu_ptr;
+    cpu = thread_cpu_ptr;
     if (cpu == NULL) return;
 
-    if (global_cpu_block != NULL)
+    if (thread_cpu_block != NULL)
     {
-        cpu_block = global_cpu_block;
-        global_cpu_block = NULL;
+        cpu_block = thread_cpu_block;
+        thread_cpu_block = NULL;
         x86_free(cpu_block);
     }
 
-    if (global_stack_block != NULL)
+    if (thread_stack_block != NULL)
     {
-        x86_free(global_stack_block);
-        global_stack_block = NULL;
+        x86_free(thread_stack_block);
+        thread_stack_block = NULL;
     }
 
     X86_InterruptFlag = 0;
 
-    global_cpu_ptr = NULL;
+    thread_cpu_ptr = NULL;
 }
 

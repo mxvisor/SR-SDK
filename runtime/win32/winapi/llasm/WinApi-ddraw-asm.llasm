@@ -88,6 +88,10 @@ func IDirectDrawSurface_Unlock_c *lpThis, *param1
 func IDirectDrawSurface_UpdateOverlay_c *lpThis, *param1, *param2, *param3, param4, *param5
 func IDirectDrawSurface_UpdateOverlayDisplay_c *lpThis, param1
 func IDirectDrawSurface_UpdateOverlayZOrder_c *lpThis, param1, *param2
+func IDirectDrawSurface_GetDDInterface_c *lpThis, *param1
+func IDirectDrawSurface_PageLock_c *lpThis, param1
+func IDirectDrawSurface_PageUnlock_c *lpThis, param1
+func IDirectDrawSurface_SetSurfaceDesc_c *lpThis, *param1, param2
 
 func IDirectDrawPalette_QueryInterface_c *lpThis, *riid, *ppvObj
 func IDirectDrawPalette_AddRef_c *lpThis
@@ -961,6 +965,58 @@ proc IDirectDrawSurface_UpdateOverlayZOrder_asm2c public
 
 endp ; end procedure IDirectDrawSurface_UpdateOverlayZOrder_asm2c
 
+proc IDirectDrawSurface_GetDDInterface_asm2c public
+
+; [esp + 2*4] = LPVOID FAR *lplpDD
+; [esp +   4] = struct IDirectDrawSurface *lpThis
+; [esp      ] = return address
+
+        Call_Asm_Stack2 IDirectDrawSurface_GetDDInterface_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectDrawSurface_GetDDInterface_asm2c
+
+
+proc IDirectDrawSurface_PageLock_asm2c public
+
+; [esp + 2*4] = DWORD dwFlags
+; [esp +   4] = struct IDirectDrawSurface *lpThis
+; [esp      ] = return address
+
+        Call_Asm_Stack2 IDirectDrawSurface_PageLock_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectDrawSurface_PageLock_asm2c
+
+
+proc IDirectDrawSurface_PageUnlock_asm2c public
+
+; [esp + 2*4] = DWORD dwFlags
+; [esp +   4] = struct IDirectDrawSurface *lpThis
+; [esp      ] = return address
+
+        Call_Asm_Stack2 IDirectDrawSurface_PageUnlock_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectDrawSurface_PageUnlock_asm2c
+
+
+proc IDirectDrawSurface_SetSurfaceDesc_asm2c public
+
+; [esp + 3*4] = DWORD dwFlags
+; [esp + 2*4] = LPDDSURFACEDESC lpDDSD
+; [esp +   4] = struct IDirectDrawSurface *lpThis
+; [esp      ] = return address
+
+        Call_Asm_Stack3 IDirectDrawSurface_SetSurfaceDesc_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectDrawSurface_SetSurfaceDesc_asm2c
+
 
 
 proc IDirectDrawPalette_QueryInterface_asm2c public
@@ -1220,6 +1276,12 @@ daddr IDirectDrawSurface_Unlock_asm2c
 daddr IDirectDrawSurface_UpdateOverlay_asm2c
 daddr IDirectDrawSurface_UpdateOverlayDisplay_asm2c
 daddr IDirectDrawSurface_UpdateOverlayZOrder_asm2c
+; IDirectDrawSurface2
+daddr IDirectDrawSurface_GetDDInterface_asm2c
+daddr IDirectDrawSurface_PageLock_asm2c
+daddr IDirectDrawSurface_PageUnlock_asm2c
+; IDirectDrawSurface3
+daddr IDirectDrawSurface_SetSurfaceDesc_asm2c
 
 dlabel IDirectDrawClipperVtbl_asm2c global
 daddr IDirectDrawClipper_QueryInterface_asm2c

@@ -107,6 +107,10 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
 uint32_t CCALL IDirectDrawSurface_UpdateOverlay_c(struct IDirectDrawSurface_c *lpThis, void * param1, struct IDirectDrawSurface_c * param2, void * param3, uint32_t param4, void * param5);
 uint32_t CCALL IDirectDrawSurface_UpdateOverlayDisplay_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1);
 uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, struct IDirectDrawSurface_c * param2);
+uint32_t CCALL IDirectDrawSurface_GetDDInterface_c(struct IDirectDrawSurface_c *lpThis, PTR32(void)* lplpDD);
+uint32_t CCALL IDirectDrawSurface_PageLock_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags);
+uint32_t CCALL IDirectDrawSurface_PageUnlock_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags);
+uint32_t CCALL IDirectDrawSurface_SetSurfaceDesc_c(struct IDirectDrawSurface_c *lpThis, struct _ddsurfacedesc *lpDDSD, uint32_t dwFlags);
 
 uint32_t CCALL IDirectDrawClipper_QueryInterface_c(struct IDirectDrawClipper_c *lpThis, void * riid, PTR32(void)* ppvObj);
 uint32_t CCALL IDirectDrawClipper_AddRef_c(struct IDirectDrawClipper_c *lpThis);

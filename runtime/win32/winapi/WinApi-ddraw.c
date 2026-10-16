@@ -1203,8 +1203,8 @@ uint32_t CCALL IDirectDrawSurface_QueryInterface_c(struct IDirectDrawSurface_c *
         ((memcmp(riid, IID_IDirectDrawSurface, 16) == 0) || (memcmp(riid, IID_IDirectDrawSurface2, 16) == 0) ||
          (memcmp(riid, IID_IDirectDrawSurface3, 16) == 0)))
     {
-        /* the later interfaces only add PageLock, PageUnlock, GetDDInterface and SetSurfaceDesc,
-         * which the vtable lacks: enough for a program that asks which DirectX it runs on */
+        /* the later interfaces only add GetDDInterface, PageLock, PageUnlock (2) and
+         * SetSurfaceDesc (3) at the end of the vtable: one object serves all three */
         lpThis->RefCount++;
         *ppvObj = (void *)lpThis;
         return DD_OK;
@@ -1643,6 +1643,33 @@ uint32_t CCALL IDirectDrawSurface_UpdateOverlayDisplay_c(struct IDirectDrawSurfa
 
 uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, struct IDirectDrawSurface_c * param2)
 {
+    return DDERR_UNSUPPORTED;
+}
+
+uint32_t CCALL IDirectDrawSurface_GetDDInterface_c(struct IDirectDrawSurface_c *lpThis, PTR32(void)* lplpDD)
+{
+    if ((lpThis == NULL) || (lplpDD == NULL)) return DDERR_INVALIDPARAMS;
+    IDirectDraw_AddRef_c(lpThis->dd);
+    *lplpDD = (void *)lpThis->dd;
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawSurface_PageLock_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags)
+{
+    /* the pixels are host memory, always present */
+    (void)dwFlags;
+    return (lpThis != NULL) ? DD_OK : DDERR_INVALIDPARAMS;
+}
+
+uint32_t CCALL IDirectDrawSurface_PageUnlock_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags)
+{
+    (void)dwFlags;
+    return (lpThis != NULL) ? DD_OK : DDERR_INVALIDPARAMS;
+}
+
+uint32_t CCALL IDirectDrawSurface_SetSurfaceDesc_c(struct IDirectDrawSurface_c *lpThis, struct _ddsurfacedesc *lpDDSD, uint32_t dwFlags)
+{
+    (void)lpThis; (void)lpDDSD; (void)dwFlags;
     return DDERR_UNSUPPORTED;
 }
 

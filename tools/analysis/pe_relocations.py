@@ -27,7 +27,9 @@
 #
 # --strict-code: an immediate in code (not a memory operand: tables of bytes and of
 # addresses lie in code) whose value points into the middle of an instruction of the linear
-# disassembly is not taken for an address (a pushed flag set that falls in the image).  Without it every in-image constant seen in the disassembly is a relocation.
+# disassembly is not taken for an address (a pushed flag set that falls in the image),
+# unless it is 4-aligned behind a padding byte (nop, int3): there a function begins that the
+# sweep, run off course by data before the padding, went past.  Without it every in-image constant seen in the disassembly is a relocation.
 #
 # A jump table inside a code section (jmp [reg*4 + table]) is not instructions:
 # its entries are added while they point at the start of an instruction, or near the
@@ -42,10 +44,23 @@
 # --code NAME: the data section NAME holds machine code as well (code_sections.sci of
 # SRW): it is disassembled like a code section, not scanned for dwords. Repeatable.
 #
-# Usage: pe_relocations.py [--no-data] [--strict-code] [--unaligned-runs] [--code NAME]... <pe.exe> [out.csv]
+# --sci DIR also writes what SRW needs besides the csv when the code holds tables, into DIR:
+#   fixup_interpret_as_code.sci          targets in code of rows in code that SRW takes for
+#       code only when told (SR_basic.c): an immediate (push offset Func), a jump table entry,
+#       a pointer in undecoded bytes -- when it is the start of an instruction and what
+#       follows reads as code (CODE_PROBE instructions up to a jump, none of them 00 00)
+#   fixup_do_not_interpret_as_code.sci   data in code: tables read through a memory operand
+#       (mov dl, [edi+tbl]; jmp [reg*4+tbl]) and immediates that fail the probe (a structure
+#       of a static library, push offset c_dfDIKeyboard): SRW must not decode them
+#   displaced_labels.sci                 the base of a table indexed from 1, which lies inside
+#       the instruction before the table: SRW names it by the label at the end of that
+#       instruction minus the distance (loc_X,D: loc_X is loc_<X+D>-D)
+#
+# Usage: pe_relocations.py [--no-data] [--strict-code] [--unaligned-runs] [--code NAME]... [--sci DIR] <pe.exe> [out.csv]
 
 from __future__ import annotations
 
+import os
 import struct
 import sys
 
@@ -111,6 +126,8 @@ TABLE_REACH = 0x400
 
 # how far apart two neighbouring pointers of a table that reads as text may be
 PTR_NEAR = 0x18000
+# how many instructions after an immediate's target must read as code
+CODE_PROBE = 8
 # a run of unaligned pointers: at least RUN_MIN records, RUN_STRIDE_MAX bytes apart at most
 RUN_MIN = 4
 RUN_STRIDE_MAX = 0x100
@@ -120,7 +137,7 @@ def find_relocations_in_sec(
     data: bytes, imgbase: int, imagesize: int,
     sec_va: int, sec_rsz: int, sec_rp: int,
     sec_ranges: list, secs: list, seen: set, rows: list, starts: set, tables: set,
-    immediates: set,
+    immediates: set, memops: set, sizes: dict, raws: set,
 ) -> None:
     raw = data[sec_rp : sec_rp + sec_rsz]
     if len(raw) == 0:
@@ -147,6 +164,7 @@ def find_relocations_in_sec(
         if insn.id == 0:
             continue
         starts.add(insn.address)
+        sizes[insn.address] = insn.size
         for m in re.finditer(r"\*4 \+ (0x[0-9a-f]+)\]", f"{insn.mnemonic} {insn.op_str}"):
             tables.add(int(m.group(1), 16))
 
@@ -171,6 +189,8 @@ def find_relocations_in_sec(
             src = code_base + off
             if not re.search(r"\[[^\]]*" + val_str + r"\b", disasm_str):
                 immediates.add(src)
+            else:
+                memops.add(src)
             add_relocation(val, src, imgbase, seen, rows)
 
     # indirect jumps/calls through the import table that the sweep went past
@@ -219,6 +239,7 @@ def find_relocations_in_sec(
                         break
 
         if tgt_found:
+            raws.add(src)
             add_relocation(val, src, imgbase, seen, rows)
 
         off += 1
@@ -309,12 +330,70 @@ def find_unaligned_runs(
                 break
 
 
+def write_sci(sci_dir, rows, code_ranges, starts, sizes, immediates, memops, raws,
+              entries, from1, read):
+    def in_code(v):
+        return any(lo <= v < hi for lo, hi in code_ranges)
+    # the instruction of the linear sweep that holds an address (not at its start)
+    order = sorted(sizes)
+    import bisect
+    def inside(v):
+        i = bisect.bisect_right(order, v) - 1
+        if i >= 0 and order[i] < v < order[i] + sizes[order[i]]:
+            return order[i]
+        return None
+    md = Cs(CS_ARCH_X86, CS_MODE_32)
+    def reads_as_code(v):
+        n = 0
+        for insn in md.disasm(read(v, 16 * CODE_PROBE), v):
+            if insn.bytes[:2] == b"\0\0":    # add [eax], al: zeroes
+                return False
+            n += 1
+            if insn.mnemonic.startswith(("j", "ret", "call")) or n == CODE_PROBE:
+                return True
+        return False
+    code, nocode, displaced = set(), set(), {}
+    for row in rows:
+        src, val = (int(x, 16) for x in row.split(",")[:2])
+        if not (in_code(src) and in_code(val)):
+            continue
+        # a table entry first: the sweep may have read the table as instructions
+        if src in entries:
+            code.add(val)
+        elif src in memops:
+            insn = inside(val)
+            if val in from1 and insn is not None:
+                displaced[val] = insn + sizes[insn] - val
+            else:
+                nocode.add(val)
+        elif src in immediates or src in raws:
+            if val in starts and reads_as_code(val):
+                code.add(val)
+            elif src in immediates:
+                nocode.add(val)
+    # a table read with a negative index ends where code begins (memcpy of MSVC)
+    nocode -= code
+    os.makedirs(sci_dir, exist_ok=True)
+    def write(name, lines):
+        with open(os.path.join(sci_dir, name), "w", encoding="ascii", newline="\n") as f:
+            f.writelines(line + "\n" for line in lines)
+        print(f"wrote {len(lines)} lines to {os.path.join(sci_dir, name)}", file=sys.stderr)
+    write("fixup_interpret_as_code.sci", [f"loc_{v:X}" for v in sorted(code)])
+    write("fixup_do_not_interpret_as_code.sci", [f"loc_{v:X}" for v in sorted(nocode)])
+    write("displaced_labels.sci", [f"loc_{v:X},{d}" for v, d in sorted(displaced.items())])
+
+
 def main() -> int:
     argv = sys.argv[1:]
     code_names = set()
     while "--code" in argv:
         i = argv.index("--code")
         code_names.add(argv[i + 1])
+        del argv[i:i + 2]
+    sci_dir = None
+    if "--sci" in argv:
+        i = argv.index("--sci")
+        sci_dir = argv[i + 1]
         del argv[i:i + 2]
     args = [a for a in argv if a not in ("--no-data", "--strict-code", "--unaligned-runs")]
     unaligned = "--unaligned-runs" in argv
@@ -340,6 +419,11 @@ def main() -> int:
     starts = set()
     tables = set()
     immediates = set()
+    memops = set()
+    sizes = {}
+    raws = set()
+    entries = set()     # sources of jump table entries
+    from1 = set()       # bases of tables indexed from 1
     code_ranges = []
     for name, va, vs, rsz, rp, chars in secs:
         if rsz == 0 or name in (".rsrc", ".reloc") or not is_code(name, chars):
@@ -347,8 +431,20 @@ def main() -> int:
         code_ranges.append((imgbase + va, imgbase + va + max(vs, rsz)))
         find_relocations_in_sec(
             data, imgbase, imagesize, va, rsz, rp,
-            sec_ranges, secs, seen, rows, starts, tables, immediates,
+            sec_ranges, secs, seen, rows, starts, tables, immediates, memops, sizes, raws,
         )
+    # a function behind padding that the linear sweep went past
+    def file_byte(addr):
+        for _n, va, _vs, rsz, rp, _c in secs:
+            if imgbase + va <= addr < imgbase + va + rsz:
+                return data[rp + addr - imgbase - va]
+        return None
+    for row in rows:
+        src, val = (int(x, 16) for x in row.split(",")[:2])
+        if (src in immediates and val not in starts and val & 3 == 0
+                and any(lo <= val < hi for lo, hi in code_ranges)
+                and file_byte(val - 1) in (0x90, 0xCC)):
+            starts.add(val)
     # a constant that points into the middle of an instruction is not an address
     def keep(row):
         src, val = (int(x, 16) for x in row.split(",")[:2])
@@ -374,12 +470,14 @@ def main() -> int:
                 # a table indexed from 1 begins one entry after its label
                 if (addr + 8 <= imgbase + sec_va + sec_rsz and entry(addr) is None
                         and entry(addr + 4) is not None):
+                    from1.add(base)
                     addr += 4
                 while addr + 4 <= imgbase + sec_va + sec_rsz:
                     val = entry(addr)
                     if val is None:
                         break
                     add_relocation(val, addr, imgbase, seen, rows)
+                    entries.add(addr)
                     addr += 4
     if scan_data:
         for name, va, vs, rsz, rp, chars in secs:
@@ -392,6 +490,15 @@ def main() -> int:
                                     sec_ranges, code_ranges, starts, seen, rows)
 
     rows.sort(key=lambda s: int(s.split(",", 1)[0], 16))
+    if sci_dir is not None:
+        def read(addr, n):
+            for _n, va, _vs, rsz, rp, _c in secs:
+                if imgbase + va <= addr < imgbase + va + rsz:
+                    off = rp + addr - imgbase - va
+                    return data[off:min(off + n, rp + rsz)]
+            return b""
+        write_sci(sci_dir, rows, code_ranges, starts, sizes, immediates, memops, raws,
+                  entries, from1, read)
     with open(out, "w", encoding="ascii", newline="\n") as f:
         f.write("\n".join(rows))
         if rows:

@@ -26,6 +26,8 @@
 #if !defined(_WINAPI_H_INCLUDED_)
 #define _WINAPI_H_INCLUDED_
 
+#include <stdint.h>
+
 #ifdef WINAPI_DEFINE_VARIABLES
 #define WINAPI_STORAGE
 #else
@@ -79,7 +81,9 @@ typedef enum _handle_types_ {
     HT_FILE,
     HT_SEARCH,
     HT_PIPE,
-    HT_EVENT
+    HT_EVENT,
+    HT_THREAD,
+    HT_SEMAPHORE
 } handle_types;
 
 
@@ -104,16 +108,37 @@ typedef struct {
     volatile int signaled;
 } T_event_handle, *event_handle;
 
+/* a thread or a semaphore (WinApi-thread.c) */
+typedef struct {
+    handle_types handle_type;
+    void *obj;
+} T_object_handle, *object_handle;
+
 typedef union {
     handle_types handle_type;
     T_file_handle fh;
     T_search_handle sh;
     T_pipe_handle pph;
     T_event_handle eh;
+    T_object_handle oh;
 } T_handle, *handle;
 
 
 handle Winapi_AllocHandle(void);
+
+/* WinApi-thread.c: guest threads and semaphores */
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* CloseHandle of a thread or a semaphore */
+uint32_t Winapi_CloseObject(handle hObject);
+/* a suspended guest thread stops here: every wait and Sleep pass through it */
+void Winapi_ThreadCheckpoint(void);
+/* SetThreadPriority of a thread handle or of the current thread (pseudo handle: NULL) */
+uint32_t Winapi_SetThreadPriority(handle hThread, int32_t nPriority);
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif
