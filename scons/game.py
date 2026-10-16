@@ -75,6 +75,8 @@ MODULES = _keys(CFG, 'modules')
 VARIANTS = _keys(CFG, 'variants')
 DEVICES = _keys(CFG, 'devices')
 PROGRAM = CFG.get('program', '-'.join(MODULES).lower())
+# runtime .c files the game does not build, by file name (runtime_skip=Game_cdrom.c,...)
+RUNTIME_SKIP = set(_keys(CFG, 'runtime_skip')) if 'runtime_skip' in CFG else set()
 
 if len(MODULES) != 1:
     raise NotImplementedError(
@@ -159,9 +161,13 @@ WINAPI = PLATFORM == 'win32' and CFG.get('winapi', 'yes') != 'no'
 if WINAPI:
     RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi'))
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
-LLASM_INC_DIRS = [LLASM_SRC_DIR,
-                  os.path.join(RUNTIME_DIRS[1], 'llasm'),
-                  LLASM_SUPPORT]
+# the runtime's llasm/ directories: includes, and (for a game without its own
+# game/llasm/SConscript) the .llasm and .c of its glue
+SDK_LLASM_DIRS = [os.path.join(RUNTIME_DIRS[1], 'llasm')]
+if WINAPI:
+    SDK_LLASM_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi', 'llasm'))
+SDK_LLASM_DIRS = [path for path in SDK_LLASM_DIRS if os.path.isdir(path)]
+LLASM_INC_DIRS = [LLASM_SRC_DIR] + SDK_LLASM_DIRS + [LLASM_SUPPORT]
 
 # ------------------------------------------------------------------ env --
 
@@ -545,7 +551,8 @@ if want('obj'):
         for sub in ('', 'display', 'audio', 'input'):
             for source in sorted(glob.glob(os.path.join(runtime_dir, sub, '*.c'))):
                 name = os.path.join(sub, os.path.basename(source))
-                if not os.path.exists(os.path.join(ROOT, 'game', name)):
+                if (not os.path.exists(os.path.join(ROOT, 'game', name))
+                        and os.path.basename(source) not in RUNTIME_SKIP):
                     runtime_objs += env.Object(os.path.join(obj_runtime, name))
 
     # llasm-support: the C half of every llasm_X.llinc the game's llasm.llinc
@@ -569,9 +576,19 @@ if want('obj'):
     game_objs += game_dir('audio')
     game_objs += game_dir('input')
     game_objs += support_objs
-    game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
-                            exports='device env gen_dir llasm_tool llasm_deps '
-                                    'gen_src_dir gen_main llasm_inc_dirs')
+    if os.path.exists(os.path.join(ROOT, 'game', 'llasm', 'SConscript')):
+        game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
+                                exports='device env gen_dir llasm_tool llasm_deps '
+                                        'gen_src_dir gen_main llasm_inc_dirs')
+    else:
+        game_llasm_dir = os.path.join(obj_game, 'llasm')
+        sdk_llasm_dirs = SDK_LLASM_DIRS
+        sdk_root = SDK_ROOT
+        obj_runtime = os.path.join(obj_device, 'runtime')
+        game_objs += SConscript(os.path.join(SDK_ROOT, 'scons', 'llasm.SConscript'),
+                                exports='device env gen_dir llasm_tool llasm_deps '
+                                        'gen_src_dir gen_main llasm_inc_dirs game_llasm_dir '
+                                        'sdk_llasm_dirs sdk_root obj_runtime')
     defaults += game_objs
 
 if want('bin'):

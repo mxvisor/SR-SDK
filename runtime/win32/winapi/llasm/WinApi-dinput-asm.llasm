@@ -1,0 +1,275 @@
+;;
+;;  DirectInput (dinput.dll) COM objects: stdcall vtable bridges into WinApi-dinput.c.
+;;
+
+include llasm.llinc
+include Game-asm-calls.llinc
+
+func IDirectInput_QueryInterface_c a0, a1, a2
+proc IDirectInput_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirectInput_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInput_QueryInterface_asm2c
+
+func IDirectInput_AddRef_c a0
+proc IDirectInput_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirectInput_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInput_AddRef_asm2c
+
+func IDirectInput_Release_c a0
+proc IDirectInput_Release_asm2c public
+
+        Call_Asm_Stack1 IDirectInput_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInput_Release_asm2c
+
+func IDirectInput_CreateDevice_c a0, a1, a2, a3
+proc IDirectInput_CreateDevice_asm2c public
+
+        Call_Asm_Stack4 IDirectInput_CreateDevice_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInput_CreateDevice_asm2c
+
+func IDirectInput_EnumDevices_c a0, a1, a2, a3, a4
+proc IDirectInput_EnumDevices_asm2c public
+
+        Call_Asm_Stack5 IDirectInput_EnumDevices_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectInput_EnumDevices_asm2c
+
+func IDirectInput_GetDeviceStatus_c a0, a1
+proc IDirectInput_GetDeviceStatus_asm2c public
+
+        Call_Asm_Stack2 IDirectInput_GetDeviceStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInput_GetDeviceStatus_asm2c
+
+func IDirectInput_RunControlPanel_c a0, a1, a2
+proc IDirectInput_RunControlPanel_asm2c public
+
+        Call_Asm_Stack3 IDirectInput_RunControlPanel_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInput_RunControlPanel_asm2c
+
+func IDirectInput_Initialize_c a0, a1, a2
+proc IDirectInput_Initialize_asm2c public
+
+        Call_Asm_Stack3 IDirectInput_Initialize_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInput_Initialize_asm2c
+
+func IDirectInputDevice_QueryInterface_c a0, a1, a2
+proc IDirectInputDevice_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_QueryInterface_asm2c
+
+func IDirectInputDevice_AddRef_c a0
+proc IDirectInputDevice_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirectInputDevice_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputDevice_AddRef_asm2c
+
+func IDirectInputDevice_Release_c a0
+proc IDirectInputDevice_Release_asm2c public
+
+        Call_Asm_Stack1 IDirectInputDevice_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputDevice_Release_asm2c
+
+func IDirectInputDevice_GetCapabilities_c a0, a1
+proc IDirectInputDevice_GetCapabilities_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice_GetCapabilities_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice_GetCapabilities_asm2c
+
+func IDirectInputDevice_EnumObjects_c a0, a1, a2, a3
+proc IDirectInputDevice_EnumObjects_asm2c public
+
+        Call_Asm_Stack4 IDirectInputDevice_EnumObjects_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputDevice_EnumObjects_asm2c
+
+func IDirectInputDevice_GetProperty_c a0, a1, a2
+proc IDirectInputDevice_GetProperty_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_GetProperty_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_GetProperty_asm2c
+
+func IDirectInputDevice_SetProperty_c a0, a1, a2
+proc IDirectInputDevice_SetProperty_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_SetProperty_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_SetProperty_asm2c
+
+func IDirectInputDevice_Acquire_c a0
+proc IDirectInputDevice_Acquire_asm2c public
+
+        Call_Asm_Stack1 IDirectInputDevice_Acquire_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputDevice_Acquire_asm2c
+
+func IDirectInputDevice_Unacquire_c a0
+proc IDirectInputDevice_Unacquire_asm2c public
+
+        Call_Asm_Stack1 IDirectInputDevice_Unacquire_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputDevice_Unacquire_asm2c
+
+func IDirectInputDevice_GetDeviceState_c a0, a1, a2
+proc IDirectInputDevice_GetDeviceState_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_GetDeviceState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_GetDeviceState_asm2c
+
+func IDirectInputDevice_GetDeviceData_c a0, a1, a2, a3, a4
+proc IDirectInputDevice_GetDeviceData_asm2c public
+
+        Call_Asm_Stack5 IDirectInputDevice_GetDeviceData_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectInputDevice_GetDeviceData_asm2c
+
+func IDirectInputDevice_SetDataFormat_c a0, a1
+proc IDirectInputDevice_SetDataFormat_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice_SetDataFormat_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice_SetDataFormat_asm2c
+
+func IDirectInputDevice_SetEventNotification_c a0, a1
+proc IDirectInputDevice_SetEventNotification_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice_SetEventNotification_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice_SetEventNotification_asm2c
+
+func IDirectInputDevice_SetCooperativeLevel_c a0, a1, a2
+proc IDirectInputDevice_SetCooperativeLevel_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_SetCooperativeLevel_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_SetCooperativeLevel_asm2c
+
+func IDirectInputDevice_GetObjectInfo_c a0, a1, a2, a3
+proc IDirectInputDevice_GetObjectInfo_asm2c public
+
+        Call_Asm_Stack4 IDirectInputDevice_GetObjectInfo_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputDevice_GetObjectInfo_asm2c
+
+func IDirectInputDevice_GetDeviceInfo_c a0, a1
+proc IDirectInputDevice_GetDeviceInfo_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice_GetDeviceInfo_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice_GetDeviceInfo_asm2c
+
+func IDirectInputDevice_RunControlPanel_c a0, a1, a2
+proc IDirectInputDevice_RunControlPanel_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice_RunControlPanel_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice_RunControlPanel_asm2c
+
+func IDirectInputDevice_Initialize_c a0, a1, a2, a3
+proc IDirectInputDevice_Initialize_asm2c public
+
+        Call_Asm_Stack4 IDirectInputDevice_Initialize_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputDevice_Initialize_asm2c
+
+
+datasegment dinput_data constant
+
+dlabel IDirectInputVtbl_asm2c global
+daddr IDirectInput_QueryInterface_asm2c
+daddr IDirectInput_AddRef_asm2c
+daddr IDirectInput_Release_asm2c
+daddr IDirectInput_CreateDevice_asm2c
+daddr IDirectInput_EnumDevices_asm2c
+daddr IDirectInput_GetDeviceStatus_asm2c
+daddr IDirectInput_RunControlPanel_asm2c
+daddr IDirectInput_Initialize_asm2c
+
+dlabel IDirectInputDeviceVtbl_asm2c global
+daddr IDirectInputDevice_QueryInterface_asm2c
+daddr IDirectInputDevice_AddRef_asm2c
+daddr IDirectInputDevice_Release_asm2c
+daddr IDirectInputDevice_GetCapabilities_asm2c
+daddr IDirectInputDevice_EnumObjects_asm2c
+daddr IDirectInputDevice_GetProperty_asm2c
+daddr IDirectInputDevice_SetProperty_asm2c
+daddr IDirectInputDevice_Acquire_asm2c
+daddr IDirectInputDevice_Unacquire_asm2c
+daddr IDirectInputDevice_GetDeviceState_asm2c
+daddr IDirectInputDevice_GetDeviceData_asm2c
+daddr IDirectInputDevice_SetDataFormat_asm2c
+daddr IDirectInputDevice_SetEventNotification_asm2c
+daddr IDirectInputDevice_SetCooperativeLevel_asm2c
+daddr IDirectInputDevice_GetObjectInfo_asm2c
+daddr IDirectInputDevice_GetDeviceInfo_asm2c
+daddr IDirectInputDevice_RunControlPanel_asm2c
+daddr IDirectInputDevice_Initialize_asm2c
+
+endd
