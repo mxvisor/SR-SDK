@@ -13,15 +13,29 @@
 #
 # For undecodable regions (SKIPDATA), fall back to raw scanning.
 #
+# Initialized data sections (.data, .rdata, ...) are scanned for dwords: a
+# 4-aligned dword that points into the image is taken as a pointer (tables of
+# pointers, vtables, jump tables).  A constant that looks like an address is
+# a false positive.  A pointer into code must hit the start of an instruction
+# of the linear disassembly.  --no-data leaves the data sections out.
+#
 # Output format matches SRW's relocations.csv (see SRW_loader.c LoadRelocations):
 #   0x<FixupAddress>,0x<TargetAddress>,[i]
 #
-# Usage: pe_relocations.py <pe.exe> [out.csv]
+# `jmp/call dword [IAT slot]` (FF 25 / FF 15) is also looked for in the raw bytes: a linear
+# sweep that lost its way (data between the import thunks) misses them.
+#
+# A jump table inside a code section (jmp [reg*4 + table]) is not instructions:
+# its entries are added while they point at the start of an instruction.
+#
+# Usage: pe_relocations.py [--no-data] <pe.exe> [out.csv]
 
 from __future__ import annotations
 
 import struct
 import sys
+
+import re
 
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_OPT_SYNTAX_INTEL
 
@@ -78,7 +92,7 @@ def add_relocation(val, src, imgbase, seen, rows):
 def find_relocations_in_sec(
     data: bytes, imgbase: int, imagesize: int,
     sec_va: int, sec_rsz: int, sec_rp: int,
-    sec_ranges: list, secs: list, seen: set, rows: list,
+    sec_ranges: list, secs: list, seen: set, rows: list, starts: set, tables: set,
 ) -> None:
     raw = data[sec_rp : sec_rp + sec_rsz]
     if len(raw) == 0:
@@ -104,6 +118,9 @@ def find_relocations_in_sec(
         # Skip SKIPDATA instructions
         if insn.id == 0:
             continue
+        starts.add(insn.address)
+        for m in re.finditer(r"\*4 \+ (0x[0-9a-f]+)\]", f"{insn.mnemonic} {insn.op_str}"):
+            tables.add(int(m.group(1), 16))
 
         disasm_str = f"{insn.mnemonic} {insn.op_str}"
 
@@ -122,6 +139,15 @@ def find_relocations_in_sec(
 
             src = code_base + off
             add_relocation(val, src, imgbase, seen, rows)
+
+    # indirect jumps/calls through the import table that the sweep went past
+    idata = [(imgbase + va2, imgbase + va2 + max(vs2, rsz2))
+             for name2, va2, vs2, rsz2, _rp2, _c2 in secs if name2 == ".idata"]
+    for off in range(0, limit - 5):
+        if raw[off] == 0xFF and raw[off + 1] in (0x25, 0x15):
+            val = struct.unpack_from("<I", raw, off + 2)[0]
+            if any(lo <= val < hi for lo, hi in idata):
+                add_relocation(val, code_base + off + 2, imgbase, seen, rows)
 
     # Scan undecoded regions (SKIPDATA / gaps)
     off = 0
@@ -165,12 +191,43 @@ def find_relocations_in_sec(
         off += 1
 
 
+def texty(word: int) -> bool:
+    """A dword of text: every byte is printable or NUL, and at least two are printable."""
+    bs = struct.pack("<I", word)
+    return all(b == 0 or 0x20 <= b < 0x7f for b in bs) and sum(1 for b in bs if b) >= 2
+
+
+def find_relocations_in_data(
+    data: bytes, imgbase: int, imagesize: int,
+    sec_va: int, sec_rsz: int, sec_rp: int,
+    sec_ranges: list, code_ranges: list, starts: set, seen: set, rows: list,
+) -> None:
+    raw = data[sec_rp : sec_rp + sec_rsz]
+    base = imgbase + sec_va
+    for off in range(0, len(raw) - 3, 4):
+        if (base + off) & 3:
+            continue
+        val = struct.unpack_from("<I", raw, off)[0]
+        if not is_in_image(val, imgbase, imagesize, sec_ranges):
+            continue
+        # a word of a string table ("REDE"): the words around it are text as well
+        if texty(val) and any(
+                0 <= o <= len(raw) - 4 and texty(struct.unpack_from("<I", raw, o)[0])
+                for o in (off - 4, off + 4)):
+            continue
+        if any(lo <= val < hi for lo, hi in code_ranges) and val not in starts:
+            continue
+        add_relocation(val, base + off, imgbase, seen, rows)
+
+
 def main() -> int:
-    if len(sys.argv) < 2:
+    args = [a for a in sys.argv[1:] if a != "--no-data"]
+    scan_data = len(args) == len(sys.argv) - 1
+    if not args:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    path = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else "relocations.csv"
+    path = args[0]
+    out = args[1] if len(args) > 1 else "relocations.csv"
     with open(path, "rb") as f:
         data = f.read()
 
@@ -180,17 +237,37 @@ def main() -> int:
     rows = []
     seen = set()
 
+    starts = set()
+    tables = set()
+    code_ranges = []
     for name, va, vs, rsz, rp, chars in secs:
-        if rsz == 0:
+        if rsz == 0 or name in (".rsrc", ".reloc") or not (chars & 0x20000020):
             continue
-        if name in (".rsrc", ".reloc"):
-            continue
-        if not (chars & 0x20000020):
-            continue
+        code_ranges.append((imgbase + va, imgbase + va + max(vs, rsz)))
         find_relocations_in_sec(
             data, imgbase, imagesize, va, rsz, rp,
-            sec_ranges, secs, seen, rows,
+            sec_ranges, secs, seen, rows, starts, tables,
         )
+    for base in sorted(tables):
+        for lo, hi in code_ranges:
+            if not lo <= base < hi:
+                continue
+            for sec_va, sec_rsz, sec_rp in ((va, rsz, rp) for _n, va, _vs, rsz, rp, _c in secs):
+                if not imgbase + sec_va <= base < imgbase + sec_va + sec_rsz:
+                    continue
+                addr = base
+                while addr + 4 <= imgbase + sec_va + sec_rsz:
+                    val = struct.unpack_from("<I", data, sec_rp + addr - imgbase - sec_va)[0]
+                    if not (lo <= val < hi and val in starts):
+                        break
+                    add_relocation(val, addr, imgbase, seen, rows)
+                    addr += 4
+    if scan_data:
+        for name, va, vs, rsz, rp, chars in secs:
+            if rsz == 0 or name in (".rsrc", ".reloc", ".idata") or (chars & 0x20000020) or not (chars & 0x40):
+                continue
+            find_relocations_in_data(data, imgbase, imagesize, va, rsz, rp,
+                                     sec_ranges, code_ranges, starts, seen, rows)
 
     rows.sort(key=lambda s: int(s.split(",", 1)[0], 16))
     with open(out, "w", encoding="ascii", newline="\n") as f:

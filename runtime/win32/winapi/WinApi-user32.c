@@ -1024,7 +1024,10 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
             if (wait)
             {
-                if (SDL_WaitEvent(NULL)) continue;
+                /* not for ever: a close of the window sets Thread_Exit and may send no
+                 * further event to wake this thread (under Wine it does not) */
+                SDL_WaitEventTimeout(NULL, 100);
+                continue;
             }
             else if (pump_events)
             {
@@ -3363,14 +3366,10 @@ uint32_t CCALL WaitMessage_c(void)
     eprintf("WaitMessage\n");
 #endif
 
-    if (SDL_WaitEvent(NULL))
+    while (!SDL_WaitEventTimeout(NULL, 100))
     {
-        return 1;
+        if (Thread_Exit) Game_StopMain();
     }
-    else
-    {
-        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return 0;
-    }
+    return 1;
 }
 
