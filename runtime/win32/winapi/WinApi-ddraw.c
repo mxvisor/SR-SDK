@@ -786,16 +786,25 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
 
     if (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)
     {
-        if (lpThis->Renderer == NULL) return DDERR_GENERIC;  /* no display mode set yet */
-        if (lpThis->Primary != NULL) return DDERR_GENERIC;
+        uint32_t pwidth = lpThis->width, pheight = lpThis->height, pbpp = lpThis->bpp;
 
-        s = NewSurface(lpThis, lpThis->width, lpThis->height, lpThis->bpp);
+        if (lpThis->Primary != NULL) return DDERR_GENERIC;
+        if (lpThis->Renderer == NULL)
+        {
+            /* no display mode set: a program that only probes what DirectX can do (the
+             * version check at its start) gets a desktop-sized surface that is never shown */
+            if (pwidth == 0) pwidth = 640;
+            if (pheight == 0) pheight = 480;
+            if (pbpp == 0) pbpp = 32;
+        }
+
+        s = NewSurface(lpThis, pwidth, pheight, pbpp);
         if (s == NULL) return DDERR_OUTOFVIDEOMEMORY;
         s->primary = 1;
 
         if ((lpDDSurfaceDesc->dwFlags & DDSD_BACKBUFFERCOUNT) && (lpDDSurfaceDesc->dwBackBufferCount != 0))
         {
-            s->lpBackbuffer = NewSurface(lpThis, lpThis->width, lpThis->height, lpThis->bpp);
+            s->lpBackbuffer = NewSurface(lpThis, pwidth, pheight, pbpp);
             if (s->lpBackbuffer == NULL)
             {
                 FreeSurface(s);
@@ -1105,9 +1114,24 @@ uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, 
 }
 
 
+static const uint8_t IID_IDirectDrawSurface[16] = { 0x81, 0xdb, 0x14, 0x6c, 0x33, 0xa7, 0xce, 0x11, 0xa5, 0x21, 0x00, 0x20, 0xaf, 0x0b, 0xe5, 0x60 };
+static const uint8_t IID_IDirectDrawSurface2[16] = { 0x85, 0x58, 0x80, 0x57, 0xec, 0x6e, 0xcf, 0x11, 0x94, 0x41, 0xa8, 0x23, 0x03, 0xc1, 0x0e, 0x27 };
+static const uint8_t IID_IDirectDrawSurface3[16] = { 0x00, 0x4e, 0x04, 0xda, 0xb2, 0x69, 0xd0, 0x11, 0xa1, 0xd5, 0x00, 0xaa, 0x00, 0xb8, 0xdf, 0xbb };
+
 uint32_t CCALL IDirectDrawSurface_QueryInterface_c(struct IDirectDrawSurface_c *lpThis, void * riid, PTR32(void)* ppvObj)
 {
     if (ppvObj == NULL) return E_POINTER;
+    if ((lpThis != NULL) && (riid != NULL) &&
+        ((memcmp(riid, IID_IDirectDrawSurface, 16) == 0) || (memcmp(riid, IID_IDirectDrawSurface2, 16) == 0) ||
+         (memcmp(riid, IID_IDirectDrawSurface3, 16) == 0)))
+    {
+        /* the later interfaces only add PageLock, PageUnlock, GetDDInterface and SetSurfaceDesc,
+         * which the vtable lacks: enough for a program that asks which DirectX it runs on */
+        lpThis->RefCount++;
+        *ppvObj = (void *)lpThis;
+        return DD_OK;
+    }
+    *ppvObj = (void *)NULL;
     return E_NOINTERFACE;
 }
 
