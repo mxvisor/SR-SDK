@@ -70,12 +70,19 @@ if want smoke; then
                 add "$(printf 'smoke\t%s:%s\tfail\tbuild failed' "$id" "$mode")"
                 continue
             fi
-            "$REGRESS_DIR/smoke.sh" "$id" "$mode" "$RUN_SECS" | while IFS=$'\t' read -r kind subject status detail; do
+            "$REGRESS_DIR/smoke.sh" "$id" "$mode" "$(game_secs "$id")" | while IFS=$'\t' read -r kind subject status detail; do
                 add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
             done
         done
     done
 fi
+
+# the seconds a game is left running: RUN_SECS, or the game's own (column 8 of
+# games.tsv) when that is longer
+game_secs() {
+    local own; own=$(game_field "$1" 8)
+    if [ -n "$own" ] && [ "$own" -gt "$RUN_SECS" ]; then echo "$own"; else echo "$RUN_SECS"; fi
+}
 
 if want aslr; then
     echo "## aslr: ${GAMES[*]}" >&2
@@ -87,7 +94,7 @@ if want aslr; then
                 add "$(printf 'aslr\t%s:%s\tfail\tbuild failed' "$id" "$mode")"
                 continue
             fi
-            "$REGRESS_DIR/aslr.sh" "$id" "$mode" 3 "$((RUN_SECS / 2 + 1))" | while IFS=$'\t' read -r kind subject status detail; do
+            "$REGRESS_DIR/aslr.sh" "$id" "$mode" 3 "$(( $(game_secs "$id") / 2 + 1))" | while IFS=$'\t' read -r kind subject status detail; do
                 add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
             done
         done
