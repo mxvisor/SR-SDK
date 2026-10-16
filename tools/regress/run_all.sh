@@ -60,6 +60,13 @@ if want build; then
     done < <("$REGRESS_DIR/build_all.sh" "${GAMES[@]}")
 fi
 
+# the seconds a game is left running: RUN_SECS, or the game's own (column 8 of
+# games.tsv) when that is longer
+game_secs() {
+    local own; own=$(game_field "$1" 8)
+    if [ -n "$own" ] && [ "$own" -gt "$RUN_SECS" ]; then echo "$own"; else echo "$RUN_SECS"; fi
+}
+
 if want smoke; then
     echo "## smoke: ${GAMES[*]}" >&2
     for id in "${GAMES[@]}"; do
@@ -76,13 +83,6 @@ if want smoke; then
         done
     done
 fi
-
-# the seconds a game is left running: RUN_SECS, or the game's own (column 8 of
-# games.tsv) when that is longer
-game_secs() {
-    local own; own=$(game_field "$1" 8)
-    if [ -n "$own" ] && [ "$own" -gt "$RUN_SECS" ]; then echo "$own"; else echo "$RUN_SECS"; fi
-}
 
 if want aslr; then
     echo "## aslr: ${GAMES[*]}" >&2
