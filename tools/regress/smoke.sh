@@ -13,7 +13,7 @@
 # Prints one line, TAB-separated:
 #   smoke  GAME:MODE  ok|fail  alive=yes|no closed=yes|no rc=N killed=yes|no nonblank=1|0 leftovers=N
 # ok means: still running after RUN_SECS, gone within CLOSE_WAIT of the close
-# request without being killed, no process left, and the screen was not blank.
+# request without being killed, no process left, and the screen was not blank (at the end of RUN_SECS, or within 12 s after it).
 # rc is the game's exit status. Whether a non-zero rc on a window close is
 # acceptable is up to the caller; it is only reported.
 #
@@ -64,8 +64,14 @@ GPID=$!
 
 sleep "$RUN_SECS"
 alive=no; kill -0 $GPID 2>/dev/null && alive=yes
-import -window root "$SHOT" 2>/dev/null
-nonblank=$(convert "$SHOT" -format '%[fx:maxima-minima>0.01?1:0]' info: 2>/dev/null || echo 0)
+# a screen that is black at that moment (a fade, a movie) is looked at again a few times
+nonblank=0
+for try in 1 2 3 4 5; do
+    import -window root "$SHOT" 2>/dev/null
+    nonblank=$(convert "$SHOT" -format '%[fx:maxima-minima>0.01?1:0]' info: 2>/dev/null || echo 0)
+    [ "$nonblank" = 1 ] || [ $alive = no ] && break
+    sleep 3
+done
 closed=no; killed=no
 if [ $alive = yes ]; then
     python3 "$REGRESS_DIR/xclose.py" >/dev/null 2>&1
