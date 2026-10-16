@@ -40,6 +40,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 # the D build: $LLASM_D, else llasm beside this script (see README.md)
+os.environ["LLASM_LEGACY_TEMPS"] = "1"  # llasm.d keeps no temp registers across calls
 D_BIN = Path(os.environ.get("LLASM_D") or HERE / "llasm")
 PORT = HERE / "llasm.py"
 

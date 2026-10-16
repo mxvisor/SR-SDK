@@ -22,12 +22,16 @@
 
 """Translation of a procedure body."""
 
+import os
+
 from .emit import add_output_line, get_addr_to_int32, get_int32_to_ptr, get_load_type, get_new_label, get_new_temporary_register, get_parameter_read_addr, get_parameter_read_value, store_temporary_register_to_reg, writeback_register, writeback_registers
 from .expr import _s32, _to_long, calculate_expr_value, replace_defines_in_expr
 from .source import get_current_params, get_current_params2, write_error2
 from .state import G, Param, ProcInstr
 from .strutil import strip
 from .tables import EMPTY, NUM_FLOAT_REGS, NUM_REGS, NUM_REGS64, WRITE, _llref, registers64_base_list, registers_base_list
+
+LEGACY_TEMPS = os.environ.get("LLASM_LEGACY_TEMPS") == "1"
 from .x87 import _BINARY_FLOAT, _COMPARE_FLOAT, _FLOAT_UNARY, binary_float_instr, compare_float_instr, get_float_reg_value, increase_float_stack_top, store_temporary_register_to_float_reg, writeback_float_register, writeback_float_registers
 
 
@@ -541,7 +545,18 @@ def _emit_call(c):
         if G.procedure_optimization_level >= 1:
             for i in range(NUM_REGS):
                 G.register_state[i] = EMPTY
-            G.current_temporary_register = {}
+            # llasm's own temp registers (tmpadr/tmpcnd/tmp0..) are not guest
+            # state: their SSA values survive a C call, and SR can legally
+            # schedule a `call` between e.g. a cmoveq-to-tmpcnd and the ctcallz
+            # that consumes it.  Keep them cached; only guest registers go.
+            # (LLASM_LEGACY_TEMPS=1 gives llasm.d's behaviour: the tests that
+            # compare with the D build set it.)
+            saved_temps = {}
+            if G.procedure_optimization_level >= 2 and not LEGACY_TEMPS:
+                for name in G.temp_regs_list:
+                    if name in G.current_temporary_register:
+                        saved_temps[name] = G.current_temporary_register[name]
+            G.current_temporary_register = saved_temps
 
             for i in range(NUM_FLOAT_REGS):
                 G.float_reg_state[i] = EMPTY

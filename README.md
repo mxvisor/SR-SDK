@@ -33,7 +33,7 @@ plus fixes that can be offered back to it. SR-SDK does not change SR.
   (SDL itself is downloaded and built by `tools/android_sdl.sh`)
 
 No D compiler is needed: llasm IR is translated by `llasm/llasm.py`, a Python
-port of SR's `llasm`, which gives byte-identical output (see
+version of SR's `llasm` that is developed here; on SR's reference games its output is byte-identical to the D original (see
 [`llasm/README.md`](llasm/README.md)).
 
 ## Using it in a game repository
