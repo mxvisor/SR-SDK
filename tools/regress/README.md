@@ -17,6 +17,7 @@ SR, to `llasm.py` or to the SDK. It compares six things with a saved reference r
 tools/regress/run_all.sh                    # everything, all games
 tools/regress/run_all.sh --only sr          # SR's output for the reference games only
 tools/regress/run_all.sh --only build,smoke <id> <id>
+tools/regress/run_all.sh --jobs 2           # smoke and aslr run 4 at a time by default
 tools/regress/run_all.sh --sr @worktree     # SR with its uncommitted changes
 tools/regress/run_all.sh --save-ref         # the result becomes the reference
 ```
@@ -75,3 +76,7 @@ Under Wine a fixed base is not an error, only a run that dies is.
 
 1. Run `run_all.sh`; look at every `CHANGED` and `REGRESSION`.
 2. When all of them are explained, `run_all.sh --save-ref` and commit `ref/`.
+
+`smoke` and `aslr` run `--jobs` games at a time; games that share a Wine prefix run one after another.
+A run waits for the game only until it exits, and under Wine `aslr` starts the game once (the image base is fixed there). A full run takes a few minutes, most of it the slowest game's start.
+A close by the user has to end with exit status 0 (`rc=0`).

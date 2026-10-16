@@ -12,6 +12,7 @@
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
 #   --save-ref       write this run as the new reference (ref/results.tsv)
+#   --jobs N         smoke and aslr tests run N at a time (default 4)
 #   --no-wine        smoke tests under Linux only
 #
 # Needs: scons, make, MinGW-w64 and Wine (for the windows builds and tests), Xvfb,
@@ -25,7 +26,7 @@
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm image prefixes"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
+ONLY="sr build smoke aslr llasm image prefixes"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -33,6 +34,7 @@ while [ $# -gt 0 ]; do
         --run-secs) RUN_SECS=$2; shift ;;
         --save-ref) SAVE=1 ;;
         --no-wine) WINE=0 ;;
+        --jobs) JOBS=$2; shift ;;
         -h|--help) sed -n '2,/^[^#]/p' "$0" | grep '^#' | sed 's/^# \?//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
         *) GAMES+=("$1") ;;
@@ -67,38 +69,51 @@ game_secs() {
     if [ -n "$own" ] && [ "$own" -gt "$RUN_SECS" ]; then echo "$own"; else echo "$RUN_SECS"; fi
 }
 
-if want smoke; then
-    echo "## smoke: ${GAMES[*]}" >&2
+# one check of every game and mode, JOBS at a time (each has its own Xvfb and Wine prefix);
+# the rows are added in the order of games and modes
+par_checks() {   # KIND SCRIPT: its arguments after GAME MODE come from the function KIND_args
+    local kind=$1 script=$2 id mode target lock i
+    local -a tags=()
+    local dir; dir=$(mktemp -d "$OUT/par-$kind-XXXXXX")
     for id in "${GAMES[@]}"; do
         for mode in linux wine; do
             [ "$mode" = wine ] && [ "$WINE" = 0 ] && continue
             target=$([ $mode = wine ] && echo windows || echo linux)
+            tags+=("$id:$mode")
             if [ "${BUILT[$id:$target]}" = fail ]; then
-                add "$(printf 'smoke\t%s:%s\tfail\tbuild failed' "$id" "$mode")"
+                printf '%s\t%s:%s\tfail\tbuild failed\n' "$kind" "$id" "$mode" > "$dir/$id:$mode"
                 continue
             fi
-            "$REGRESS_DIR/smoke.sh" "$id" "$mode" "$(game_secs "$id")" | while IFS=$'\t' read -r kind subject status detail; do
-                add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
-            done
+            while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do sleep 0.5; done
+            # games that share a Wine prefix (and its wineserver) run one after another
+            lock=/dev/null; [ $mode = wine ] && lock="$dir/lock-$(game_field "$id" 7)"
+            if [ $mode = wine ]; then
+                flock "$lock" "$REGRESS_DIR/$script" "$id" "$mode" $(${kind}_args "$id" "$mode") > "$dir/$id:$mode" &
+            else
+                "$REGRESS_DIR/$script" "$id" "$mode" $(${kind}_args "$id" "$mode") > "$dir/$id:$mode" &
+            fi
         done
     done
+    wait
+    for i in "${tags[@]}"; do
+        while IFS=$'\t' read -r k subject status detail; do
+            add "$(printf '%s\t%s\t%s\t%s' "$k" "$subject" "$status" "$detail")"
+        done < "$dir/$i"
+    done
+    rm -rf "$dir"
+}
+smoke_args() { game_secs "$1"; }
+# Wine maps the image at one address, a second run adds nothing there
+aslr_args() { if [ "$2" = wine ]; then echo "1 $(( $(game_secs "$1") / 2 + 1))"; else echo "3 $(( $(game_secs "$1") / 2 + 1))"; fi; }
+
+if want smoke; then
+    echo "## smoke: ${GAMES[*]}" >&2
+    par_checks smoke smoke.sh
 fi
 
 if want aslr; then
     echo "## aslr: ${GAMES[*]}" >&2
-    for id in "${GAMES[@]}"; do
-        for mode in linux wine; do
-            [ "$mode" = wine ] && [ "$WINE" = 0 ] && continue
-            target=$([ $mode = wine ] && echo windows || echo linux)
-            if [ "${BUILT[$id:$target]}" = fail ]; then
-                add "$(printf 'aslr\t%s:%s\tfail\tbuild failed' "$id" "$mode")"
-                continue
-            fi
-            "$REGRESS_DIR/aslr.sh" "$id" "$mode" 3 "$(( $(game_secs "$id") / 2 + 1))" | while IFS=$'\t' read -r kind subject status detail; do
-                add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
-            done
-        done
-    done
+    par_checks aslr aslr.sh
 fi
 
 if want llasm; then

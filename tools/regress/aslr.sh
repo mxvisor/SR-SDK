@@ -52,7 +52,7 @@ for run in $(seq 1 "$RUNS"); do
               "${ENVV[@]}" wine "$BIN" > "$WR/log" 2>&1
       fi ) &
     GPID=$!
-    sleep "$RUN_SECS"
+    for _ in $(seq 1 $((RUN_SECS * 5))); do kill -0 $GPID 2>/dev/null || break; sleep 0.2; done
     # the process that holds the image: the tagged one that maps it
     base=
     for p in /proc/[0-9]*; do

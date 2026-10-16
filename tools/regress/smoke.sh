@@ -62,7 +62,7 @@ else
 fi
 GPID=$!
 
-sleep "$RUN_SECS"
+for _ in $(seq 1 $((RUN_SECS * 5))); do kill -0 $GPID 2>/dev/null || break; sleep 0.2; done
 alive=no; kill -0 $GPID 2>/dev/null && alive=yes
 # a screen that is black at that moment (a fade, a movie) is looked at again a few times
 nonblank=0
