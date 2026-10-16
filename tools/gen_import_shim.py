@@ -23,7 +23,10 @@ Writes, under the game repository's game/:
                                lists the prototypes it lacks)
   llasm/extern.llinc           (extern: yes) `define <name> <name>_asm2c` per import
   WinApi-game.c                (stubs: yes) a stub returning 0 for every function
-                               no other game/*.c defines; refused when the file
+                               that no other game/*.c and not the SDK's
+                               runtime/win32/winapi/WinApi-stubs.c (weak stubs of the
+                               common imports) defines; not written when none is
+                               left; refused when the file
                                exists -- it is the game's own code after the first
                                run, so add new functions to it by hand
 
@@ -170,26 +173,33 @@ if cfg.get('stubs') == 'yes':
         print('WinApi-game.c exists, not touched')
     else:
         implemented = set()
-        for path in glob.glob(os.path.join(GAME, '*.c')):
+        # the SDK's own weak stubs (runtime/win32/winapi/WinApi-stubs.c) count too
+        sdk_stubs = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                                 'runtime', 'win32', 'winapi', 'WinApi-stubs.c')
+        for path in glob.glob(os.path.join(GAME, '*.c')) + [sdk_stubs]:
+            if not os.path.exists(path):
+                continue
             implemented |= set(re.findall(r'^\w[\w \*]*?\bCCALL\s+(\w+_c)\s*\(',
                                           open(path, errors='replace').read(), re.M))
+        todo = [n for n in generated if cname(n[0]) + '_c' not in implemented]
         c = ['/*', ' *  %s Win32 import shim - link-correct stubs.' % title, ' *',
              ' *  Every import resolves and every wrapper pops the right number of stdcall',
              ' *  arguments, so the port links. Replace a stub by the real function.',
              ' *', ' *  Generated: %s' % TODAY, ' */', '',
              '#include "WinApi-game.h"', '',
              '#ifdef __cplusplus', 'extern "C" {', '#endif', '']
-        for n, dll, argc, _ in generated:
+        for n, dll, argc, _ in todo:
             fn = cname(n) + '_c'
-            if fn in implemented:
-                continue
             params = ', '.join('uint32_t a%d' % i for i in range(argc)) if argc else 'void'
             c += ['/* %s (%s) */' % (n, dll), 'uint32_t CCALL %s(%s)' % (fn, params), '{']
             if argc:
                 c.append('    (void)' + '; (void)'.join('a%d' % i for i in range(argc)) + ';')
             c += ['    return 0;', '}', '']
         c += ['#ifdef __cplusplus', '}', '#endif']
-        write(cpath, c)
+        if todo:
+            write(cpath, c)
+        else:
+            print('every import is implemented or stubbed by the SDK: no WinApi-game.c')
 
 print('imports: %d, bridged here: %d, bridged by the SDK or by hand: %d'
       % (len(rows), len(generated), len(rows) - len(generated)))

@@ -22,7 +22,7 @@
 # then calls run_native "$@" or run_wine "$@".  Options (both):
 #   --build            build first (scons -Q device=...)
 #   --headless[=N]     no window: Xvfb of its own, N screenshots (default 4, every
-#                      5 s) in <repo>/tools/shots-{sdl,wine}/
+#                      5 s) in <repo>/build/shots/{sdl,wine}/
 #   --keys=SPEC        headless: keys through $<ENVP>_AUTO_KEYS, SPEC = delay_s:Key[,...]
 #   -- ARG...          (native) everything after is given to the port
 #   --help
@@ -149,7 +149,7 @@ run_native() {
   case "$(uname -m)" in aarch64|arm64) local dev=arm64-linux ;; *) local dev=pc64-linux ;; esac
   local device="$(_envp DEVICE)"; : "${device:=$dev}"
   BIN="$GAME_REPO/build/bin/$device/$PROG"
-  SHOTS="$GAME_REPO/tools/shots-sdl"
+  SHOTS="$GAME_REPO/build/shots/sdl"
   ! declare -F game_prepare >/dev/null || game_prepare
   _check_data
   _build "$device"
@@ -195,7 +195,7 @@ run_wine() {
   _common_init; _parse_args "$@"
   local build_dir="$GAME_REPO/build/bin/pc64-windows"
   BIN="$build_dir/$PROG.exe"
-  SHOTS="$GAME_REPO/tools/shots-wine"
+  SHOTS="$GAME_REPO/build/shots/wine"
   local mingw="$(_envp MINGW_BIN)"; : "${mingw:=/usr/x86_64-w64-mingw32/sys-root/mingw/bin}"
   export WINEPREFIX="$(_envp WINEPREFIX)"; : "${WINEPREFIX:=$HOME/.cache/$WINE_NAME}"; export WINEPREFIX
   export WINEDEBUG="${WINEDEBUG:--all}"
