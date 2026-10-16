@@ -48,6 +48,10 @@ def collect(repo, devices, llasm):
             for line in out.splitlines():
                 if dummy not in line or ' | ' not in line:
                     continue
+                line = line.strip()
+                if line.startswith("bash -o pipefail -c '") and line.endswith("'"):
+                    line = line[len("bash -o pipefail -c '"):-1]    # scons/llasm.SConscript wraps the pipe
+                    line = line.split(' || {')[0]                  # and removes the object on failure
                 cmd = line.split(' | ')[0].replace('"%s"' % dummy, '"%s" "%s"' % (sys.executable, llasm), 1)
                 # the object is `> X` or `-o X`, depending on the SDK's scons/game.py
                 target = re.search(r'(?:> |-o )(\S+)$', line)
