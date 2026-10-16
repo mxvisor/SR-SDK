@@ -25,10 +25,14 @@
 # `jmp/call dword [IAT slot]` (FF 25 / FF 15) is also looked for in the raw bytes: a linear
 # sweep that lost its way (data between the import thunks) misses them.
 #
+# --strict-code: a constant in code whose value points into the middle of an instruction
+# of the linear disassembly is not taken for an address (a pushed flag set that falls in
+# the image).  Without it every in-image constant seen in the disassembly is a relocation.
+#
 # A jump table inside a code section (jmp [reg*4 + table]) is not instructions:
 # its entries are added while they point at the start of an instruction.
 #
-# Usage: pe_relocations.py [--no-data] <pe.exe> [out.csv]
+# Usage: pe_relocations.py [--no-data] [--strict-code] <pe.exe> [out.csv]
 
 from __future__ import annotations
 
@@ -89,6 +93,9 @@ def add_relocation(val, src, imgbase, seen, rows):
         rows.append(f"0x{src:x},0x{val:x},")
 
 
+BITWISE = ("test", "and", "or", "xor")
+
+
 def find_relocations_in_sec(
     data: bytes, imgbase: int, imagesize: int,
     sec_va: int, sec_rsz: int, sec_rp: int,
@@ -135,6 +142,9 @@ def find_relocations_in_sec(
 
             val_str = f"0x{val:x}"
             if val_str not in disasm_str:
+                continue
+            # the immediate of a bit test or a mask is a set of flags, not an address
+            if insn.mnemonic in BITWISE and insn.op_str.endswith(", " + val_str):
                 continue
 
             src = code_base + off
@@ -221,8 +231,9 @@ def find_relocations_in_data(
 
 
 def main() -> int:
-    args = [a for a in sys.argv[1:] if a != "--no-data"]
-    scan_data = len(args) == len(sys.argv) - 1
+    args = [a for a in sys.argv[1:] if a not in ("--no-data", "--strict-code")]
+    scan_data = "--no-data" not in sys.argv[1:]
+    strict = "--strict-code" in sys.argv[1:]
     if not args:
         print(__doc__.strip(), file=sys.stderr)
         return 2
@@ -248,6 +259,12 @@ def main() -> int:
             data, imgbase, imagesize, va, rsz, rp,
             sec_ranges, secs, seen, rows, starts, tables,
         )
+    # a constant that points into the middle of an instruction is not an address
+    def keep(row):
+        val = int(row.split(",")[1], 16)
+        return val in starts or not any(lo <= val < hi for lo, hi in code_ranges)
+    if strict:
+        rows[:] = [r for r in rows if keep(r)]
     for base in sorted(tables):
         for lo, hi in code_ranges:
             if not lo <= base < hi:
