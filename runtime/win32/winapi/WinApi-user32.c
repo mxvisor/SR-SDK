@@ -30,7 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
-#include "Game-Config.h"
+#include "WinApi-config.h"
 #include "VKfont.h"
 #include "WinApi-guest.h"
 #include "Game_hooks.h"
@@ -3339,7 +3339,7 @@ uint32_t CCALL TranslateMessage_c(void *pMsg)
 
     // The game's PeekMessage active loop (loc_4121CB) exits if TranslateMessage returns 0.
     // Real Windows TranslateMessage returns nonzero for keyboard messages (WM_KEYDOWN -> WM_CHAR).
-    // The game doesn't process WM_CHAR, but relies on nonzero return
+    // The game doesn't process WM_CHAR , but relies on nonzero return
     // to keep the active loop alive. Return 1 to match.
     return 1;
 }

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2026 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer (Game-Config.c)
  *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -24,7 +24,8 @@
  */
 
 #define GAME_CONFIG_DEFINE_VARIABLES
-#include "Game-Config.h"
+#include "WinApi-config.h"
+#include "Game_hooks.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +36,10 @@
 #define _WIN32
 #endif
 
-#if defined(PYRA)
+/* the file ReadConfiguration reads: the game's own (Game_hooks.h) or this one */
+#if defined(GAME_WINAPI_CONFIG_FILE)
+#define CONFIG_FILE GAME_WINAPI_CONFIG_FILE
+#elif defined(PYRA)
 #define CONFIG_FILE "../game.cfg"
 #else
 #define CONFIG_FILE "game.cfg"

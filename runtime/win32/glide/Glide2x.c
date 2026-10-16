@@ -42,7 +42,7 @@
 #include <SDL.h>
 #include <glad/glad.h>
 #include "Glide2x.h"
-#include "Game-Config.h"
+#include "WinApi-config.h"
 #include "Game_memory.h"
 #include "WinApi-ddraw.h"
 

@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
-#include "Game-Config.h"
+#include "WinApi-config.h"
 #include "Game-Memory.h"
 #include "WinApi-game.h"
 #include "Game_hooks.h"

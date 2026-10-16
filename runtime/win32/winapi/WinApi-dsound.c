@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "WinApi-dsound.h"
-#include "Game-Config.h"
+#include "WinApi-config.h"
 #include "Game-Memory.h"
 #ifdef USE_SPEEXDSP_RESAMPLER
 #include <speex/speex_resampler.h>
