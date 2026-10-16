@@ -2,8 +2,13 @@
 """Iteratively resolve SRW's llasm 'unknown flags on start of region' errors.
 
 For each failure at address A with flag mask F:
-  * find every branch that targets A (plus the fall-through predecessor),
+  * find every way into A: the branches that target it and the instruction
+    before it when that one falls through (not jmp/ret),
   * for each, emit  loc_<producer>,<F>,0   and   loc_<A>,0,<F>.
+An entry loc_<A>,0,<F> makes A read F from eflags, so every way into A has to
+leave F there: once SR runs clean, the entries are checked for that and the
+missing loc_<producer>,<F>,0 are added (a call before A is left alone: the
+callee's flags are its own business).
 
 Instruction boundaries come from objdump's disassembly of the very input SR
 reads (build/input/<module>/<module>.EXE), so no x86 companion track is
@@ -135,21 +140,51 @@ def producers_for(addr):
         return [], ("no instruction boundary lands on %X -- objdump and SR "
                     "disagree there (data in code?)" % addr)
     out = [(a, t) for a, t, tgt in BRANCHES if tgt == addr and a != addr]
+    # and the instruction before it, when control falls through from there:
+    # the flags it leaves are the ones A sees on that way in
+    prev = fall_through_into(addr)
+    if prev is not None and prev[1].split()[0] != 'call':
+        out.append(prev)
     if out:
         return out, ""
-
-    # Entered by fall-through: put the entry on the nearest preceding
-    # CONDITIONAL jump.  Never on the cmp itself -- SR fuses cmp+jcc and
-    # rejects added flags there ("mixing flags and instruction flags").
-    i = ADDRS.index(addr)
-    for k in range(i - 1, -1, -1):
-        mn = INSTR[ADDRS[k]].split()[0]
-        if mn.startswith('j') and mn != 'jmp':
-            return [(ADDRS[k], INSTR[ADDRS[k]])], ""
-    for k in range(i - 1, -1, -1):
-        if INSTR[ADDRS[k]].split()[0] in WRITES_FLAGS:
-            return [(ADDRS[k], INSTR[ADDRS[k]])], ""
     return [], "no branch into %X and no flag writer before it" % addr
+
+
+def fall_through_into(addr):
+    """(address, text) of the instruction before addr if it falls through."""
+    i = ADDRS.index(addr)
+    if i == 0:
+        return None
+    prev = ADDRS[i - 1]
+    mn = INSTR[prev].split()[0]
+    if mn == 'jmp' or mn.startswith('ret') or mn in ('hlt', 'int3'):
+        return None
+    return prev, INSTR[prev]
+
+
+def missing_producers():
+    """Entries that read flags from eflags (end) with a way in that does not
+    leave them there (begin): [(producer, flags, text)]."""
+    entries = {}
+    if os.path.exists(SCI):
+        for l in open(SCI, encoding='utf-8'):
+            m = ENT.match(l.rstrip("\n"))
+            if m:
+                entries[int(m.group(1), 16)] = (int(m.group(2), 0), int(m.group(3), 0))
+    missing = []
+    for addr, (_begin, end) in sorted(entries.items()):
+        if not end or addr not in INSTR:
+            continue
+        ways = [(a, t) for a, t, tgt in BRANCHES if tgt == addr and a != addr]
+        prev = fall_through_into(addr)
+        if prev is not None:
+            ways.append(prev)
+        for p, t in ways:
+            if t.split()[0] == 'call':
+                continue
+            if entries.get(p, (0, 0))[0] & end != end:
+                missing.append((p, end, t, addr))
+    return missing
 
 
 # ---- running SR ---------------------------------------------------------
@@ -172,6 +207,7 @@ def run_sr():
 
 ERR = re.compile(r'unknown flags on start of region - (\d+) - \d+ '
                  r'\(0x([0-9a-f]+)\) - 0x([0-9a-f]+)')
+FATAL = re.compile(r'Error: (mixing flags and instruction flags|unprocessed instruction flags)[^\n]*')
 CONFLICT = re.compile(r'iflags->(end|begin) conflict - (\d+) - (\d+)')
 
 ENT = re.compile(r"^loc_([0-9A-Fa-f]+)\s*,\s*([^,]+?)\s*,\s*([^;]+?)\s*(;.*)?$")
@@ -264,8 +300,19 @@ def main():
                 return 4
             print("[%3d] conflict fix: %s" % (n + 1, info))
             continue
+        bad = FATAL.search(out)
+        if bad:
+            print("SR refuses an entry: %s" % bad.group(0))
+            return 5
         m = ERR.search(out)
         if not m:
+            missing = missing_producers()
+            if missing:
+                for p, f, t, a in missing:
+                    add_entries(a, f, [(p, f, 0, t)])
+                    print("[%3d] 0x%-7X %-28s <- 0x%X %s (way in without them)"
+                          % (n + 1, a, flagstr(f), p, t))
+                continue
             print("\n=== no flag error ===")
             print(out[-1500:])
             return 0
