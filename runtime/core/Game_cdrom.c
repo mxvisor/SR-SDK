@@ -603,3 +603,36 @@ int Game_CdAudioTrack(int track, game_cd_audio *audio)
 }
 
 }
+
+int Game_CdLastTrack(void)
+{
+    for (int number = GAME_CD_MAX_TRACKS; number >= 1; number--) {
+        if (tracks[number].present) return number;
+    }
+    return 0;
+}
+
+int Game_CdTrackIsAudio(int track)
+{
+    return track >= 1 && track <= GAME_CD_MAX_TRACKS && tracks[track].present && tracks[track].audio;
+}
+
+int32_t Game_CdTrackSectors(int track)
+{
+    if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present || tracks[track].compressed) return 0;
+    const cd_track *source = &tracks[track];
+    int64_t end = file_size(source->path);
+    for (int next = track + 1; next <= GAME_CD_MAX_TRACKS; next++) {
+        if (tracks[next].present && strcmp(tracks[next].path, source->path) == 0 &&
+            tracks[next].offset > source->offset) {
+            end = tracks[next].offset;
+            break;
+        }
+    }
+    return end > source->offset ? (int32_t)((end - source->offset) / source->sector_bytes) : 0;
+}
+
+const char *Game_CdDiscDir(void)
+{
+    return disc_dir;
+}

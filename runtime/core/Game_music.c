@@ -325,3 +325,31 @@ int Game_MusicStatus(int *track, int32_t *frame, uint32_t *remaining, int *pause
 }
 
 }
+
+int Game_MusicEnabled(void)
+{
+    return music_enabled;
+}
+
+void Game_MusicHalt(void)
+{
+    end_music();
+}
+
+void Game_MusicPause(void)
+{
+    if (music == NULL || music_paused) return;
+    Mix_PauseMusic();
+    music_pause_ticks = SDL_GetTicks() - music_started;
+    music_paused = 1;
+}
+
+int Game_MusicPlaying(void)
+{
+    return music != NULL && !music_paused && Mix_PlayingMusic();
+}
+
+void Game_MusicVolume(int volume)
+{
+    if (music_enabled) Mix_VolumeMusic(volume);
+}

@@ -81,6 +81,16 @@ int Game_CdAudioTrack(int track, game_cd_audio *audio);
 int Game_CdTrackInfo(int track, int32_t *start_frames, int *audio);
 int Game_CdTocRange(int *first, int *last, int32_t *leadout);
 
+/* The highest track number of the disc (0: none), whether a track is audio,
+ * and its length in sectors (up to the next track of the same file, or the
+ * end of the file; 0 when that is not known, for a compressed track). */
+int Game_CdLastTrack(void);
+int Game_CdTrackIsAudio(int track);
+int32_t Game_CdTrackSectors(int track);
+
+/* The directory of the copy of the disc (for D:\ redirection), or "" */
+const char *Game_CdDiscDir(void);
+
 #ifdef __cplusplus
 }
 #endif

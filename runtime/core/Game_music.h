@@ -46,6 +46,15 @@ void Game_MusicResume(void);
  * under the head and the sectors left. */
 int Game_MusicStatus(int *track, int32_t *frame, uint32_t *remaining, int *paused);
 
+/* For an MCI CD audio device (the Win32 layer): whether music is on, stop at
+ * once, pause, whether a track is still playing (not paused, not finished),
+ * the music volume (0..128, kept for the next tracks). */
+int Game_MusicEnabled(void);
+void Game_MusicHalt(void);
+void Game_MusicPause(void);
+int Game_MusicPlaying(void);
+void Game_MusicVolume(int volume);
+
 #ifdef __cplusplus
 }
 #endif
