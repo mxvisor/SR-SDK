@@ -32,6 +32,7 @@
 struct IDirectDraw_c;
 struct IDirectDrawSurface_c;
 struct IDirectDrawPalette_c;
+struct IDirectDrawClipper_c;
 
 struct _ddsurfacedesc;
 struct _rect;
@@ -105,6 +106,16 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
 uint32_t CCALL IDirectDrawSurface_UpdateOverlay_c(struct IDirectDrawSurface_c *lpThis, void * param1, struct IDirectDrawSurface_c * param2, void * param3, uint32_t param4, void * param5);
 uint32_t CCALL IDirectDrawSurface_UpdateOverlayDisplay_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1);
 uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, struct IDirectDrawSurface_c * param2);
+
+uint32_t CCALL IDirectDrawClipper_QueryInterface_c(struct IDirectDrawClipper_c *lpThis, void * riid, PTR32(void)* ppvObj);
+uint32_t CCALL IDirectDrawClipper_AddRef_c(struct IDirectDrawClipper_c *lpThis);
+uint32_t CCALL IDirectDrawClipper_Release_c(struct IDirectDrawClipper_c *lpThis);
+uint32_t CCALL IDirectDrawClipper_GetClipList_c(struct IDirectDrawClipper_c *lpThis, void * lpRect, void * lpClipList, uint32_t * lpdwSize);
+uint32_t CCALL IDirectDrawClipper_GetHWnd_c(struct IDirectDrawClipper_c *lpThis, PTR32(void)* lphWnd);
+uint32_t CCALL IDirectDrawClipper_Initialize_c(struct IDirectDrawClipper_c *lpThis, void * lpDD, uint32_t dwFlags);
+uint32_t CCALL IDirectDrawClipper_IsClipListChanged_c(struct IDirectDrawClipper_c *lpThis, uint32_t * lpbChanged);
+uint32_t CCALL IDirectDrawClipper_SetClipList_c(struct IDirectDrawClipper_c *lpThis, void * lpClipList, uint32_t dwFlags);
+uint32_t CCALL IDirectDrawClipper_SetHWnd_c(struct IDirectDrawClipper_c *lpThis, uint32_t dwFlags, void * hWnd);
 
 uint32_t CCALL IDirectDrawPalette_QueryInterface_c(struct IDirectDrawPalette_c *lpThis, void * riid, PTR32(void)* ppvObj);
 uint32_t CCALL IDirectDrawPalette_AddRef_c(struct IDirectDrawPalette_c *lpThis);

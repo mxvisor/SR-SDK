@@ -57,6 +57,8 @@
 #define DDERR_OUTOFMEMORY                       E_OUTOFMEMORY
 #define DDERR_INVALIDPARAMS                     E_INVALIDARG
 #define DDERR_OUTOFVIDEOMEMORY                  MAKE_DDHRESULT( 380 )
+#define DDERR_NOCLIPLIST                        MAKE_DDHRESULT( 205 )
+#define DDERR_NOCLIPPERATTACHED                 MAKE_DDHRESULT( 202 )
 #define DDERR_SURFACEBUSY                       MAKE_DDHRESULT( 430 )
 #define DDERR_SURFACELOST                       MAKE_DDHRESULT( 450 )
 #define DDERR_UNSUPPORTEDMODE                   MAKE_DDHRESULT( 590 )
@@ -324,6 +326,11 @@ struct IDirectDraw_c {
     struct IDirectDrawSurface_c *Primary;
 };
 
+struct IDirectDrawClipper_c {
+    PTR32(void) lpVtbl;
+    uint32_t RefCount;
+};
+
 struct IDirectDrawPalette_c {
     PTR32(void) lpVtbl;
     uint32_t RefCount;
@@ -342,6 +349,7 @@ struct IDirectDrawSurface_c {
     int has_colorkey;
     uint32_t colorkey_low, colorkey_high;
     struct IDirectDrawPalette_c *palette;
+    struct IDirectDrawClipper_c *clipper;
     struct IDirectDrawSurface_c *lpBackbuffer;
 };
 
@@ -383,6 +391,7 @@ void Winapi_DestroyDirectDrawWindow(void)
 extern uint32_t IDirectDrawVtbl_asm2c;
 extern uint32_t IDirectDrawSurfaceVtbl_asm2c;
 extern uint32_t IDirectDrawPaletteVtbl_asm2c;
+extern uint32_t IDirectDrawClipperVtbl_asm2c;
 
 
 #ifdef __cplusplus
@@ -474,6 +483,7 @@ static struct IDirectDrawSurface_c *NewSurface(struct IDirectDraw_c *dd, uint32_
 static void FreeSurface(struct IDirectDrawSurface_c *s)
 {
     if (s->palette != NULL) s->palette->RefCount--;
+    if (s->clipper != NULL) s->clipper->RefCount--;
     x86_free(s->mem);
     x86_free(s);
 }
@@ -720,8 +730,18 @@ uint32_t CCALL IDirectDraw_Compact_c(struct IDirectDraw_c *lpThis)
 
 uint32_t CCALL IDirectDraw_CreateClipper_c(struct IDirectDraw_c *lpThis, uint32_t param1, PTR32(void)* param2, void * param3)
 {
-    eprintf("Unsupported method: %s\n", "IDirectDraw_CreateClipper");
-    return DDERR_UNSUPPORTED;
+    struct IDirectDrawClipper_c *clipper;
+
+    (void)param1;
+    if ((lpThis == NULL) || (param2 == NULL) || (param3 != NULL)) return DDERR_INVALIDPARAMS;
+
+    clipper = (struct IDirectDrawClipper_c *)x86_malloc(sizeof(struct IDirectDrawClipper_c));
+    if (clipper == NULL) return DDERR_OUTOFMEMORY;
+
+    clipper->lpVtbl = &IDirectDrawClipperVtbl_asm2c;
+    clipper->RefCount = 1;
+    *param2 = clipper;
+    return DD_OK;
 }
 
 uint32_t CCALL IDirectDraw_CreatePalette_c(struct IDirectDraw_c *lpThis, uint32_t dwFlags, void * lpColorTable, PTR32(void)* lplpDDPalette, void * pUnkOuter)
@@ -1331,7 +1351,12 @@ uint32_t CCALL IDirectDrawSurface_GetCaps_c(struct IDirectDrawSurface_c *lpThis,
 
 uint32_t CCALL IDirectDrawSurface_GetClipper_c(struct IDirectDrawSurface_c *lpThis, PTR32(void)* param1)
 {
-    return DDERR_UNSUPPORTED;
+    if ((lpThis == NULL) || (param1 == NULL)) return DDERR_INVALIDPARAMS;
+    if (lpThis->clipper == NULL) return DDERR_NOCLIPPERATTACHED;
+
+    lpThis->clipper->RefCount++;
+    *param1 = lpThis->clipper;
+    return DD_OK;
 }
 
 uint32_t CCALL IDirectDrawSurface_GetColorKey_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags, void * lpDDColorKey)
@@ -1478,7 +1503,16 @@ uint32_t CCALL IDirectDrawSurface_Restore_c(struct IDirectDrawSurface_c *lpThis)
 
 uint32_t CCALL IDirectDrawSurface_SetClipper_c(struct IDirectDrawSurface_c *lpThis, void * param1)
 {
-    return DDERR_UNSUPPORTED;
+    struct IDirectDrawClipper_c *clipper = (struct IDirectDrawClipper_c *)param1;
+
+    if (lpThis == NULL) return DDERR_INVALIDPARAMS;
+
+    /* the picture is drawn whole into the window: the clipper only has to be held, as
+     * the palette is (released with the surface; the object itself is the game's) */
+    if (clipper != NULL) clipper->RefCount++;
+    if (lpThis->clipper != NULL) lpThis->clipper->RefCount--;
+    lpThis->clipper = clipper;
+    return DD_OK;
 }
 
 uint32_t CCALL IDirectDrawSurface_SetColorKey_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags, void * lpDDColorKey)
@@ -1554,6 +1588,74 @@ uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurfac
     return DDERR_UNSUPPORTED;
 }
 
+
+uint32_t CCALL IDirectDrawClipper_QueryInterface_c(struct IDirectDrawClipper_c *lpThis, void * riid, PTR32(void)* ppvObj)
+{
+    (void)lpThis; (void)riid;
+    if (ppvObj == NULL) return E_POINTER;
+    *ppvObj = (void *)NULL;
+    return E_NOINTERFACE;
+}
+
+uint32_t CCALL IDirectDrawClipper_AddRef_c(struct IDirectDrawClipper_c *lpThis)
+{
+    if (lpThis == NULL) return 0;
+    lpThis->RefCount++;
+    return lpThis->RefCount;
+}
+
+uint32_t CCALL IDirectDrawClipper_Release_c(struct IDirectDrawClipper_c *lpThis)
+{
+    if (lpThis == NULL) return 0;
+
+    lpThis->RefCount--;
+    if (lpThis->RefCount == 0)
+    {
+        x86_free(lpThis);
+        return 0;
+    }
+    return lpThis->RefCount;
+}
+
+uint32_t CCALL IDirectDrawClipper_GetClipList_c(struct IDirectDrawClipper_c *lpThis, void * lpRect, void * lpClipList, uint32_t * lpdwSize)
+{
+    (void)lpThis; (void)lpRect; (void)lpClipList; (void)lpdwSize;
+    return DDERR_NOCLIPLIST;
+}
+
+uint32_t CCALL IDirectDrawClipper_GetHWnd_c(struct IDirectDrawClipper_c *lpThis, PTR32(void)* lphWnd)
+{
+    (void)lpThis;
+    if (lphWnd == NULL) return DDERR_INVALIDPARAMS;
+    *lphWnd = (void *)NULL;
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawClipper_Initialize_c(struct IDirectDrawClipper_c *lpThis, void * lpDD, uint32_t dwFlags)
+{
+    (void)lpThis; (void)lpDD; (void)dwFlags;
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawClipper_IsClipListChanged_c(struct IDirectDrawClipper_c *lpThis, uint32_t * lpbChanged)
+{
+    (void)lpThis;
+    if (lpbChanged == NULL) return DDERR_INVALIDPARAMS;
+    *lpbChanged = 0;
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawClipper_SetClipList_c(struct IDirectDrawClipper_c *lpThis, void * lpClipList, uint32_t dwFlags)
+{
+    (void)lpThis; (void)lpClipList; (void)dwFlags;
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawClipper_SetHWnd_c(struct IDirectDrawClipper_c *lpThis, uint32_t dwFlags, void * hWnd)
+{
+    (void)lpThis; (void)dwFlags; (void)hWnd;
+    return DD_OK;
+}
 
 uint32_t CCALL IDirectDrawPalette_QueryInterface_c(struct IDirectDrawPalette_c *lpThis, void * riid, PTR32(void)* ppvObj)
 {

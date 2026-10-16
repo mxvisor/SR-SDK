@@ -96,6 +96,16 @@ func IDirectDrawPalette_GetEntries_c *lpThis, param1, param2, param3, *param4
 func IDirectDrawPalette_Initialize_c *lpThis, *param1, param2, *param3
 func IDirectDrawPalette_SetEntries_c *lpThis, param1, param2, param3, *param4
 
+func IDirectDrawClipper_QueryInterface_c *lpThis, *riid, *ppvObj
+func IDirectDrawClipper_AddRef_c *lpThis
+func IDirectDrawClipper_Release_c *lpThis
+func IDirectDrawClipper_GetClipList_c *lpThis, *lpRect, *lpClipList, *lpdwSize
+func IDirectDrawClipper_GetHWnd_c *lpThis, *lphWnd
+func IDirectDrawClipper_Initialize_c *lpThis, *lpDD, dwFlags
+func IDirectDrawClipper_IsClipListChanged_c *lpThis, *lpbChanged
+func IDirectDrawClipper_SetClipList_c *lpThis, *lpClipList, dwFlags
+func IDirectDrawClipper_SetHWnd_c *lpThis, dwFlags, *hWnd
+
 proc DirectDrawCreate_asm2c public
 
 ; [esp + 3*4] = IUnknown     *pUnkOuter
@@ -1019,6 +1029,87 @@ proc IDirectDrawPalette_SetEntries_asm2c public
 endp ; end procedure IDirectDrawPalette_SetEntries_asm2c
 
 
+proc IDirectDrawClipper_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirectDrawClipper_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectDrawClipper_QueryInterface_asm2c
+
+
+proc IDirectDrawClipper_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirectDrawClipper_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectDrawClipper_AddRef_asm2c
+
+
+proc IDirectDrawClipper_Release_asm2c public
+
+        Call_Asm_Stack1 IDirectDrawClipper_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectDrawClipper_Release_asm2c
+
+
+proc IDirectDrawClipper_GetClipList_asm2c public
+
+        Call_Asm_Stack4 IDirectDrawClipper_GetClipList_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectDrawClipper_GetClipList_asm2c
+
+
+proc IDirectDrawClipper_GetHWnd_asm2c public
+
+        Call_Asm_Stack2 IDirectDrawClipper_GetHWnd_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectDrawClipper_GetHWnd_asm2c
+
+
+proc IDirectDrawClipper_Initialize_asm2c public
+
+        Call_Asm_Stack3 IDirectDrawClipper_Initialize_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectDrawClipper_Initialize_asm2c
+
+
+proc IDirectDrawClipper_IsClipListChanged_asm2c public
+
+        Call_Asm_Stack2 IDirectDrawClipper_IsClipListChanged_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectDrawClipper_IsClipListChanged_asm2c
+
+
+proc IDirectDrawClipper_SetClipList_asm2c public
+
+        Call_Asm_Stack3 IDirectDrawClipper_SetClipList_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectDrawClipper_SetClipList_asm2c
+
+
+proc IDirectDrawClipper_SetHWnd_asm2c public
+
+        Call_Asm_Stack3 IDirectDrawClipper_SetHWnd_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectDrawClipper_SetHWnd_asm2c
+
+
 datasegment ddraw_data constant
 
 dlabel IDirectDrawVtbl_asm2c global
@@ -1084,6 +1175,17 @@ daddr IDirectDrawSurface_Unlock_asm2c
 daddr IDirectDrawSurface_UpdateOverlay_asm2c
 daddr IDirectDrawSurface_UpdateOverlayDisplay_asm2c
 daddr IDirectDrawSurface_UpdateOverlayZOrder_asm2c
+
+dlabel IDirectDrawClipperVtbl_asm2c global
+daddr IDirectDrawClipper_QueryInterface_asm2c
+daddr IDirectDrawClipper_AddRef_asm2c
+daddr IDirectDrawClipper_Release_asm2c
+daddr IDirectDrawClipper_GetClipList_asm2c
+daddr IDirectDrawClipper_GetHWnd_asm2c
+daddr IDirectDrawClipper_Initialize_asm2c
+daddr IDirectDrawClipper_IsClipListChanged_asm2c
+daddr IDirectDrawClipper_SetClipList_asm2c
+daddr IDirectDrawClipper_SetHWnd_asm2c
 
 dlabel IDirectDrawPaletteVtbl_asm2c global
 daddr IDirectDrawPalette_QueryInterface_asm2c
