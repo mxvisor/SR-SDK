@@ -54,6 +54,8 @@ variants=default        # recognized versions of the original, by sha256
 input_exe=../path/to/GAME.EXE
 link=separate
 devices=pc64-linux,pc64-windows
+winapi=yes              # win32 only: the Win32 API layer, runtime/win32/winapi (default yes)
+runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
 program=game
 android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
@@ -128,8 +130,11 @@ and there is no fixed-address mode.
 - for the llasm backend, the `.c` of each `llasm_X.llinc` that the game's
   `llasm.llinc` includes, straight from `SR/SR/llasm-support/`;
 - `game/`, `game/display/`, `game/audio/`, `game/input/`: every `.c`, or the
-  directory's own `SConscript` when it has one. `game/llasm/SConscript` is
-  required.
+  directory's own `SConscript` when it has one;
+- `game/llasm/`: its own `SConscript` when it has one. Otherwise `scons/llasm.SConscript`
+  builds the game's `.c` and `.llasm`, and those of the runtime's `llasm/` directories
+  (`runtime/win32/llasm/`, `runtime/win32/winapi/llasm/`), except the files the game has
+  under the same name.
 
 Headers are looked up in `game/` first, then in the runtime, then in SR's
 `scaler-plugins/` and `llasm-support/`. A runtime `.c` finds the runtime's own
@@ -146,6 +151,15 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
 | `GAME_CD_MARKER` | a directory on the CD that tells a copy of the disc from an installed game |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
+
+The Win32 API layer (`runtime/win32/winapi/`) also takes, all optional:
+`GAME_WINAPI_KEY_MESSAGES` (0: the message pump does not deliver key events; default 1),
+`GAME_WINAPI_START_DIRECTORY` (the directory the game starts in, `"D:\\"` for the disc;
+default the process's own), `GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption)` (a button to
+answer a message box with without showing it; default 0). The game brings
+`WinApi-game.h`, the prototypes of the imports of its executable, and
+`WinApi-game*.c`, their implementation, which `WinApi-guest.h` (calling back into the
+guest) completes.
 
 On Android the game's `main` calls `Game_AndroidSetup()` (`Game_android.h`)
 first: it sends stdout and stderr to logcat and sets `GAME_ENV("DATA_DIR")`
@@ -170,14 +184,20 @@ tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project
 runtime/core/           threads, memory, frontends, virtual keyboard, printf,
-                        Android start-up
-runtime/dos/            WATCOM C library and file I/O, CD image, CD audio
+                        Android start-up, and what the DOS and the Win32 ports
+                        share: WATCOM C library and file I/O (Game_clib, Game_vfs,
+                        Game_file), CD image (Game_cdrom), CD audio (Game_music)
+runtime/dos/            DOS memory (Game_dosmem) and the llasm includes of the DOS ports
 runtime/dos/llasm/      shared llasm includes of the DOS ports
-runtime/win32/          the Windows-original counterpart -- to come
+runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
+                        llasm/ (asm-cpu.c, Game-asm.c)
+runtime/win32/winapi/   the Win32 API layer: kernel32, user32, gdi32, DirectDraw, DirectInput,
+                        DirectSound, winmm, MCI, avifile, msvfw, the registry and the
+                        game's config file; winapi/llasm/ is its llasm glue
 skeleton/               a starting point for a new game repository -- to come
 ```
 
-`runtime/dos/` in more detail:
+`runtime/core/` and `runtime/dos/`: the layers of a DOS game (also used by Win32 ports):
 
 - `Game_clib.c`: the WATCOM C library functions a game's
   `external_procedures.sci` routes to the host;
@@ -190,6 +210,9 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
   buffers, the PSP) in one pool;
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
+
+Only `Game_dosmem` is in `runtime/dos/`; the others are in `runtime/core/`, and a game that
+has no use for them leaves them out with `runtime_skip`.
 
 ## License
 

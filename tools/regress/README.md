@@ -31,7 +31,8 @@ It means that the change must be looked at, and then the reference saved again.
 
 - `games.tsv`: the games (repository, program, env prefix, data, disc image, Wine prefix).
   The paths are relative to the workspace root, the parent of `SR-SDK/`
-  (`$DOS_RECOMP_ROOT` overrides it).
+  (`$DOS_RECOMP_ROOT` overrides it). An optional eighth column is the number of seconds the
+  game is left running when it needs more than the default 15 to show something.
 - `ref/`: the reference run: `results.tsv` (build, smoke, sr), `llasm-<game>.txt`
   (hashes of the llasm output of each game), `sr-hashes.txt` (SR's output per input,
   with the commit it was taken at).
