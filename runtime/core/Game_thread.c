@@ -109,6 +109,9 @@ int Game_MainThread(void *data)
         int ret;
 
         ret = Game_Main();
+        /* Game_StopMain() ends the game with 1; when the user asked for the exit
+         * (window close, SIGINT: Thread_Exit) that is a normal exit. */
+        if (Thread_Exit) ret = 0;
         Game_ExitCode = ret;
     }
 

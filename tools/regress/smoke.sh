@@ -13,9 +13,8 @@
 # Prints one line, TAB-separated:
 #   smoke  GAME:MODE  ok|fail  alive=yes|no closed=yes|no rc=N killed=yes|no nonblank=1|0 leftovers=N
 # ok means: still running after RUN_SECS, gone within CLOSE_WAIT of the close
-# request without being killed, no process left, and the screen was not blank (at the end of RUN_SECS, or within 12 s after it).
-# rc is the game's exit status. Whether a non-zero rc on a window close is
-# acceptable is up to the caller; it is only reported.
+# request without being killed, with exit status 0, no process left, and the screen was not blank (at the end of RUN_SECS, or within 12 s after it).
+# rc is the game's exit status; a close by the user is a normal exit, so rc has to be 0.
 #
 # Environment: SMOKE_OUT (default $REGRESS_OUT/smoke) takes the log and the
 # screenshot of the run: <game>-<mode>.log and .png.
@@ -104,5 +103,5 @@ kill $XPID 2>/dev/null; wait $XPID 2>/dev/null
 rm -rf "$WR"
 
 status=fail
-[ $alive = yes ] && [ $closed = yes ] && [ $killed = no ] && [ "$leftovers" = 0 ] && [ "$nonblank" = 1 ] && status=ok
+[ $alive = yes ] && [ $closed = yes ] && [ $killed = no ] && [ "$rc" = 0 ] && [ "$leftovers" = 0 ] && [ "$nonblank" = 1 ] && status=ok
 report $status "alive=$alive closed=$closed rc=$rc killed=$killed nonblank=$nonblank leftovers=$leftovers"
