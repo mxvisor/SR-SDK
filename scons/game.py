@@ -152,6 +152,12 @@ LLASM_SRC_DIR = os.path.join(ROOT, 'game', 'llasm')
 # game.cfg) and SR's own llasm-support, used in place rather than copied.
 RUNTIME_CORE = os.path.join(SDK_ROOT, 'runtime', 'core')
 RUNTIME_DIRS = [RUNTIME_CORE, os.path.join(SDK_ROOT, 'runtime', PLATFORM)]
+# runtime/win32/winapi/ is the Win32 API layer (kernel32, user32, DirectDraw...)
+# of a Windows original that runs on it; a game that does not (winapi=no in
+# game.cfg) gets only what is directly in runtime/win32/.
+WINAPI = PLATFORM == 'win32' and CFG.get('winapi', 'yes') != 'no'
+if WINAPI:
+    RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi'))
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 LLASM_INC_DIRS = [LLASM_SRC_DIR,
                   os.path.join(RUNTIME_DIRS[1], 'llasm'),
