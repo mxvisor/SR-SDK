@@ -34,7 +34,10 @@ for _ in $(seq 1 50); do [ -s "$DF" ] && break; sleep 0.1; done
 export DISPLAY=:$(head -n1 "$DF"); rm -f "$DF"
 unset WAYLAND_DISPLAY
 export SDL_AUDIODRIVER=dummy
-[ $MODE = wine ] && export WINEPREFIX=$HOME/.cache/$PFX WINEDEBUG=${WINEDEBUG:--all}
+if [ $MODE = wine ]; then
+    export WINEPREFIX=$HOME/.cache/$PFX WINEDEBUG=${WINEDEBUG:--all}
+    . "$REGRESS_DIR/../wine_dummy_audio.sh"; wine_dummy_audio
+fi
 
 alive=0; bases=()
 for run in $(seq 1 "$RUNS"); do

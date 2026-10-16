@@ -56,6 +56,7 @@ if [ $MODE = linux ]; then
     env SDL_VIDEODRIVER=x11 "${ENVV[@]}" "$BIN" > "$LOG" 2>&1 &
 else
     export WINEPREFIX=$HOME/.cache/$PFX WINEDEBUG=${WINEDEBUG:--all}
+    . "$REGRESS_DIR/../wine_dummy_audio.sh"; wine_dummy_audio
     env WINEDLLOVERRIDES="mscoree=d;mshtml=d;winepulse.drv=d;winealsa.drv=d;wineoss.drv=d" "${ENVV[@]}" \
         wine "$BIN" > "$LOG" 2>&1 &
 fi

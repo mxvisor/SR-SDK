@@ -3152,9 +3152,15 @@ uint32_t CCALL MessageBoxA_c(void *hWnd, const char *lpText, const char *lpCapti
 
     eprintf("MessageBoxA: 0x%x\n\tCaption: %s\n\tText: %s\n", uType, lpCaption, lpText);
 
-    if ((uType & MB_TYPEMASK) == 0)
+    /* no box could be shown: answer with the first button (OK, or Yes) */
+    switch (uType & MB_TYPEMASK)
     {
-        return IDOK;
+        case MB_OK:
+        case MB_OKCANCEL:
+            return IDOK;
+        case MB_YESNOCANCEL:
+        case MB_YESNO:
+            return IDYES;
     }
 
     eprintf("Unsupported method: %s\n", "MessageBoxA");

@@ -239,6 +239,7 @@ run_wine() {
     exit 1
   fi
   mkdir -p "$SHOTS"
+  . "$(dirname "${BASH_SOURCE[0]}")/wine_dummy_audio.sh"; wine_dummy_audio
   LOGF="$(mktemp)"
   _start_xvfb
   trap 'kill $XVFB_PID 2>/dev/null || true; [ -z "${PID:-}" ] || kill -9 $PID 2>/dev/null || true; rm -f "$LOGF"' EXIT
