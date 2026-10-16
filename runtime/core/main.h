@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright (C) 2016-2026 Roman Pauer
+ *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -31,5 +32,11 @@ void Game_CloseThreadConcurency(void);
 #endif
 
 void Game_CleanState(int imm);
+
+/* Game_eventloop.c */
+extern int Game_QuitRequested;
+void Game_Event_Loop(void);
+/* the game's main.c: draws one frame; the event loop calls it */
+void Game_Display_Flip(void);
 
 #endif /* _MAIN_H_INCLUDED_ */
