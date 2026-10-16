@@ -24,7 +24,7 @@ Writes, under the game repository's game/:
   llasm/extern.llinc           (extern: yes) `define <name> <name>_asm2c` per import
   WinApi-game.c                (stubs: yes) a stub returning 0 for every function
                                that no other game/*.c and not the SDK's
-                               runtime/win32/winapi/WinApi-stubs.c (stubs of the
+                               runtime/win32/winapi/WinApi-*.c (the layer and the stubs of the
                                common imports) defines; not written when none is
                                left; refused when the file
                                exists -- it is the game's own code after the first
@@ -173,14 +173,12 @@ if cfg.get('stubs') == 'yes':
         print('WinApi-game.c exists, not touched')
     else:
         implemented = set()
-        # the SDK's own stubs (runtime/win32/winapi/WinApi-stubs.c) count too,
-        # unless the game leaves the winapi layer out
-        sdk_stubs = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
-                                 'runtime', 'win32', 'winapi', 'WinApi-stubs.c')
+        # the SDK's own winapi layer counts too (WinApi-*.c, with the stubs of
+        # WinApi-stubs.c), unless the game leaves the layer out
+        sdk_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                               'runtime', 'win32', 'winapi')
         use_sdk = 'winapi=no' not in open(os.path.join(GAME, 'game.cfg')).read()
-        for path in glob.glob(os.path.join(GAME, '*.c')) + ([sdk_stubs] if use_sdk else []):
-            if not os.path.exists(path):
-                continue
+        for path in glob.glob(os.path.join(GAME, '*.c')) + (glob.glob(os.path.join(sdk_dir, '*.c')) if use_sdk else []):
             implemented |= set(re.findall(r'^\w[\w \*]*?\bCCALL\s+(\w+_c)\s*\(',
                                           open(path, errors='replace').read(), re.M))
         todo = [n for n in generated if cname(n[0]) + '_c' not in implemented]
