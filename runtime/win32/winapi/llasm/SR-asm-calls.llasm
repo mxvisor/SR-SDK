@@ -135,7 +135,7 @@ proc SR__nfree public
     tcall tmp0
 endp
 
-;; WATCOM file I/O (the C library layer). The register-convention ones are shaped
+;; WATCOM file I/O (the C library layer, CLIB.c). The register-convention ones are shaped
 ;; like _nmalloc above: arguments in eax, edx, ebx, ecx in that order, the
 ;; result in eax, every other register preserved. setbuf returns nothing.
 
@@ -277,7 +277,7 @@ proc SR_open public
     tcall tmp0
 endp
 
-;; Miles AIL 3.x (the game's sound code), cdecl: arguments on the stack from [esp + 4],
+;; Miles AIL 3.x (Game_sound.c), cdecl: arguments on the stack from [esp + 4],
 ;; the caller pops them, the result in eax.  AIL's own wrappers preserve ebx,
 ;; esi, edi and ebp; these leave every register but eax untouched.
 

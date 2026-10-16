@@ -7,7 +7,7 @@
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm image
+#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm image prefixes
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -21,11 +21,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, aslr, llasm-gen, llasm-llvm or image; STATUS is ok, fail or
+# CHECK is sr, build, smoke, aslr, llasm-gen, llasm-llvm, image or prefixes; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm image"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
+ONLY="sr build smoke aslr llasm image prefixes"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -119,6 +119,15 @@ if want image; then
     echo "## image: ${GAMES[*]}" >&2
     "$REGRESS_DIR/image_check.py" "${GAMES[@]}" | while IFS=$'\t' read -r kind subject status detail; do
         add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
+    done
+fi
+
+if want prefixes; then
+    echo "## prefixes: ${GAMES[*]} sdk" >&2
+    for id in "${GAMES[@]}" sdk; do
+        out=$("$REGRESS_DIR/check_prefixes.py" "$id") && st=ok || st=fail
+        [ "$st" = fail ] && printf '%s\n' "$out" | sed 's/^/    /' >&2
+        add "$(printf 'prefixes\t%s\t%s\t%s' "$id" "$st" "$(printf '%s\n' "$out" | tail -1)")"
     done
 fi
 
