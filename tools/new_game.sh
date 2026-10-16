@@ -8,6 +8,8 @@
 #   --exe   the original executable: its sha256 goes to game/recomp/, input_exe= to game.cfg
 #           (path relative to DIR, or absolute); without it the sha256 is a placeholder
 #   --sdk   where SR-SDK comes from (default: the repository this script is in)
+#   --sr    where SR comes from (default: SR of the --sdk repository when that is a directory,
+#           else the URL in SR-SDK/.gitmodules)
 #   --env   the prefix of the port's environment variables (default: NAME in capitals, no dashes)
 #
 # It writes SConstruct, Makefile, .gitignore, game/{game.cfg,Game_hooks.h,recomp/},
@@ -22,12 +24,13 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 
 [ $# -ge 3 ] || { usage; exit 1; }
 DIR="$1"; NAME="$2"; PLATFORM="$3"; shift 3
-EXE=""; SDK_URL="$SDK_DIR"
+EXE=""; SDK_URL="$SDK_DIR"; SR_URL=""
 ENVP="$(printf '%s' "$NAME" | tr -d '-' | tr '[:lower:]' '[:upper:]')"
 while [ $# -gt 0 ]; do
   case "$1" in
     --exe) EXE="$2"; shift ;;
     --sdk) SDK_URL="$2"; shift ;;
+    --sr) SR_URL="$2"; shift ;;
     --env) ENVP="$2"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
@@ -194,6 +197,8 @@ git -c protocol.file.allow=always submodule add -q "$SDK_URL" SR-SDK
 SDK_HEAD="$(git -C "$SDK_DIR" rev-parse HEAD)"
 git -C SR-SDK fetch -q --no-recurse-submodules origin
 git -C SR-SDK checkout -q --no-recurse-submodules "$SDK_HEAD"
+[ -n "$SR_URL" ] || { [ -d "$SDK_URL/SR/.git" ] || [ -f "$SDK_URL/SR/.git" ]; } && SR_URL="${SR_URL:-$SDK_URL/SR}" || true
+[ -z "$SR_URL" ] || git -C SR-SDK config submodule.SR.url "$SR_URL"
 git -C SR-SDK -c protocol.file.allow=always submodule update -q --init --recursive
 git -C SR-SDK/SR checkout -q master 2>/dev/null || true
 

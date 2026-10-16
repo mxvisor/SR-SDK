@@ -36,6 +36,28 @@ No D compiler is needed: llasm IR is translated by `llasm/llasm.py`, a Python
 version of SR's `llasm` that is developed here; on SR's reference games its output is byte-identical to the D original (see
 [`llasm/README.md`](llasm/README.md)).
 
+## Starting a new port
+
+`tools/new_game.sh DIR NAME dos|win32 [--exe PATH]` makes the skeleton of a game
+repository: `SConstruct`, `Makefile`, `.gitignore`, `game/game.cfg`,
+`game/Game_hooks.h`, `game/recomp/Game-main/default/` (`sha256`, `SR.cfg`), the
+launchers (`run-sdl.sh`, `run_sdl_wine.sh`, `run-orig-dosbox.sh` or
+`run-orig-wine.sh`), a git repository and SR-SDK (with SR) as a submodule. With
+`--exe` the original's sha256 is written, and `scons stage=input` then passes.
+Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
+`TODO` lines of the launchers name what to fill in.
+
+## Running the original
+
+`run-orig-dosbox.sh` (DOS games) and `run-orig-wine.sh` (Windows games) of a game
+repository run the original as the reference for the port, on the layout of the
+disc: DOSBox mounts the game as `C:` with an overlay and the cue sheet made by
+`tools/image/image.py` as `D:`; Wine runs on a `fuse-overlayfs` mount of the game
+(a copy when it is missing), and `D:` is the unpacked disc. What the original
+writes lands in `<outer dir>/run/orig-*`. `--headless[=N]` takes screenshots under
+Xvfb (`build/shots/orig-*`), `--keys=` sends keys. The common part is
+`tools/run_orig_common.sh`.
+
 ## Using it in a game repository
 
 ```sh
