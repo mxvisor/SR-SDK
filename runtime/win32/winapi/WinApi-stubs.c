@@ -470,15 +470,6 @@ uint32_t CCALL FindWindowA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_FlushFileBuffers
-uint32_t CCALL FlushFileBuffers_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("FlushFileBuffers");
-    return 0;
-}
-#endif
-
 #ifdef STUB_FormatMessageA
 uint32_t CCALL FormatMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6)
 {
@@ -492,24 +483,6 @@ uint32_t CCALL FormatMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t 
 uint32_t CCALL FreeConsole_c(void)
 {
     GAME_STUBLOG("FreeConsole");
-    return 0;
-}
-#endif
-
-#ifdef STUB_FreeEnvironmentStringsA
-uint32_t CCALL FreeEnvironmentStringsA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("FreeEnvironmentStringsA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_FreeEnvironmentStringsW
-uint32_t CCALL FreeEnvironmentStringsW_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("FreeEnvironmentStringsW");
     return 0;
 }
 #endif
@@ -532,28 +505,11 @@ uint32_t CCALL FreeResource_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_GetACP
-uint32_t CCALL GetACP_c(void)
-{
-    GAME_STUBLOG("GetACP");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetAsyncKeyState
 uint32_t CCALL GetAsyncKeyState_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("GetAsyncKeyState");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetCPInfo
-uint32_t CCALL GetCPInfo_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("GetCPInfo");
     return 0;
 }
 #endif
@@ -572,14 +528,6 @@ uint32_t CCALL GetClientRect_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("GetClientRect");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetCommandLineA
-uint32_t CCALL GetCommandLineA_c(void)
-{
-    GAME_STUBLOG("GetCommandLineA");
     return 0;
 }
 #endif
@@ -665,22 +613,6 @@ uint32_t CCALL GetDlgItemTextA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t
 }
 #endif
 
-#ifdef STUB_GetEnvironmentStrings
-uint32_t CCALL GetEnvironmentStrings_c(void)
-{
-    GAME_STUBLOG("GetEnvironmentStrings");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetEnvironmentStringsW
-uint32_t CCALL GetEnvironmentStringsW_c(void)
-{
-    GAME_STUBLOG("GetEnvironmentStringsW");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetExitCodeProcess
 uint32_t CCALL GetExitCodeProcess_c(uint32_t a0, uint32_t a1)
 {
@@ -690,29 +622,11 @@ uint32_t CCALL GetExitCodeProcess_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_GetFileAttributesA
-uint32_t CCALL GetFileAttributesA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetFileAttributesA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetFileInformationByHandle
 uint32_t CCALL GetFileInformationByHandle_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("GetFileInformationByHandle");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetFileType
-uint32_t CCALL GetFileType_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetFileType");
     return 0;
 }
 #endif
@@ -743,73 +657,11 @@ uint32_t CCALL GetLastError_c(void)
 }
 #endif
 
-#ifdef STUB_GetLocalTime
-uint32_t CCALL GetLocalTime_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetLocalTime");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetLocaleInfoA
-uint32_t CCALL GetLocaleInfoA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("GetLocaleInfoA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetLocaleInfoW
-uint32_t CCALL GetLocaleInfoW_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("GetLocaleInfoW");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetMenu
 uint32_t CCALL GetMenu_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("GetMenu");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetModuleFileNameA
-uint32_t CCALL GetModuleFileNameA_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("GetModuleFileNameA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetModuleHandleA
-uint32_t CCALL GetModuleHandleA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetModuleHandleA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetOEMCP
-uint32_t CCALL GetOEMCP_c(void)
-{
-    GAME_STUBLOG("GetOEMCP");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetProcAddress
-uint32_t CCALL GetProcAddress_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("GetProcAddress");
     return 0;
 }
 #endif
@@ -828,42 +680,6 @@ uint32_t CCALL GetRegionData_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("GetRegionData");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetStartupInfoA
-uint32_t CCALL GetStartupInfoA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetStartupInfoA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetStdHandle
-uint32_t CCALL GetStdHandle_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetStdHandle");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetStringTypeA
-uint32_t CCALL GetStringTypeA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("GetStringTypeA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetStringTypeW
-uint32_t CCALL GetStringTypeW_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("GetStringTypeW");
     return 0;
 }
 #endif
@@ -904,29 +720,11 @@ uint32_t CCALL GetSystemPaletteEntries_c(uint32_t a0, uint32_t a1, uint32_t a2, 
 }
 #endif
 
-#ifdef STUB_GetSystemTime
-uint32_t CCALL GetSystemTime_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetSystemTime");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetTickCount
 uint32_t CCALL GetTickCount_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("GetTickCount");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetTimeZoneInformation
-uint32_t CCALL GetTimeZoneInformation_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetTimeZoneInformation");
     return 0;
 }
 #endif
@@ -945,31 +743,6 @@ uint32_t CCALL GetUpdateRgn_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("GetUpdateRgn");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetUserDefaultLCID
-uint32_t CCALL GetUserDefaultLCID_c(void)
-{
-    GAME_STUBLOG("GetUserDefaultLCID");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetVersion
-uint32_t CCALL GetVersion_c(void)
-{
-    GAME_STUBLOG("GetVersion");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetVersionExA
-uint32_t CCALL GetVersionExA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetVersionExA");
     return 0;
 }
 #endif
@@ -1001,15 +774,6 @@ uint32_t CCALL GetWindowTextA_c(uint32_t a0, uint32_t a1, uint32_t a2)
 }
 #endif
 
-#ifdef STUB_GlobalAlloc
-uint32_t CCALL GlobalAlloc_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("GlobalAlloc");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GlobalCompact
 uint32_t CCALL GlobalCompact_c(uint32_t a0)
 {
@@ -1028,110 +792,11 @@ uint32_t CCALL GlobalFlags_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_GlobalFree
-uint32_t CCALL GlobalFree_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GlobalFree");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GlobalLock
-uint32_t CCALL GlobalLock_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GlobalLock");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GlobalMemoryStatus
-uint32_t CCALL GlobalMemoryStatus_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GlobalMemoryStatus");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GlobalReAlloc
 uint32_t CCALL GlobalReAlloc_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("GlobalReAlloc");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GlobalSize
-uint32_t CCALL GlobalSize_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GlobalSize");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GlobalUnlock
-uint32_t CCALL GlobalUnlock_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GlobalUnlock");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapAlloc
-uint32_t CCALL HeapAlloc_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("HeapAlloc");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapCreate
-uint32_t CCALL HeapCreate_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("HeapCreate");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapDestroy
-uint32_t CCALL HeapDestroy_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("HeapDestroy");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapFree
-uint32_t CCALL HeapFree_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("HeapFree");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapReAlloc
-uint32_t CCALL HeapReAlloc_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("HeapReAlloc");
-    return 0;
-}
-#endif
-
-#ifdef STUB_HeapSize
-uint32_t CCALL HeapSize_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("HeapSize");
     return 0;
 }
 #endif
@@ -1181,51 +846,6 @@ uint32_t CCALL InvalidateRgn_c(uint32_t a0, uint32_t a1, uint32_t a2)
 }
 #endif
 
-#ifdef STUB_IsBadCodePtr
-uint32_t CCALL IsBadCodePtr_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("IsBadCodePtr");
-    return 0;
-}
-#endif
-
-#ifdef STUB_IsBadReadPtr
-uint32_t CCALL IsBadReadPtr_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("IsBadReadPtr");
-    return 0;
-}
-#endif
-
-#ifdef STUB_IsBadWritePtr
-uint32_t CCALL IsBadWritePtr_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("IsBadWritePtr");
-    return 0;
-}
-#endif
-
-#ifdef STUB_IsValidCodePage
-uint32_t CCALL IsValidCodePage_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("IsValidCodePage");
-    return 0;
-}
-#endif
-
-#ifdef STUB_IsValidLocale
-uint32_t CCALL IsValidLocale_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("IsValidLocale");
-    return 0;
-}
-#endif
-
 #ifdef STUB_KillTimer
 uint32_t CCALL KillTimer_c(uint32_t a0, uint32_t a1)
 {
@@ -1271,15 +891,6 @@ uint32_t CCALL LoadIconA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_LoadLibraryA
-uint32_t CCALL LoadLibraryA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("LoadLibraryA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_LoadResource
 uint32_t CCALL LoadResource_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6)
 {
@@ -1294,15 +905,6 @@ uint32_t CCALL LocalAlloc_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("LocalAlloc");
-    return 0;
-}
-#endif
-
-#ifdef STUB_LocalFree
-uint32_t CCALL LocalFree_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("LocalFree");
     return 0;
 }
 #endif
@@ -1352,29 +954,11 @@ uint32_t CCALL MoveFileA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_MultiByteToWideChar
-uint32_t CCALL MultiByteToWideChar_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
-    GAME_STUBLOG("MultiByteToWideChar");
-    return 0;
-}
-#endif
-
 #ifdef STUB_OpenFileMappingA
 uint32_t CCALL OpenFileMappingA_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("OpenFileMappingA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_OutputDebugStringA
-uint32_t CCALL OutputDebugStringA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("OutputDebugStringA");
     return 0;
 }
 #endif
@@ -1613,15 +1197,6 @@ uint32_t CCALL SetCursorPos_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_SetEndOfFile
-uint32_t CCALL SetEndOfFile_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("SetEndOfFile");
-    return 0;
-}
-#endif
-
 #ifdef STUB_SetEnvironmentVariableA
 uint32_t CCALL SetEnvironmentVariableA_c(uint32_t a0, uint32_t a1)
 {
@@ -1649,15 +1224,6 @@ uint32_t CCALL SetForegroundWindow_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_SetHandleCount
-uint32_t CCALL SetHandleCount_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("SetHandleCount");
-    return 0;
-}
-#endif
-
 #ifdef STUB_SetPriorityClass
 uint32_t CCALL SetPriorityClass_c(uint32_t a0, uint32_t a1)
 {
@@ -1676,15 +1242,6 @@ uint32_t CCALL SetRect_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uin
 }
 #endif
 
-#ifdef STUB_SetStdHandle
-uint32_t CCALL SetStdHandle_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("SetStdHandle");
-    return 0;
-}
-#endif
-
 #ifdef STUB_SetThreadPriority
 uint32_t CCALL SetThreadPriority_c(uint32_t a0, uint32_t a1)
 {
@@ -1699,15 +1256,6 @@ uint32_t CCALL SetTimer_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
     (void)a0; (void)a1; (void)a2; (void)a3;
     GAME_STUBLOG("SetTimer");
-    return 0;
-}
-#endif
-
-#ifdef STUB_SetUnhandledExceptionFilter
-uint32_t CCALL SetUnhandledExceptionFilter_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("SetUnhandledExceptionFilter");
     return 0;
 }
 #endif
@@ -1802,15 +1350,6 @@ uint32_t CCALL TranslateMessage_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_UnhandledExceptionFilter
-uint32_t CCALL UnhandledExceptionFilter_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("UnhandledExceptionFilter");
-    return 0;
-}
-#endif
-
 #ifdef STUB_UnmapViewOfFile
 uint32_t CCALL UnmapViewOfFile_c(uint32_t a0)
 {
@@ -1838,38 +1377,11 @@ uint32_t CCALL ValidateRgn_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_VirtualAlloc
-uint32_t CCALL VirtualAlloc_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("VirtualAlloc");
-    return 0;
-}
-#endif
-
-#ifdef STUB_VirtualFree
-uint32_t CCALL VirtualFree_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("VirtualFree");
-    return 0;
-}
-#endif
-
 #ifdef STUB_WaitForInputIdle
 uint32_t CCALL WaitForInputIdle_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("WaitForInputIdle");
-    return 0;
-}
-#endif
-
-#ifdef STUB_WideCharToMultiByte
-uint32_t CCALL WideCharToMultiByte_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; (void)a7;
-    GAME_STUBLOG("WideCharToMultiByte");
     return 0;
 }
 #endif
@@ -1967,24 +1479,6 @@ uint32_t CCALL joyGetPosEx_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("joyGetPosEx");
-    return 0;
-}
-#endif
-
-#ifdef STUB_lstrcpyA
-uint32_t CCALL lstrcpyA_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("lstrcpyA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_lstrlenA
-uint32_t CCALL lstrlenA_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("lstrlenA");
     return 0;
 }
 #endif

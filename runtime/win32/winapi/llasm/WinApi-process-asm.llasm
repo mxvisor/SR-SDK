@@ -1,0 +1,607 @@
+;;
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+;;
+
+;;  kernel32 bridges of WinApi-process.c: each proc pops its stdcall arguments
+;;
+
+include llasm.llinc
+include Game-asm-calls.llinc
+
+func GetVersion_c
+func GetVersionExA_c a0
+func GetModuleHandleA_c a0
+func GetModuleFileNameA_c a0, a1, a2
+func GetCommandLineA_c
+func GetStartupInfoA_c a0
+func LoadLibraryA_c a0
+func GetProcAddress_c a0, a1
+func SetUnhandledExceptionFilter_c a0
+func UnhandledExceptionFilter_c a0
+func HeapCreate_c a0, a1, a2
+func HeapDestroy_c a0
+func HeapAlloc_c a0, a1, a2
+func HeapFree_c a0, a1, a2
+func HeapSize_c a0, a1, a2
+func HeapReAlloc_c a0, a1, a2, a3
+func GlobalAlloc_c a0, a1
+func GlobalLock_c a0
+func GlobalUnlock_c a0
+func GlobalHandle_c a0
+func GlobalFree_c a0
+func GlobalSize_c a0
+func GlobalMemoryStatus_c a0
+func LocalFree_c a0
+func VirtualAlloc_c a0, a1, a2, a3
+func VirtualFree_c a0, a1, a2
+func IsBadReadPtr_c a0, a1
+func IsBadWritePtr_c a0, a1
+func IsBadCodePtr_c a0
+func GetACP_c
+func GetOEMCP_c
+func IsValidCodePage_c a0
+func IsValidLocale_c a0, a1
+func GetUserDefaultLCID_c
+func GetCPInfo_c a0, a1
+func GetStdHandle_c a0
+func SetStdHandle_c a0, a1
+func GetFileType_c a0
+func SetHandleCount_c a0
+func FlushFileBuffers_c a0
+func SetEndOfFile_c a0
+func GetEnvironmentStrings_c
+func GetEnvironmentStringsW_c
+func FreeEnvironmentStringsA_c a0
+func FreeEnvironmentStringsW_c a0
+func lstrlenA_c a0
+func lstrcpyA_c a0, a1
+func OutputDebugStringA_c a0
+func GetFileAttributesA_c a0
+func GetSystemTime_c a0
+func GetLocalTime_c a0
+func GetTimeZoneInformation_c a0
+func WideCharToMultiByte_c a0, a1, a2, a3, a4, a5, a6, a7
+func MultiByteToWideChar_c a0, a1, a2, a3, a4, a5
+func GetStringTypeW_c a0, a1, a2, a3
+func GetStringTypeA_c a0, a1, a2, a3, a4
+func GetLocaleInfoA_c a0, a1, a2, a3
+func GetLocaleInfoW_c a0, a1, a2, a3
+
+proc GetVersion_asm2c public
+
+        Call_Asm_Stack0 GetVersion_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetVersion_asm2c
+
+
+proc GetVersionExA_asm2c public
+
+        Call_Asm_Stack1 GetVersionExA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetVersionExA_asm2c
+
+
+proc GetModuleHandleA_asm2c public
+
+        Call_Asm_Stack1 GetModuleHandleA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetModuleHandleA_asm2c
+
+
+proc GetModuleFileNameA_asm2c public
+
+        Call_Asm_Stack3 GetModuleFileNameA_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure GetModuleFileNameA_asm2c
+
+
+proc GetCommandLineA_asm2c public
+
+        Call_Asm_Stack0 GetCommandLineA_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetCommandLineA_asm2c
+
+
+proc GetStartupInfoA_asm2c public
+
+        Call_Asm_Stack1 GetStartupInfoA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetStartupInfoA_asm2c
+
+
+proc LoadLibraryA_asm2c public
+
+        Call_Asm_Stack1 LoadLibraryA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure LoadLibraryA_asm2c
+
+
+proc GetProcAddress_asm2c public
+
+        Call_Asm_Stack2 GetProcAddress_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure GetProcAddress_asm2c
+
+
+proc SetUnhandledExceptionFilter_asm2c public
+
+        Call_Asm_Stack1 SetUnhandledExceptionFilter_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure SetUnhandledExceptionFilter_asm2c
+
+
+proc UnhandledExceptionFilter_asm2c public
+
+        Call_Asm_Stack1 UnhandledExceptionFilter_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure UnhandledExceptionFilter_asm2c
+
+
+proc HeapCreate_asm2c public
+
+        Call_Asm_Stack3 HeapCreate_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure HeapCreate_asm2c
+
+
+proc HeapDestroy_asm2c public
+
+        Call_Asm_Stack1 HeapDestroy_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure HeapDestroy_asm2c
+
+
+proc HeapAlloc_asm2c public
+
+        Call_Asm_Stack3 HeapAlloc_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure HeapAlloc_asm2c
+
+
+proc HeapFree_asm2c public
+
+        Call_Asm_Stack3 HeapFree_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure HeapFree_asm2c
+
+
+proc HeapSize_asm2c public
+
+        Call_Asm_Stack3 HeapSize_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure HeapSize_asm2c
+
+
+proc HeapReAlloc_asm2c public
+
+        Call_Asm_Stack4 HeapReAlloc_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure HeapReAlloc_asm2c
+
+
+proc GlobalAlloc_asm2c public
+
+        Call_Asm_Stack2 GlobalAlloc_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure GlobalAlloc_asm2c
+
+
+proc GlobalLock_asm2c public
+
+        Call_Asm_Stack1 GlobalLock_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalLock_asm2c
+
+
+proc GlobalUnlock_asm2c public
+
+        Call_Asm_Stack1 GlobalUnlock_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalUnlock_asm2c
+
+
+proc GlobalHandle_asm2c public
+
+        Call_Asm_Stack1 GlobalHandle_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalHandle_asm2c
+
+
+proc GlobalFree_asm2c public
+
+        Call_Asm_Stack1 GlobalFree_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalFree_asm2c
+
+
+proc GlobalSize_asm2c public
+
+        Call_Asm_Stack1 GlobalSize_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalSize_asm2c
+
+
+proc GlobalMemoryStatus_asm2c public
+
+        Call_Asm_Stack1 GlobalMemoryStatus_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GlobalMemoryStatus_asm2c
+
+
+proc LocalFree_asm2c public
+
+        Call_Asm_Stack1 LocalFree_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure LocalFree_asm2c
+
+
+proc VirtualAlloc_asm2c public
+
+        Call_Asm_Stack4 VirtualAlloc_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure VirtualAlloc_asm2c
+
+
+proc VirtualFree_asm2c public
+
+        Call_Asm_Stack3 VirtualFree_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure VirtualFree_asm2c
+
+
+proc IsBadReadPtr_asm2c public
+
+        Call_Asm_Stack2 IsBadReadPtr_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IsBadReadPtr_asm2c
+
+
+proc IsBadWritePtr_asm2c public
+
+        Call_Asm_Stack2 IsBadWritePtr_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IsBadWritePtr_asm2c
+
+
+proc IsBadCodePtr_asm2c public
+
+        Call_Asm_Stack1 IsBadCodePtr_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IsBadCodePtr_asm2c
+
+
+proc GetACP_asm2c public
+
+        Call_Asm_Stack0 GetACP_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetACP_asm2c
+
+
+proc GetOEMCP_asm2c public
+
+        Call_Asm_Stack0 GetOEMCP_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetOEMCP_asm2c
+
+
+proc IsValidCodePage_asm2c public
+
+        Call_Asm_Stack1 IsValidCodePage_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IsValidCodePage_asm2c
+
+
+proc IsValidLocale_asm2c public
+
+        Call_Asm_Stack2 IsValidLocale_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IsValidLocale_asm2c
+
+
+proc GetUserDefaultLCID_asm2c public
+
+        Call_Asm_Stack0 GetUserDefaultLCID_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetUserDefaultLCID_asm2c
+
+
+proc GetCPInfo_asm2c public
+
+        Call_Asm_Stack2 GetCPInfo_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure GetCPInfo_asm2c
+
+
+proc GetStdHandle_asm2c public
+
+        Call_Asm_Stack1 GetStdHandle_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetStdHandle_asm2c
+
+
+proc SetStdHandle_asm2c public
+
+        Call_Asm_Stack2 SetStdHandle_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure SetStdHandle_asm2c
+
+
+proc GetFileType_asm2c public
+
+        Call_Asm_Stack1 GetFileType_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetFileType_asm2c
+
+
+proc SetHandleCount_asm2c public
+
+        Call_Asm_Stack1 SetHandleCount_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure SetHandleCount_asm2c
+
+
+proc FlushFileBuffers_asm2c public
+
+        Call_Asm_Stack1 FlushFileBuffers_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure FlushFileBuffers_asm2c
+
+
+proc SetEndOfFile_asm2c public
+
+        Call_Asm_Stack1 SetEndOfFile_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure SetEndOfFile_asm2c
+
+
+proc GetEnvironmentStrings_asm2c public
+
+        Call_Asm_Stack0 GetEnvironmentStrings_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetEnvironmentStrings_asm2c
+
+
+proc GetEnvironmentStringsW_asm2c public
+
+        Call_Asm_Stack0 GetEnvironmentStringsW_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetEnvironmentStringsW_asm2c
+
+
+proc FreeEnvironmentStringsA_asm2c public
+
+        Call_Asm_Stack1 FreeEnvironmentStringsA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure FreeEnvironmentStringsA_asm2c
+
+
+proc FreeEnvironmentStringsW_asm2c public
+
+        Call_Asm_Stack1 FreeEnvironmentStringsW_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure FreeEnvironmentStringsW_asm2c
+
+
+proc lstrlenA_asm2c public
+
+        Call_Asm_Stack1 lstrlenA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure lstrlenA_asm2c
+
+
+proc lstrcpyA_asm2c public
+
+        Call_Asm_Stack2 lstrcpyA_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure lstrcpyA_asm2c
+
+
+proc OutputDebugStringA_asm2c public
+
+        Call_Asm_Stack1 OutputDebugStringA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure OutputDebugStringA_asm2c
+
+
+proc GetFileAttributesA_asm2c public
+
+        Call_Asm_Stack1 GetFileAttributesA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetFileAttributesA_asm2c
+
+
+proc GetSystemTime_asm2c public
+
+        Call_Asm_Stack1 GetSystemTime_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetSystemTime_asm2c
+
+
+proc GetLocalTime_asm2c public
+
+        Call_Asm_Stack1 GetLocalTime_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetLocalTime_asm2c
+
+
+proc GetTimeZoneInformation_asm2c public
+
+        Call_Asm_Stack1 GetTimeZoneInformation_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetTimeZoneInformation_asm2c
+
+
+proc WideCharToMultiByte_asm2c public
+
+        Call_Asm_Stack8 WideCharToMultiByte_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure WideCharToMultiByte_asm2c
+
+
+proc MultiByteToWideChar_asm2c public
+
+        Call_Asm_Stack6 MultiByteToWideChar_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure MultiByteToWideChar_asm2c
+
+
+proc GetStringTypeW_asm2c public
+
+        Call_Asm_Stack4 GetStringTypeW_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure GetStringTypeW_asm2c
+
+
+proc GetStringTypeA_asm2c public
+
+        Call_Asm_Stack5 GetStringTypeA_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure GetStringTypeA_asm2c
+
+
+proc GetLocaleInfoA_asm2c public
+
+        Call_Asm_Stack4 GetLocaleInfoA_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure GetLocaleInfoA_asm2c
+
+
+proc GetLocaleInfoW_asm2c public
+
+        Call_Asm_Stack4 GetLocaleInfoW_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure GetLocaleInfoW_asm2c

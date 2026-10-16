@@ -130,6 +130,8 @@ handle Winapi_AllocHandle(void);
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* WinApi-process.c: the port's arguments, which GetCommandLineA hands to the guest */
+void Winapi_SetCommandLine(int argc, char *argv[]);
 /* CloseHandle of a thread or a semaphore */
 uint32_t Winapi_CloseObject(handle hObject);
 /* a suspended guest thread stops here: every wait and Sleep pass through it */
