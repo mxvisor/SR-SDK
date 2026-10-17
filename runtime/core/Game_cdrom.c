@@ -534,6 +534,7 @@ int Game_CdInit(const char *game_dir)
         } else {
             fprintf(stderr, GAME_NAME ": no readable data track in %s\n", cue_path);
         }
+#ifdef GAME_CD_MARKER
     } else if (find_in_dir(game_dir, GAME_CD_MARKER, dir, sizeof(dir), 1) ||
                (parent[0] != 0 && find_in_dir(parent, GAME_CD_MARKER, dir, sizeof(dir), 1))) {
         /* directory_of(dir): the disc root, game_dir or its parent */
@@ -544,6 +545,7 @@ int Game_CdInit(const char *game_dir)
             fprintf(stderr, GAME_NAME ": cannot read %s\n", cue_path);
             cue_path[0] = 0;
         }
+#endif
     }
     int audio = 0;
     for (int number = 1; number <= GAME_CD_MAX_TRACKS; number++) {
@@ -553,8 +555,12 @@ int Game_CdInit(const char *game_dir)
         }
     }
     if (data == NULL) {
+#ifdef GAME_CD_MARKER
         fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") ", and no copy of the disc (" GAME_CD_MARKER ") in %s\n",
                 game_dir, game_dir);
+#else
+        fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") "\n", game_dir);
+#endif
     } else if (trace_cd()) {
         fprintf(stderr, GAME_NAME ": CD: %s from %s, %d audio tracks%s%s\n", data,
                 disc_dir[0] != 0 ? disc_dir : cue_path, audio, cue_path[0] != 0 ? " in " : "",

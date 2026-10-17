@@ -296,6 +296,11 @@ void Game_ReleaseHandle(int handle)
     if (handle >= 0 && handle < GAME_MAX_HANDLES) dos_handles[handle] = NULL;
 }
 
+/* a game that names no data files is recognised by its main file */
+#ifndef GAME_DATA_MARKERS
+#define GAME_DATA_MARKERS GAME_MAIN_FILENAME
+#endif
+
 static int game_dir_has_marker(const char *dir)
 {
     static const char *const markers[] = { GAME_DATA_MARKERS };
