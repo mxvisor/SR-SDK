@@ -342,6 +342,7 @@ static int image_find(const char *path, game_cd_entry *entry)
         memcpy(component, p, length);
         component[length] = 0;
         p += length;
+        if (strcmp(component, ".") == 0) continue;   /* `DATA\.\MAP1`: the game builds such names */
         if (!current.directory) return -1;
         game_cd_entry next;
         name_search search = { component, &next };
@@ -381,6 +382,7 @@ static int folder_resolve(const char *path, char *out, size_t out_size)
         memcpy(component, p, length);
         component[length] = 0;
         p += length;
+        if (strcmp(component, ".") == 0) continue;
         char next[PATH_MAX];
         if (!find_in_dir(current, component, next, sizeof(next), -1)) return -1;
         snprintf(current, sizeof(current), "%s", next);
