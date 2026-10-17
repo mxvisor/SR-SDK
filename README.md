@@ -189,9 +189,12 @@ On Android the game's `main` calls `Game_AndroidSetup()` (`Game_android.h`)
 first: it sends stdout and stderr to logcat and sets `GAME_ENV("DATA_DIR")`
 and `GAME_ENV("WRITE_ROOT")` to the directories `GameActivity` made.
 
-The DOS runtime (`runtime/dos/`) asks the game's own runtime for its DOS
-handle table and paths, declared in `Game_vfs.h`, and for `key_available` and
-`dos_blocking_getch`. The game also brings `main.c`, its `display` frontend,
+The game directory, the write root, the disc and the DOS handle table are
+`runtime/core/Game_gamedir.c` (`Game_FilesInit`, declared in `Game_vfs.h`); the game
+names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_DATA_SUBDIR`,
+`GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). A DOS game hands the file
+functions of INT 21h to `Game_DosFileCall` (`runtime/dos/Game_dosfile.c`) and brings
+`key_available`, `dos_blocking_getch` and `Game_DumpGuestMemory`. The game also brings `main.c`, its `display` frontend,
 its sound and its llasm glue.
 
 ## Layout
@@ -214,16 +217,17 @@ android/                what the APK adds to SDL's android-project
 runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         Android start-up, and what the DOS and the Win32 ports
                         share: WATCOM C library and file I/O (Game_clib, Game_vfs,
-                        Game_file), CD image (Game_cdrom), CD audio (Game_music)
-runtime/dos/            DOS memory (Game_dosmem) and the llasm includes of the DOS ports
+                        Game_file), the game directory (Game_gamedir), CD image
+                        (Game_cdrom), CD audio (Game_music)
+runtime/dos/            DOS memory (Game_dosmem), INT 21h file functions (Game_dosfile)
+                        and the llasm includes of the DOS ports
 runtime/dos/llasm/      shared llasm includes of the DOS ports
 runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
                         llasm/ (asm-cpu.c, Game-asm.c)
 runtime/win32/winapi/   the Win32 API layer: kernel32, user32, gdi32, DirectDraw, DirectInput,
                         DirectSound, winmm, MCI, avifile, msvfw, the registry and the
-                        game's config file; Game_runtime (the DOS/DPMI/MSCDEX services of
-                        the guest), Game_hires (enhanced 3D), Game_sound, Game_RuntimeGlue;
-                        winapi/llasm/ is its llasm glue
+                        game's config file; WinApi-runtime (start-up, CD audio),
+                        Game_RuntimeGlue; winapi/llasm/ is its llasm glue
 skeleton/               a starting point for a new game repository -- to come
 ```
 
@@ -234,14 +238,18 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_vfs.c`, `.h`: WATCOM stdio over DOS handles, with a write root that
   can overlay the game directory;
 - `Game_file.c`, `.h`: DOS files as host files or as files of the CD image;
+- `Game_gamedir.c`: the game directory (C:), the write root, the disc (D:), the DOS
+  handle table;
 - `Game_cdrom.c`, `.h`: drive D: from a cue sheet (ISO9660 data track,
   CDDA or ogg/flac/wav audio tracks) or from a copy of the disc;
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
   buffers, the PSP) in one pool;
+- `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
+  close, FindFirst/FindNext, the DTA, the devices CON and NUL);
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
 
-Only `Game_dosmem` is in `runtime/dos/`; the others are in `runtime/core/`, and a game that
+`Game_dosmem` and `Game_dosfile` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
 
 ## License

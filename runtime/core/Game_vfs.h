@@ -31,18 +31,33 @@
 #include "Game_file.h"
 
 /* The DOS file layer: Game_vfs.c, the host-side C library file I/O, and
- * what it asks of the game's runtime, which owns the DOS handle table and the
- * INT 21h path.  One table for both sides, so a handle from either side means
- * the same file to the other -- a game reads fileno() out of a FILE and hands
- * it to filelength(). */
+ * Game_gamedir.c, the game directory, the disc and the DOS handle table.  One
+ * table for the C library and the INT 21h path, so a handle from either side
+ * means the same file to the other -- a game reads fileno() out of a FILE and
+ * hands it to filelength(). */
 #define GAME_MAX_HANDLES 64
+/* the DOS devices CON and NUL, opened by name; never a file's handle */
+#define GAME_HANDLE_CON (GAME_MAX_HANDLES - 2)
+#define GAME_HANDLE_NUL (GAME_MAX_HANDLES - 1)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ---- the game's runtime provides these ---- */
+/* ---- Game_gamedir.c provides these ---- */
 
+/* The game directory, the write root, the virtual file system over the game
+ * directory, chdir() into it.  0 on success; says why on stderr otherwise. */
+int Game_FilesInit(void);
+/* Closes the files the game left open. */
+void Game_FilesDeinit(void);
+/* The game directory (GAME_ENV("DATA_DIR"), else the current directory), absolute;
+ * NULL when it has no game data.  Valid before Game_FilesInit. */
+const char *Game_DataRoot(void);
+/* GAME_ENV("WRITE_ROOT"), else the game directory (gamefiles/ in the current directory
+ * when the game data is not found); Game_FilesInit calls it, and so may main
+ * before it. */
+int Game_SelectWriteRoot(void);
 int Game_ResolveDataPath(const char *dos_path, char *host_path, size_t host_path_size);
 /* $<GAME>_WRITE_ROOT, else the game directory */
 const char *Game_WriteRoot(void);
@@ -52,12 +67,17 @@ int Game_GameDirWritePath(const char *dos_path, char *host_path, size_t host_pat
 void Game_GameDirAdded(void *new_in, const char *host_path);
 int Game_AttachHandle(game_file *file);
 game_file *Game_HandleFile(int handle);
+/* A path on the CD drive: its part after the drive, else NULL. */
+const char *Game_CdRelativePath(const char *dos_path);
 /* A path on the CD drive: *on_cd = 1 and the file opened (NULL, errno set,
  * when it is missing or `write` is asked for -- the CD is read-only).
  * Otherwise *on_cd = 0. */
 game_file *Game_OpenCdFile(const char *dos_path, int write, int *on_cd);
 void Game_ReleaseHandle(int handle);
 int Game_TraceFileEnabled(void);
+
+/* ---- the game's runtime provides this ---- */
+
 /* Called when the game opens its ERROR.LOG: a debug dump, or nothing. */
 void Game_DumpGuestMemory(void);
 
