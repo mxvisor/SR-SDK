@@ -118,6 +118,12 @@ def add_relocation(val, src, imgbase, seen, rows):
         rows.append(f"0x{src:x},0x{val:x},")
 
 
+def fixed_point(val, imgbase):
+    """A round 64K value in data is a 16.16 fixed-point number (0x5a0000 is 90.0), or the
+    halves of two neighbouring 16-bit values, far more often than a pointer."""
+    return val != imgbase and val & 0xFFFF == 0
+
+
 BITWISE = ("test", "and", "or", "xor")
 
 # how far from a jump table in code its targets may lie without being seen as
@@ -153,7 +159,7 @@ def find_relocations_in_sec(
 
     covered = bytearray(limit)
 
-    for insn in md.disasm(raw, code_base, limit):
+    def process(insn):
         start = insn.address - code_base
         insn_len = insn.size
         end = start + insn_len
@@ -162,7 +168,7 @@ def find_relocations_in_sec(
 
         # Skip SKIPDATA instructions
         if insn.id == 0:
-            continue
+            return
         starts.add(insn.address)
         sizes[insn.address] = insn.size
         for m in re.finditer(r"\*4 \+ (0x[0-9a-f]+)\]", f"{insn.mnemonic} {insn.op_str}"):
@@ -192,6 +198,29 @@ def find_relocations_in_sec(
             else:
                 memops.add(src)
             add_relocation(val, src, imgbase, seen, rows)
+
+    for insn in md.disasm(raw, code_base, limit):
+        process(insn)
+
+    # a call or jump target that the sweep went past (it lost step behind a jump table
+    # or a run of data): decode again from there until it meets a known instruction
+    for _ in range(8):
+        found = set()
+        for addr in list(starts):
+            o = addr - code_base
+            if sizes[addr] == 5 and raw[o] in (0xE8, 0xE9):
+                t = addr + 5 + struct.unpack_from("<i", raw, o + 1)[0]
+                if code_base <= t < code_base + limit and t not in starts:
+                    found.add(t)
+        if not found:
+            break
+        for t in sorted(found):
+            if t in starts:
+                continue
+            for insn in md.disasm(raw[t - code_base:limit], t, limit):
+                if insn.id == 0 or (insn.address in starts and insn.address != t):
+                    break
+                process(insn)
 
     # indirect jumps/calls through the import table that the sweep went past
     idata = [(imgbase + va2, imgbase + va2 + max(vs2, rsz2))
@@ -262,7 +291,7 @@ def find_relocations_in_data(
         if (base + off) & 3:
             continue
         val = struct.unpack_from("<I", raw, off)[0]
-        if not is_in_image(val, imgbase, imagesize, sec_ranges):
+        if not is_in_image(val, imgbase, imagesize, sec_ranges) or fixed_point(val, imgbase):
             continue
         # a word of a string table ("REDE", "OSK\0"): the words around it are
         # text as well. A table of pointers 0x0047xxxx reads as text too
@@ -307,7 +336,7 @@ def find_unaligned_runs(
         if addr & 3 == 0:
             continue
         val = struct.unpack_from("<I", raw, off)[0]
-        if not is_in_image(val, imgbase, imagesize, sec_ranges):
+        if not is_in_image(val, imgbase, imagesize, sec_ranges) or fixed_point(val, imgbase):
             continue
         # a pointer into code would be a float (0x46xxxx00 is 1e4) as often as not
         if val & 3 or any(lo <= val < hi for lo, hi in code_ranges):
