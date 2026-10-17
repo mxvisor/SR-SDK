@@ -175,8 +175,9 @@ void Game_Event_Loop(void)
 #if GAME_CORE_CONSUMES_INPUT
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
 #else
-        /* SDL_FIRSTEVENT..SDL_KEYDOWN-1: quit, window, syswm */
-        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_KEYDOWN - 1);
+        /* SDL_FIRSTEVENT..SDL_WINDOWEVENT-1: quit, app.  The window events go to the
+         * winapi message pump (WM_ACTIVATEAPP, SC_MINIMIZE, close). */
+        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_WINDOWEVENT - 1);
         if (NumEvents <= 0)
             NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_USEREVENT, SDL_LASTEVENT);
 #endif

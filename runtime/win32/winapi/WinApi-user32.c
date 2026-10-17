@@ -1810,6 +1810,13 @@ static int find_event(SDL_Event *event, int remove, int wait)
             case SDL_WINDOWEVENT_FOCUS_LOST:
                 keep_event = 1;
                 break;
+            case SDL_WINDOWEVENT_CLOSE:
+                /* without a WM the close of the window is only this event */
+                virtual_keyboard_state = 0;
+                Thread_Exit = 1;
+                SDL_SemPost(Game_FlipSem);
+                Game_StopMain();
+                break;
             case SDL_WINDOWEVENT_SHOWN:
                 window = SDL_GetWindowFromID(event->motion.windowID);
                 renderer = (window != NULL)?SDL_GetRenderer(window):NULL;
