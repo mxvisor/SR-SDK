@@ -11,7 +11,6 @@
 #   CD_DEFAULT     optional: the disc's cue sheet when $<ENVP>_CD_IMAGE is not set
 #   WINE_NAME      Wine only: the name of the prefix under ~/.cache (shared by the
 #                  ports of one game)
-#   KEYS_UNIT      s (default) or ms: the unit of delay_s:Key in $<ENVP>_AUTO_KEYS
 #   CONFIG_NAME, CONFIG_TEMPLATE
 #                  optional: the port's config file, copied from the template into
 #                  the write root when missing, and passed as --config-file
@@ -23,7 +22,8 @@
 #   --build            build first (scons -Q device=...)
 #   --headless[=N]     no window: Xvfb of its own, N screenshots (default 4, every
 #                      5 s) in <repo>/build/shots/{sdl,wine}/
-#   --keys=SPEC        headless: keys through $<ENVP>_AUTO_KEYS, SPEC = delay_s:Key[,...]
+#   --keys=SPEC        headless: keys through $<ENVP>_AUTO_KEYS, SPEC = delay_s:Key[~hold_ms][,...]
+#                      (SR-SDK/runtime/core/Game_keys.c)
 #   -- ARG...          (native) everything after is given to the port
 #   --help
 # Environment: <ENVP>_DEVICE, _DATA_DIR, _WRITE_ROOT (default <outer dir>/run),
@@ -52,18 +52,7 @@ _parse_args() {
       --headless=*) HEADLESS=1; N_SHOTS="${arg#*=}" ;;
       --headless)   HEADLESS=1 ;;
       --build)      BUILD=1 ;;
-      --keys=*)
-        AUTO_KEYS="$(python3 - "${arg#*=}" "${KEYS_UNIT:-s}" <<'EOF'
-import sys
-spec, unit = sys.argv[1:3]
-out = []
-for p in spec.split(","):
-    if p:
-        t, k = p.split(":", 1)
-        out.append("%s:%s" % (int(float(t) * 1000) if unit == "ms" else t, k))
-print(",".join(out))
-EOF
-)" ;;
+      --keys=*)     AUTO_KEYS="${arg#*=}" ;;
       *) echo "Unknown argument: $arg (see --help)" >&2; exit 1 ;;
     esac
   done

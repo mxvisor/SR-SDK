@@ -90,8 +90,9 @@ freely, subject to the following restrictions:
 
 ## Files written for SR-SDK
 
-`runtime/dos/Game_clib.c`, `runtime/dos/Game_cdrom.*`, `Game_file.*`,
-`Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `runtime/core/Game_android.*`,
+`runtime/core/Game_clib.c`, `Game_cdrom.*`, `Game_file.*`, `Game_gamedir.c`,
+`Game_keys.*`, `Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `Game_android.*`,
+`runtime/dos/Game_dosfile.*`, `Game_doskbd.*`,
 `android/GameActivity.java`, `tools/android_apk.py`, `tools/android_sdl.sh`
 and `llasm/llasm_compare.py`, `llasm_edge.py`, `llasm_fuzz.py`: Copyright (C)
 2026 mxvisor, MIT; so are `tools/image/*.py` and `tools/regress/*`.

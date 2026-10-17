@@ -10,14 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
-#if !defined(_WIN32)
-#include <fcntl.h>
-#include <unistd.h>
-#endif
 
 #include "WinApi-dinput.h"
 #include "WinApi-game.h"
 #include "Game_hooks.h"
+#include "Game_keys.h"
 #include "Game_memory.h"
 
 #if defined(PTROFS_64BIT)
@@ -50,74 +47,6 @@ static int guid_kind(const uint8_t *g)
     return DEV_OTHER;
 }
 
-/* SDL scancode -> DIK_* (the PC set 1 scancode, 0x80 added for extended keys) */
-static uint8_t sdl_to_dik(int sc)
-{
-    static const uint8_t letters[26] = { 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32,
-                                         0x31, 0x18, 0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c };
-    if (sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_Z) return letters[sc - SDL_SCANCODE_A];
-    if (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9) return (uint8_t)(0x02 + sc - SDL_SCANCODE_1);
-    if (sc >= SDL_SCANCODE_F1 && sc <= SDL_SCANCODE_F10) return (uint8_t)(0x3b + sc - SDL_SCANCODE_F1);
-    if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_3) return (uint8_t)(0x4f + sc - SDL_SCANCODE_KP_1);
-    switch (sc)
-    {
-        case SDL_SCANCODE_0: return 0x0b;
-        case SDL_SCANCODE_ESCAPE: return 0x01;
-        case SDL_SCANCODE_MINUS: return 0x0c;
-        case SDL_SCANCODE_EQUALS: return 0x0d;
-        case SDL_SCANCODE_BACKSPACE: return 0x0e;
-        case SDL_SCANCODE_TAB: return 0x0f;
-        case SDL_SCANCODE_LEFTBRACKET: return 0x1a;
-        case SDL_SCANCODE_RIGHTBRACKET: return 0x1b;
-        case SDL_SCANCODE_RETURN: return 0x1c;
-        case SDL_SCANCODE_LCTRL: return 0x1d;
-        case SDL_SCANCODE_SEMICOLON: return 0x27;
-        case SDL_SCANCODE_APOSTROPHE: return 0x28;
-        case SDL_SCANCODE_GRAVE: return 0x29;
-        case SDL_SCANCODE_LSHIFT: return 0x2a;
-        case SDL_SCANCODE_BACKSLASH: return 0x2b;
-        case SDL_SCANCODE_COMMA: return 0x33;
-        case SDL_SCANCODE_PERIOD: return 0x34;
-        case SDL_SCANCODE_SLASH: return 0x35;
-        case SDL_SCANCODE_RSHIFT: return 0x36;
-        case SDL_SCANCODE_KP_MULTIPLY: return 0x37;
-        case SDL_SCANCODE_LALT: return 0x38;
-        case SDL_SCANCODE_SPACE: return 0x39;
-        case SDL_SCANCODE_CAPSLOCK: return 0x3a;
-        case SDL_SCANCODE_NUMLOCKCLEAR: return 0x45;
-        case SDL_SCANCODE_SCROLLLOCK: return 0x46;
-        case SDL_SCANCODE_KP_7: return 0x47;
-        case SDL_SCANCODE_KP_8: return 0x48;
-        case SDL_SCANCODE_KP_9: return 0x49;
-        case SDL_SCANCODE_KP_MINUS: return 0x4a;
-        case SDL_SCANCODE_KP_4: return 0x4b;
-        case SDL_SCANCODE_KP_5: return 0x4c;
-        case SDL_SCANCODE_KP_6: return 0x4d;
-        case SDL_SCANCODE_KP_PLUS: return 0x4e;
-        case SDL_SCANCODE_KP_0: return 0x52;
-        case SDL_SCANCODE_KP_PERIOD: return 0x53;
-        case SDL_SCANCODE_F11: return 0x57;
-        case SDL_SCANCODE_F12: return 0x58;
-        case SDL_SCANCODE_KP_ENTER: return 0x9c;
-        case SDL_SCANCODE_RCTRL: return 0x9d;
-        case SDL_SCANCODE_KP_DIVIDE: return 0xb5;
-        case SDL_SCANCODE_PRINTSCREEN: return 0xb7;
-        case SDL_SCANCODE_RALT: return 0xb8;
-        case SDL_SCANCODE_PAUSE: return 0xc5;
-        case SDL_SCANCODE_HOME: return 0xc7;
-        case SDL_SCANCODE_UP: return 0xc8;
-        case SDL_SCANCODE_PAGEUP: return 0xc9;
-        case SDL_SCANCODE_LEFT: return 0xcb;
-        case SDL_SCANCODE_RIGHT: return 0xcd;
-        case SDL_SCANCODE_END: return 0xcf;
-        case SDL_SCANCODE_DOWN: return 0xd0;
-        case SDL_SCANCODE_PAGEDOWN: return 0xd1;
-        case SDL_SCANCODE_INSERT: return 0xd2;
-        case SDL_SCANCODE_DELETE: return 0xd3;
-        default: return 0;
-    }
-}
-
 /* Buffered keyboard data: the game reads keys with GetDeviceData, so key
    transitions are queued from an SDL event watch (called as events are pumped
    by the main thread) and handed out here, in order. */
@@ -135,7 +64,7 @@ static int SDLCALL key_event_watch(void *userdata, SDL_Event *event)
     uint8_t dik;
     (void)userdata;
     if ((event->type != SDL_KEYDOWN && event->type != SDL_KEYUP) || event->key.repeat) return 0;
-    dik = sdl_to_dik(event->key.keysym.scancode);
+    dik = Game_PcScancode(event->key.keysym.scancode);
     if (dik == 0) return 0;
     SDL_LockMutex(key_mutex);
     if (((key_head + 1) % KEY_QUEUE_SIZE) != key_tail)
@@ -228,163 +157,12 @@ static int input_debug(void)
     return value;
 }
 
-/* the state of keys pressed by <GAME>_AUTO_KEYS: SDL_GetKeyboardState does not see pushed events */
-static volatile uint8_t injected_keys[SDL_NUM_SCANCODES];
-
-static void press_key(SDL_Scancode scancode, uint32_t hold_ms)
-{
-    SDL_Event event;
-
-    memset(&event, 0, sizeof(event));
-    event.key.keysym.scancode = scancode;
-    event.key.keysym.sym = SDL_GetKeyFromScancode(scancode);
-    event.type = SDL_KEYDOWN;
-    event.key.state = SDL_PRESSED;
-    injected_keys[scancode] = 1;
-    SDL_PushEvent(&event);
-    SDL_Delay(hold_ms);
-    event.type = SDL_KEYUP;
-    event.key.state = SDL_RELEASED;
-    injected_keys[scancode] = 0;
-    SDL_PushEvent(&event);
-}
-
-/* <GAME>_AUTO_KEYS="seconds:Key,seconds:Key,..." presses each key (SDL key name,
- * held 0.25 s) that many seconds after start, through the same SDL queue real
- * keys use.  "@path" instead reads key names, one per line, from that file or
- * FIFO as they arrive.  For unattended testing, where a compositor may not
- * forward synthetic input to the window. */
-/* One line of the control FIFO.  Read with read(), not stdio: a thread blocked
- * in fgets holds the FILE's lock, and exit() then waits for it forever while
- * flushing the streams. */
-#if defined(_WIN32)
-typedef FILE *fifo_t;
-#define fifo_open(path) fopen((path), "r")
-#define fifo_close(fifo) fclose(fifo)
-#define fifo_valid(fifo) ((fifo) != NULL)
-static int fifo_read_line(fifo_t fifo, char *line, int size)
-{
-    return fgets(line, size, fifo) != NULL;
-}
-#else
-typedef int fifo_t;
-#define fifo_open(path) open((path), O_RDONLY)
-#define fifo_close(fifo) close(fifo)
-#define fifo_valid(fifo) ((fifo) >= 0)
-static int fifo_read_line(fifo_t fifo, char *line, int size)
-{
-    int length = 0;
-    char c = 0;
-
-    while (read(fifo, &c, 1) == 1)
-    {
-        if (c == '\n') break;
-        if (length < size - 1) line[length++] = c;
-    }
-    line[length] = 0;
-    return (length != 0) || (c == '\n');
-}
-#endif
-
-static int SDLCALL auto_keys_thread(void *userdata)
-{
-    const char *spec = (const char *)userdata;
-    uint32_t start = SDL_GetTicks();
-
-    if (*spec == '@')
-    {
-        char line[64];
-
-        for (;;)
-        {
-            fifo_t fifo = fifo_open(spec + 1);
-
-            if (!fifo_valid(fifo)) return 0;
-            while (fifo_read_line(fifo, line, sizeof(line)))
-            {
-                SDL_Scancode scancode;
-
-                line[strcspn(line, "\r\n")] = 0;
-                if (line[0] == '~') /* "~dx,dy" moves the mouse, "~L" / "~R" clicks a button */
-                {
-                    SDL_Event event;
-
-                    memset(&event, 0, sizeof(event));
-                    if (line[1] == 'L' || line[1] == 'R')
-                    {
-                        event.type = SDL_MOUSEBUTTONDOWN;
-                        event.button.button = (line[1] == 'L') ? SDL_BUTTON_LEFT : SDL_BUTTON_RIGHT;
-                        event.button.state = SDL_PRESSED;
-                        SDL_PushEvent(&event);
-                        SDL_Delay(100);
-                        event.type = SDL_MOUSEBUTTONUP;
-                        event.button.state = SDL_RELEASED;
-                    }
-                    else
-                    {
-                        event.type = SDL_MOUSEMOTION;
-                        if (sscanf(line + 1, "%d,%d", &event.motion.xrel, &event.motion.yrel) != 2) continue;
-                    }
-                    SDL_PushEvent(&event);
-                    continue;
-                }
-                if (line[0] == '+' || line[0] == '-') /* "+Key" presses and keeps it down, "-Key" releases it */
-                {
-                    SDL_Event event;
-
-                    scancode = SDL_GetScancodeFromName(line + 1);
-                    if (scancode == SDL_SCANCODE_UNKNOWN) continue;
-                    memset(&event, 0, sizeof(event));
-                    event.key.keysym.scancode = scancode;
-                    event.key.keysym.sym = SDL_GetKeyFromScancode(scancode);
-                    event.type = (line[0] == '+') ? SDL_KEYDOWN : SDL_KEYUP;
-                    event.key.state = (line[0] == '+') ? SDL_PRESSED : SDL_RELEASED;
-                    injected_keys[scancode] = (line[0] == '+');
-                    SDL_PushEvent(&event);
-                    continue;
-                }
-                if (line[0] == '!') /* "!Key": a tap shorter than a frame */
-                {
-                    scancode = SDL_GetScancodeFromName(line + 1);
-                    if (scancode != SDL_SCANCODE_UNKNOWN) press_key(scancode, 2);
-                    continue;
-                }
-                scancode = SDL_GetScancodeFromName(line);
-                if (scancode != SDL_SCANCODE_UNKNOWN) press_key(scancode, 250);
-            }
-            fifo_close(fifo);
-        }
-    }
-
-    while (*spec != 0)
-    {
-        char *end;
-        double seconds = strtod(spec, &end);
-        char name[32];
-        size_t length = 0;
-        SDL_Scancode scancode;
-
-        if (end == spec || *end != ':') break;
-        for (spec = end + 1; *spec != 0 && *spec != ',' && length < sizeof(name) - 1; spec++) name[length++] = *spec;
-        name[length] = 0;
-        while (*spec != 0 && *spec != ',') spec++;
-        if (*spec == ',') spec++;
-
-        while (SDL_GetTicks() - start < (uint32_t)(seconds * 1000)) SDL_Delay(20);
-        scancode = SDL_GetScancodeFromName(name);
-        if (scancode != SDL_SCANCODE_UNKNOWN) press_key(scancode, 250);
-    }
-    return 0;
-}
-
 static void key_queue_init(void)
 {
-    const char *auto_keys = getenv(GAME_ENV("AUTO_KEYS"));
-
     if (key_mutex != NULL) return;
     key_mutex = SDL_CreateMutex();
     SDL_AddEventWatch(key_event_watch, NULL);
-    if (auto_keys != NULL && *auto_keys != 0) SDL_CreateThread(auto_keys_thread, "autokeys", (void *)auto_keys);
+    Game_AutoKeysStart();
 }
 
 /* ------------------------------------------------------------ DirectInput */
@@ -504,7 +282,7 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
         const uint8_t *keys = SDL_GetKeyboardState(&n);
         if (a1 < 256) return DIERR_INVALIDPARAM;
         for (sc = 0; sc < n; sc++)
-            if (keys[sc] || (sc < SDL_NUM_SCANCODES && injected_keys[sc])) { uint8_t dik = sdl_to_dik(sc); if (dik) out[dik] = 0x80; }
+            if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) { uint8_t dik = Game_PcScancode((SDL_Scancode)sc); if (dik) out[dik] = 0x80; }
     }
     else if (d->kind == DEV_MOUSE)
     {

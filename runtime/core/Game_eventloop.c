@@ -234,7 +234,9 @@ void Game_Event_Loop(void)
 #if GAME_CORE_CONSUMES_INPUT
             case SDL_KEYDOWN:
             case SDL_KEYUP:
-                if (AppActive && AppInputFocus && !GAME_KEYBOARD_BLOCKED())
+                /* windowID 0: a key of <GAME>_AUTO_KEYS (Game_keys.c), meant
+                 * for a window without the focus (Xvfb) */
+                if (((AppActive && AppInputFocus) || event.key.windowID == 0) && !GAME_KEYBOARD_BLOCKED())
                 {
                     Game_QueueKeyboardEvent(&event);
                 }

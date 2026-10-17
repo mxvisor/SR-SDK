@@ -67,20 +67,9 @@ void Game_DumpGuestMemory(void)
 {
 }
 
-/* The DOS-only hooks that SR's llasm support and the C library layer
- * (Game_clib.c) link against.  A Win32 program does not reach them: a
- * software interrupt, a port or a segment-override access in its code is a
- * bug of the translation, so each one says so. */
-
-int key_available(void)
-{
-    return 0;
-}
-
-uint8_t dos_blocking_getch(void)
-{
-    return 0;
-}
+/* The DOS-only hooks that SR's llasm support links against.  A Win32 program
+ * does not reach them: a software interrupt, a port or a segment-override
+ * access in its code is a bug of the translation, so each one says so. */
 
 void X86_InterruptProcedure(uint8_t interrupt_number, void *registers)
 {

@@ -24,8 +24,8 @@
 
 /* Replacements for WATCOM C library routines of the original, which the
  * game's external_procedures.sci routes here (the .sci names the addresses,
- * this file does not): kbhit, getch, printf, sprintf, _nmalloc and _nfree.
- * key_available and dos_blocking_getch come from the game's runtime. */
+ * this file does not): printf, sprintf, _nmalloc and _nfree.  kbhit and getch
+ * are in runtime/dos/Game_doskbd.c. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -35,23 +35,6 @@
 
 extern "C"
 {
-    int32_t key_available(void);
-    uint8_t dos_blocking_getch(void);
-
-    /* WATCOM's kbhit (INT 21h AH=0Bh): -1 (all bits set) if a key is
-     * available in the queue, or 0 if not. */
-    int32_t Game_checkch(void)
-    {
-        return key_available() ? -1 : 0;
-    }
-
-    /* WATCOM's getch (INT 21h AH=08h): blocks until a key is available and
-     * returns its ASCII code. */
-    int32_t Game_getch(void)
-    {
-        return dos_blocking_getch();
-    }
-
     static void stdout_char(char character, void *arg)
     {
         fputc(character, (FILE *)arg);

@@ -193,9 +193,14 @@ The game directory, the write root, the disc and the DOS handle table are
 `runtime/core/Game_gamedir.c` (`Game_FilesInit`, declared in `Game_vfs.h`); the game
 names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_DATA_SUBDIR`,
 `GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). A DOS game hands the file
-functions of INT 21h to `Game_DosFileCall` (`runtime/dos/Game_dosfile.c`) and brings
-`key_available`, `dos_blocking_getch` and `Game_DumpGuestMemory`. The game also brings `main.c`, its `display` frontend,
-its sound and its llasm glue.
+functions of INT 21h to `Game_DosFileCall` (`runtime/dos/Game_dosfile.c`), the keyboard
+(ports 60h/64h, IRQ 1, INT 16h, INT 21h 08h/0Bh) to `runtime/dos/Game_doskbd.c`, and brings
+`Game_CallGuestInterrupt`, `Game_GuestIsrRunning` and `Game_DumpGuestMemory`. The game also
+brings `main.c`, its `display` frontend, its sound and its llasm glue.
+
+`<GAME>_AUTO_KEYS="seconds:Key[~hold_ms],..."` (or `@fifo`) presses keys for unattended runs
+(`runtime/core/Game_keys.c`, DOS and DirectInput alike; `run-sdl.sh --keys=`); a game may set
+the default hold with `GAME_AUTO_KEY_HOLD_MS`.
 
 ## Layout
 
@@ -218,9 +223,10 @@ runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         Android start-up, and what the DOS and the Win32 ports
                         share: WATCOM C library and file I/O (Game_clib, Game_vfs,
                         Game_file), the game directory (Game_gamedir), CD image
-                        (Game_cdrom), CD audio (Game_music)
-runtime/dos/            DOS memory (Game_dosmem), INT 21h file functions (Game_dosfile)
-                        and the llasm includes of the DOS ports
+                        (Game_cdrom), CD audio (Game_music), PC scancodes and
+                        AUTO_KEYS (Game_keys)
+runtime/dos/            DOS memory (Game_dosmem), INT 21h file functions (Game_dosfile),
+                        the keyboard (Game_doskbd) and the llasm includes of the DOS ports
 runtime/dos/llasm/      shared llasm includes of the DOS ports
 runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
                         llasm/ (asm-cpu.c, Game-asm.c)
@@ -234,7 +240,7 @@ skeleton/               a starting point for a new game repository -- to come
 `runtime/core/` and `runtime/dos/`: the layers of a DOS game (also used by Win32 ports):
 
 - `Game_clib.c`: the WATCOM C library functions a game's
-  `external_procedures.sci` routes to the host;
+  `external_procedures.sci` routes to the host (kbhit and getch: `Game_doskbd.c`);
 - `Game_vfs.c`, `.h`: WATCOM stdio over DOS handles, with a write root that
   can overlay the game directory;
 - `Game_file.c`, `.h`: DOS files as host files or as files of the CD image;
@@ -247,9 +253,13 @@ skeleton/               a starting point for a new game repository -- to come
   buffers, the PSP) in one pool;
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
   close, FindFirst/FindNext, the DTA, the devices CON and NUL);
+- `Game_doskbd.c`, `.h`: the keyboard: the controller's bytes (port 60h, E0 before a grey
+  key) delivered to the game's INT 9 handler, the BIOS buffer behind INT 16h, INT 21h
+  08h/0Bh and WATCOM's kbhit/getch;
+- `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
 
-`Game_dosmem` and `Game_dosfile` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
+`Game_dosmem`, `Game_dosfile` and `Game_doskbd` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
 
 ## License
