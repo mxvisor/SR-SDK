@@ -42,6 +42,7 @@
 #include "Game_vars.h"
 #include "Game_vfs.h"
 #include "Game_dosint.h"
+#include "Game_dosrt.h"
 #include "Game_dosmem.h"
 #include "Game_dosfile.h"
 #include "Game_doskbd.h"
@@ -144,8 +145,11 @@ void *Game_DosGuestPointer(uint32_t address)
     return (address == 0) ? NULL : (void *)GAME_GUEST32_TO_PTR(address);
 }
 
+static uint32_t default_isr;
+
 void Game_DosIntInit(uint32_t null_isr)
 {
+    default_isr = null_isr;
     for (unsigned int vector = 0; vector < MAX_VECTORS; vector++) vectors[vector] = null_isr;
     isr_running = 0;
     if (code_end == 0) find_code_bounds();
@@ -214,6 +218,12 @@ int Game_CallGuestInterrupt(uint8_t vector)
     return Game_DosCallGuestIsr(vectors[vector]);
 }
 
+int Game_DosTimerTick(void)
+{
+    /* the BIOS handler of INT 8 ends with INT 1Ch, the user timer tick */
+    return Game_CallGuestInterrupt(vectors[0x08] != default_isr ? 0x08 : 0x1c);
+}
+
 int Game_GuestIsrRunning(void)
 {
     return isr_running;
@@ -253,11 +263,21 @@ static void dos_get_time(Game_DosRegs *regs)
     Game_DosSetDX(regs, (uint16_t)((parts->tm_sec << 8) | hundredths));
 }
 
+static uint8_t video_mode = 3;
+
 static int dos_call(Game_DosRegs *regs)
 {
     /* the file functions: Game_dosfile.c; the keyboard (08h, 0Bh): Game_doskbd.c */
     if (Game_DosFileCall(regs, Game_DosGuestPointer) || Game_DosKbdInt21(regs)) return 1;
     switch (Game_DosAH(regs)) {
+    case 0x09: {
+        /* Print the string at EDX up to its '$' to the standard output */
+        const char *text = (const char *)Game_DosGuestPointer(regs->edx);
+        for (; text != NULL && *text != '$'; text++) fputc(*text, stdout);
+        fflush(stdout);
+        Game_DosSetAL(regs, '$');
+        break;
+    }
     case 0x25: {
         /* Set vector: AL = vector, EDX = handler.  WATCOM's setvect and
          * getvect, under the DOS/4GW 2.x their start-up detected (a flag of 2
@@ -305,6 +325,36 @@ static int dos_call(Game_DosRegs *regs)
         /* Free memory: the pool never takes a block back.  A game leaks a few
          * DOS blocks at most, and a segment the game passes is not trusted as
          * a pointer. */
+        break;
+    case 0x44:
+        /* IOCTL.  The standard handles are the console, everything else a
+         * file: AL = 0 gives DX = the device information (bit 7: a device,
+         * bits 0 and 1: standard input and output), 6 and 7 the input and
+         * output status (ready). */
+        switch (Game_DosAL(regs)) {
+        case 0x00:
+            Game_DosSetDX(regs, Game_DosBX(regs) <= 2 ? 0x80d3u : 0x0002u);
+            break;
+        case 0x01:
+            break;
+        case 0x06:
+        case 0x07:
+            Game_DosSetAL(regs, 0xff);
+            break;
+        default:
+            Game_DosError(regs, 1);
+            return 1;
+        }
+        break;
+    case 0x4a:
+        /* Resize a block.  The program's own block (see Game_DosProgramInit)
+         * ends at its size; the pool's blocks never move, and a block is as
+         * large as the game was told. */
+        if (Game_DosProgramEnd() != 0 && !Game_DosProgramResize(regs->ebx)) {
+            regs->ebx = Game_DosProgramEnd() >> 12;
+            Game_DosError(regs, 8);
+            return 1;
+        }
         break;
     case 0x4c:
         Game_ExitMain_Asm(Game_DosAL(regs));
@@ -370,6 +420,51 @@ static int dpmi_call(Game_DosRegs *regs)
         /* Resize a DOS block: the pool cannot. */
         Game_DosError(regs, 0x0008);
         return 1;
+    case 0x0300: {
+        /* Simulate a real-mode interrupt: BL = vector, ES:EDI = the register
+         * structure of DPMI 0.9 (EDI 00, ESI 04, EBP 08, EBX 10, EDX 14, ECX
+         * 18, EAX 1C, flags 20, ES 22).  The call runs on a copy.  MSCDEX
+         * (INT 2Fh AH=15h) takes its request header from ES:BX; a vector
+         * nobody serves fails, with CF set in the flags. */
+        uint8_t *structure = (uint8_t *)Game_DosGuestPointer(regs->edi);
+        const uint8_t vector = (uint8_t)regs->ebx;
+        Game_DosRegs nested;
+        uint16_t flags, es;
+
+        if (structure == NULL) {
+            Game_DosError(regs, 0x8021);
+            return 1;
+        }
+        memset(&nested, 0, sizeof(nested));
+        memcpy(&nested.edi, structure + 0x00, 4);
+        memcpy(&nested.esi, structure + 0x04, 4);
+        memcpy(&nested.ebp, structure + 0x08, 4);
+        memcpy(&nested.ebx, structure + 0x10, 4);
+        memcpy(&nested.edx, structure + 0x14, 4);
+        memcpy(&nested.ecx, structure + 0x18, 4);
+        memcpy(&nested.eax, structure + 0x1c, 4);
+        memcpy(&flags, structure + 0x20, 2);
+        memcpy(&es, structure + 0x22, 2);
+        nested.eflags = flags;
+        if (trace_int()) fprintf(stderr, "  real-mode int %02x ax=%04x bx=%04x es=%04x\n", vector, Game_DosAX(&nested), Game_DosBX(&nested), es);
+        if (vector == 0x2f && Game_DosCdCall(&nested, es)) {
+            /* served */
+        } else if (vector == 0x10 || vector == 0x1a || vector == 0x2f) {
+            Game_DosDispatch(vector, &nested);
+        } else {
+            Game_DosSetCarry(&nested, 1);
+        }
+        flags = (uint16_t)nested.eflags;
+        memcpy(structure + 0x00, &nested.edi, 4);
+        memcpy(structure + 0x04, &nested.esi, 4);
+        memcpy(structure + 0x08, &nested.ebp, 4);
+        memcpy(structure + 0x10, &nested.ebx, 4);
+        memcpy(structure + 0x14, &nested.edx, 4);
+        memcpy(structure + 0x18, &nested.ecx, 4);
+        memcpy(structure + 0x1c, &nested.eax, 4);
+        memcpy(structure + 0x20, &flags, 2);
+        break;
+    }
     case 0x0200:    /* get a real-mode vector */
     case 0x0204:    /* get a protected-mode vector */
         /* BL = vector, CX:EDX = the handler. */
@@ -402,7 +497,55 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
     case 0x16:
         if (Game_DosKbdInt16(regs)) return;
         break;
+    case 0x10:
+        /* The video BIOS: the mode is the port's picture, the text functions
+         * have nowhere to draw. */
+        switch (Game_DosAH(regs)) {
+        case 0x00:
+            video_mode = Game_DosAL(regs) & 0x7f;
+            Game_DosRequestPresent();
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x0f:
+            /* AL = the mode, AH = columns, BH = the page */
+            regs->eax = (regs->eax & 0xffff0000u) | ((video_mode <= 3 ? 80u : 40u) << 8) | video_mode;
+            regs->ebx &= 0xffff00ffu;
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x01:      /* cursor shape */
+        case 0x02:      /* cursor position */
+        case 0x05:      /* active page */
+        case 0x06:      /* scroll */
+        case 0x07:
+        case 0x09:      /* characters */
+        case 0x0a:
+        case 0x0e:
+            Game_DosSetCarry(regs, 0);
+            return;
+        default:
+            break;
+        }
+        break;
     case 0x1a:
+        if (Game_DosAH(regs) == 0x02 || Game_DosAH(regs) == 0x04) {
+            /* the real-time clock: the time (BCD) or the date */
+            const time_t seconds = time(NULL);
+            const struct tm *parts = localtime(&seconds);
+            if (parts != NULL) {
+                const uint32_t year = (uint32_t)parts->tm_year + 1900u;
+#define BCD(value) ((((value) / 10) << 4) | ((value) % 10))
+                if (Game_DosAH(regs) == 0x02) {
+                    Game_DosSetCX(regs, (uint16_t)((BCD(parts->tm_hour) << 8) | BCD(parts->tm_min)));
+                    Game_DosSetDX(regs, (uint16_t)(BCD(parts->tm_sec) << 8));
+                } else {
+                    Game_DosSetCX(regs, (uint16_t)((BCD(year / 100) << 8) | BCD(year % 100)));
+                    Game_DosSetDX(regs, (uint16_t)((BCD(parts->tm_mon + 1) << 8) | BCD(parts->tm_mday)));
+                }
+#undef BCD
+                Game_DosSetCarry(regs, 0);
+                return;
+            }
+        }
         if (Game_DosAH(regs) == 0x00) {
             /* BIOS clock: ticks since midnight in CX:DX, AL = 0 (no midnight
              * passed) */

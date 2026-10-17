@@ -21,6 +21,7 @@
 
 """Second pass: writing the LLVM IR."""
 
+import os
 import sys
 
 from .emit import add_output_line, get_addr_to_int32, get_int32_to_ptr, get_load_type, get_new_temporary_register
@@ -106,6 +107,9 @@ def _write_header_and_data():
 
 
 
+_keep_names = bool(os.environ.get("LLASM_SYMBOLS"))
+
+
 def _write_declarations():
     """External variables, functions and procedures."""
 
@@ -188,7 +192,9 @@ def _write_procedures():
     for proc_name in G.local_proc_names:
         proc = G.proc_list[proc_name]
 
-        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if proc.ispublic else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind {")
+        # LLASM_SYMBOLS=1: every procedure keeps its name in the object (nm,
+        # a debugger), where it is private otherwise
+        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if (proc.ispublic or _keep_names) else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind {")
 
         if not process_proc_body(proc_name):
             return 79

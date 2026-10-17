@@ -29,6 +29,7 @@
    nothing calls into the game that way, and each would need its own alias in
    the llasm global_aliases.sci of the port (which has only main_). */
 
+#include <stdio.h>
 #include <stdlib.h>
 #if !(defined(__GNUC__) && defined(_WIN64))
 #include <setjmp.h>
@@ -40,11 +41,24 @@
 #include "Game_hooks.h"
 #include "llasm_cpu.h"
 
-/* the symbol the game starts at: the llasm procedure exported as c_main_ (the
- * global alias main_ of the port's input, the game's C main), or the program's
- * entry point, which SR exports as c_start_; GAME_ENTRY in Game_hooks.h */
+/* the symbol the game starts at: the program's entry point, which SR exports
+ * as c_start_ (the whole startup code runs), or a procedure the port's input
+ * names, such as the game's C main (the alias main_ of global_aliases.sci,
+ * c_main_); GAME_ENTRY in Game_hooks.h */
+/* runtime/dos is on the include path of a DOS game only; the win32 ports start at c_main_ */
+#if __has_include("Game_dosmem.h")
+#include "Game_dosmem.h"
+#define GAME_DOS_ENTRY
+#endif
 #ifndef GAME_ENTRY
+#ifdef GAME_DOS_ENTRY
+#define GAME_ENTRY c_start_
+/* the program starts as the extender starts it: with the stack and the heap
+ * in a memory block of its own (Game_DosProgramInit) */
+#define GAME_ENTRY_IS_START
+#else
 #define GAME_ENTRY c_main_
+#endif
 #endif
 
 #ifdef __cplusplus
@@ -55,6 +69,16 @@ extern _cpu *x86_initialize_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
 extern void CCALL GAME_ENTRY(CPU);
+#ifdef GAME_ENTRY_IS_START
+/* the end of the stack object of the program, exported by SR */
+extern unsigned char stack_start;
+#ifndef GAME_PROGRAM_MEMORY
+#define GAME_PROGRAM_MEMORY (64u << 20)
+#endif
+#ifndef GAME_PROGRAM_STACK
+#define GAME_PROGRAM_STACK (1u << 20)
+#endif
+#endif
 
 #ifdef __cplusplus
 }
@@ -128,6 +152,15 @@ int CCALL Game_Main_Asm(int argc, char *argv[])
 
         eax = argc;
         edx = PTR2REG(argv);
+#ifdef GAME_ENTRY_IS_START
+        esp = Game_DosProgramInit(GAME_PROGRAM_MEMORY, GAME_PROGRAM_STACK, PTR2REG(&stack_start));
+        if (esp == 0)
+        {
+            fprintf(stderr, GAME_NAME ": no room for the program's memory (%u MiB) above its image\n", GAME_PROGRAM_MEMORY >> 20);
+            x86_deinitialize_cpu();
+            return 1;
+        }
+#endif
 
         GAME_ENTRY(cpu);
 

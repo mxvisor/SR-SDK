@@ -43,7 +43,7 @@
 
 static void pit_irq(void)
 {
-    Game_CallGuestInterrupt(0x08);
+    Game_DosTimerTick();
     if (Thread_Exit) Game_StopMain();
 }
 

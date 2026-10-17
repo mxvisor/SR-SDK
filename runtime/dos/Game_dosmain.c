@@ -56,6 +56,11 @@
 #include "main.h"
 #include "Game_dosmain.h"
 #include "Game_hooks.h"
+#include "Game_cdrom.h"
+#include "Game_dosmem.h"
+#include "Game_dosrt.h"
+#include "Game_music.h"
+#include "Game_vfs.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -233,6 +238,69 @@ static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
 }
 #endif
 
+#ifndef GAME_RUNTIME_INIT
+/* The DOS world of a game that says nothing about its own: the conventional
+ * memory at its own addresses (PSP with the command line at 0, the DPMI 0100h
+ * blocks above), the VGA window at A0000h, the disc and the music. */
+#define DOS_LOW_SIZE 0xA0000u
+#define DOS_VGA_BASE 0xA0000u
+#define DOS_VGA_SIZE 0x10000u
+#define DOS_ENV_OFFSET 0x100u
+#define DOS_ENV_SIZE 0x100u
+
+static int Game_DefaultRuntimeInit(int argc, char *argv[])
+{
+    uint8_t *psp, *env;
+    const char *name = GAME_MAIN_FILENAME;
+    size_t length, pos = 0;
+    int index;
+
+    if (Game_DosRuntimeInit(0, DOS_LOW_SIZE, DOS_ENV_OFFSET + DOS_ENV_SIZE) != 0) return -1;
+    psp = Game_DosMemBase();
+
+    /* the VGA window: real memory at A0000h when the guest can have it */
+    Game_FrameBuffer = Game_DosMapLow(DOS_VGA_BASE, DOS_VGA_SIZE);
+    if (Game_FrameBuffer == NULL) Game_FrameBuffer = (uint8_t *)x86_malloc(DOS_VGA_SIZE);
+    if (Game_FrameBuffer == NULL) return -1;
+    memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
+    Game_ScreenWindow = Game_FrameBuffer;
+    Game_ScreenWindowNum = 0;
+
+    /* PSP: INT 20h, the end of memory, the environment, the command tail */
+    psp[0] = 0xcd;
+    psp[1] = 0x20;
+    psp[2] = (uint8_t)(DOS_LOW_SIZE >> 12);
+    psp[3] = (uint8_t)(DOS_LOW_SIZE >> 20);
+    psp[0x2c] = (uint8_t)(DOS_ENV_OFFSET >> 4);
+    psp[0x2d] = (uint8_t)(DOS_ENV_OFFSET >> 12);
+    /* the environment: no variables, then the program's name */
+    env = psp + DOS_ENV_OFFSET;
+    env[2] = 1;
+    length = strlen(name);
+    if (length > DOS_ENV_SIZE - 5) length = DOS_ENV_SIZE - 5;
+    memcpy(env + 4, name, length);
+    for (index = 1; index < argc && pos < 126; index++) {
+        const char *arg = argv[index];
+        if (pos != 0) psp[0x81 + pos++] = ' ';
+        while (*arg != 0 && pos < 126) psp[0x81 + pos++] = (uint8_t)*arg++;
+    }
+    psp[0x80] = (uint8_t)pos;
+    psp[0x81 + pos] = 0x0d;
+
+    /* Game_CdInit says what it did not find; a game that needs no disc goes on */
+    Game_CdInit(Game_DataRoot());
+    Game_MusicInit();
+    return 0;
+}
+
+static void Game_DefaultRuntimeDeinit(void)
+{
+    Game_MusicDeinit();
+    Game_CdDeinit();
+    Game_DosRuntimeDeinit();
+}
+#endif
+
 static int Game_Run(int argc, char *argv[])
 {
 #ifdef GAME_ARGS
@@ -290,6 +358,9 @@ static int Game_Run(int argc, char *argv[])
 
 #ifdef GAME_RUNTIME_INIT
     if (GAME_RUNTIME_INIT() != 0)
+#else
+    if (Game_DefaultRuntimeInit(argc, argv) != 0)
+#endif
     {
         fprintf(stderr, "Could not initialize the %s runtime: %s\n", GAME_NAME, SDL_GetError());
         x86_deinit_malloc();
@@ -297,13 +368,14 @@ static int Game_Run(int argc, char *argv[])
         SDL_Quit();
         return 1;
     }
-#endif
 
     Game_SetMainArgs(argc, argv);
     Game_Event_Loop();
 
 #ifdef GAME_RUNTIME_DEINIT
     GAME_RUNTIME_DEINIT();
+#else
+    Game_DefaultRuntimeDeinit();
 #endif
     x86_deinit_malloc();
     Cleanup_Input();

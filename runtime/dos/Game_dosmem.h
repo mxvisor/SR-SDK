@@ -48,6 +48,12 @@ extern uint32_t Game_DosMemBias;
 /* guest address of the block DPMI 0100h allocated last, 0 before the first */
 extern uint32_t Game_DosMemLastBlock;
 
+/* Makes [address, address + size) of the guest address space real memory, the
+ * way DOS has it: the low 1 MiB (and 64 KiB) are free for it.  Returns the
+ * host pointer, NULL when they are not (the host has the guest's 0 itself, a
+ * 32-bit host).  The pages are zeroed once, and stay while the process lives. */
+uint8_t *Game_DosMapLow(uint32_t address, uint32_t size);
+
 /* Maps the pool for the DOS range [dos_base, dos_base + size); the first
  * first_free bytes (PSP, environment) are taken.  0 on success. */
 int Game_DosMemInit(uint32_t dos_base, uint32_t size, uint32_t first_free);
@@ -72,6 +78,20 @@ uint32_t Game_DosMemFreeBytes(void);
 uint8_t *Game_DosMemPtr(uint32_t address, uint32_t size);
 /* The same address as a guest address: the pool's for a DOS one, else itself. */
 uint32_t Game_DosMemFlat(uint32_t address);
+
+/* The memory block of a program that starts at its entry point, as the
+ * extender gives it: the stack at the bottom, then the heap that the startup
+ * code grows with INT 21h AH=4Ah (it begins at the initial ESP and asks for
+ * the new end of the block, in 4 KiB pages from address 0).  The startup code
+ * measures the stack against the end of the program's image, so the block has
+ * to lie above `above`, a guest address.  Returns the initial ESP, 0 if no
+ * block of `size` bytes lies there. */
+uint32_t Game_DosProgramInit(uint32_t size, uint32_t stack_size, uint32_t above);
+void Game_DosProgramDeinit(void);
+/* INT 21h AH=4Ah on the block: 1 if its end can be at `pages` * 4 KiB. */
+int Game_DosProgramResize(uint32_t pages);
+/* 0 without a program block */
+uint32_t Game_DosProgramEnd(void);
 
 #ifdef __cplusplus
 }

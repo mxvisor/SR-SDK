@@ -84,6 +84,9 @@ else:
         if path_dir not in env_path:
             env_path.append(path_dir)
 env['ENV']['PATH'] = os.pathsep.join(env_path)
+# LLASM_SYMBOLS=1: the procedures keep their names in the object (nm, gdb)
+if os.environ.get('LLASM_SYMBOLS'):
+    env['ENV']['LLASM_SYMBOLS'] = os.environ['LLASM_SYMBOLS']
 if env['CC'] == 'cl':
     env.Append(LLASMFLAGS = ' -func-name strncasecmp=_strnicmp')
 # -I has to be absolute: llasm resolves a relative -I against the directory of

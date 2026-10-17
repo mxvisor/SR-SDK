@@ -52,6 +52,9 @@ void Game_DosSetVector(uint8_t vector, uint32_t address);
 int Game_DosCallGuestIsr(uint32_t target);
 /* The same for the handler of a vector (the keyboard's IRQ 1, IRQ 0). */
 int Game_CallGuestInterrupt(uint8_t vector);
+/* The timer interrupt (IRQ 0): the game's INT 8 handler, or, as the BIOS does
+ * when the game did not take INT 8, its INT 1Ch one. */
+int Game_DosTimerTick(void);
 int Game_GuestIsrRunning(void);
 /* The guest's IF set and no guest handler running. */
 int Game_DosGuestInterruptsEnabled(void);

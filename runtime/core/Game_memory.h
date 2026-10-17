@@ -61,6 +61,9 @@ int initialize_pointer_offset(void);
 #ifdef PTROFS_64BIT
 
 extern uint64_t pointer_offset;
+/* bytes at pointer_offset kept free for the guest's low memory (no access
+ * until committed) */
+extern unsigned int pointer_reserved_length;
 
 /* guest flat address (32-bit) -> host pointer */
 #define GAME_GUEST32_TO_PTR(value) ((uintptr_t)(pointer_offset + (uint32_t)(value)))

@@ -34,7 +34,9 @@ plus fixes that can be offered back to it. SR-SDK does not change SR.
 
 No D compiler is needed: llasm IR is translated by `llasm/llasm.py`, a Python
 version of SR's `llasm` that is developed here; on SR's reference games its output is byte-identical to the D original (see
-[`llasm/README.md`](llasm/README.md)).
+[`llasm/README.md`](llasm/README.md)). To find a procedure of the original in a debugger, delete
+`build/obj/<device>/gen/*.o` and build once with `LLASM_SYMBOLS=1`: every procedure keeps its name
+(`loc_XXXX`, the address in the original) in the object, for `nm` and `gdb`.
 
 ## Starting a new port
 
@@ -183,10 +185,11 @@ A DOS game (`runtime/dos`) also takes, all optional:
 
 | Macro | Meaning |
 |---|---|
-| `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_main_`, the game's C `main` named by `main_` in `global_aliases.sci`; `c_start_` is the program's entry point, which SR exports by itself |
+| `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_start_`, the program's entry point, which SR exports by itself; `c_main_` is the game's C `main` named by `main_` in `global_aliases.sci`, for a port that skips the startup code |
+| `GAME_PROGRAM_MEMORY`, `GAME_PROGRAM_STACK` | `Game-asm.c`, a game started at its entry point: the size of the program's memory block (default 64 MiB, less if the guest window has no room) and of the stack in it (1 MiB); the startup code grows its heap in the block with INT 21h AH=4Ah |
 | `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` |
 | `GAME_CONFIG()` | the port's configuration, read after the options |
-| `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed) |
+| `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
@@ -289,7 +292,10 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
 - `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h) and Input Status #1 (3DAh);
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
-  buffers, the PSP) in one pool;
+  buffers, the PSP) in one pool, at its own addresses when the guest's low megabyte is free
+  (`Game_DosMapLow`: the PSP at 0, the VGA window at A0000h), and the memory block of a
+  program started at its entry point (`Game_DosProgramInit`: stack and heap above the image,
+  grown by INT 21h AH=4Ah);
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
   close, FindFirst/FindNext, the DTA, the devices CON and NUL);
 - `Game_doskbd.c`, `.h`: the keyboard: the controller's bytes (port 60h, E0 before a grey

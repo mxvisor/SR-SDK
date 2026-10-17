@@ -29,6 +29,7 @@
 #include <SDL.h>
 
 #include "Game_defs.h"
+#include "Game_vars.h"
 #include "Game_memory.h"
 #include "Game_vfs.h"
 #include "Game_sound.h"
@@ -123,7 +124,9 @@ static uint8_t *segment_access(uint32_t address, uint32_t size)
 #ifdef GAME_DOS_VIDEO_WINDOW
     return GAME_DOS_VIDEO_WINDOW(address, size);
 #else
-    (void)size;
+    /* the 64 KiB at A0000h are Game_FrameBuffer */
+    if (Game_FrameBuffer != NULL && address >= 0xA0000u && address + size <= 0xB0000u)
+        return Game_FrameBuffer + (address - 0xA0000u);
     return NULL;
 #endif
 }
@@ -195,6 +198,7 @@ int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t fir
 
 void Game_DosRuntimeDeinit(void)
 {
+    Game_DosProgramDeinit();
     Game_AudioDeinit();
     Game_DosFileDeinit();
     Game_FilesDeinit();
