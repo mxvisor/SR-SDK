@@ -565,11 +565,16 @@ if want('gen'):
     gen_sources = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] \
         + [File(compact)]
 
-    gen_cmd = 'mkdir -p %s && cd %s && cp %s %s . && python3 compact_source.py --dialect llasm --module %s' % (
+    # A game that lists its segments (compact / outputs) is built from that list.
+    # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.
+    take_all_segments = '' if SR_EXTRAS else \
+        ' && rm -f seg*.llinc && cp %s/seg*.llinc .' % shell_quote(RECOMP_DIR)
+    gen_cmd = 'mkdir -p %s && cd %s && cp %s %s .%s && python3 compact_source.py --dialect llasm --module %s' % (
         shell_quote(GEN_SRC_DIR), shell_quote(GEN_SRC_DIR),
         shell_quote(compact),
         ' '.join(shell_quote(path) for path in [RECOMP_ASM]
                  + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS]),
+        take_all_segments,
         shell_quote(MODULE))
     defaults += env.Command(gen_targets, gen_sources, gen_cmd)
 
