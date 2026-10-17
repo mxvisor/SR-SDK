@@ -155,7 +155,7 @@ and there is no fixed-address mode.
   directory's own `SConscript` when it has one;
 - `game/llasm/`: its own `SConscript` when it has one. Otherwise `scons/llasm.SConscript`
   builds the game's `.c` and `.llasm`, and those of the runtime's `llasm/` directories
-  (`runtime/win32/llasm/`, `runtime/win32/winapi/llasm/`), except the files the game has
+  (`runtime/core/llasm/`, `runtime/<platform>/llasm/`, `runtime/win32/winapi/llasm/`), except the files the game has
   under the same name.
 
 Headers are looked up in `game/` first, then in the runtime, then in SR's

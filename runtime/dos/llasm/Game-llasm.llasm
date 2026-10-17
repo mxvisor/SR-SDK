@@ -1,0 +1,76 @@
+;;
+;;  Copyright (C) 2016-2026 Roman Pauer
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+
+include llasm.llinc
+
+; RunProcECX: calls the guest procedure whose address is in ecx.  A guest
+; "address of proc" value (e.g. the handler the game hands INT 21h AH=25h) is a
+; real, directly callable host address here, and llasm's calling convention
+; (fastcc on the single %_cpu* argument) makes a bare indirect tail call
+; through a register ABI-correct.
+proc RunProcECX global c_RunProcECX
+
+        tcall ecx
+
+endp ; end procedure RunProcECX
+
+; The default handler for interrupt vectors nothing has registered.
+; WATCOM/DOS4GW startup code (like the game's own INT 08h handler) commonly
+; chains to "the previously installed handler" by overwriting its own return
+; frame with the saved old vector and executing retf/iret into it -- real DOS
+; always has *some* handler there (the BIOS's own default), never a null
+; pointer.  Game_DosRuntimeInit seeds the vectors with this stub's address, so
+; that chain lands somewhere safe: it returns at once, popping the iretd frame
+; (eip, cs, eflags) the way SR translates `iretd`.  An ISR must leave every
+; guest register exactly as it found it, so the return address goes in a
+; scratch temp, not in eax.
+proc Game_DosNullIsr global c_Game_DosNullIsr
+
+        POP tmp1
+        add esp, esp, 4
+        POPFD
+        tcall tmp1
+
+endp ; end procedure Game_DosNullIsr
+
+; Stands in for the three-byte `int N / ret` stub of WATCOM's int386()/int386x().
+; The library dispatches a software interrupt by loading the caller's register
+; block and *returning* into one of 256 such stubs in a table, indexed
+; base + N*3.  SR has to leave that table as raw data -- translating `int N`
+; into a call to x86_int would destroy the three-byte stride every index
+; depends on -- so returning into it would jump straight into data.  The game's
+; instruction_replacements.sci rewrites the dispatcher to stash N in
+; Game_DosInt86No and push this proc's address instead of &stub[N].  The stack
+; effect is the stub's: x86_int cleans up after itself, so the final
+; pop-and-tail-call lands on the library's continuation exactly as the real
+; `ret` would have.
+extern Game_DosInt86No
+
+proc Game_DosInt86Thunk public
+
+        load tmp1, Game_DosInt86No, 4
+        call x86_int $, tmp1
+
+        POP tmp1
+        tcall tmp1
+
+endp ; end procedure Game_DosInt86Thunk

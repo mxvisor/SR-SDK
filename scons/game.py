@@ -169,7 +169,7 @@ if GLIDE:
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 # the runtime's llasm/ directories: includes, and (for a game without its own
 # game/llasm/SConscript) the .llasm and .c of its glue
-SDK_LLASM_DIRS = [os.path.join(RUNTIME_DIRS[1], 'llasm')]
+SDK_LLASM_DIRS = [os.path.join(RUNTIME_DIRS[0], 'llasm'), os.path.join(RUNTIME_DIRS[1], 'llasm')]
 if WINAPI:
     SDK_LLASM_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'winapi', 'llasm'))
 if GLIDE:

@@ -41,9 +41,9 @@ extern "C" {
 #endif
 
 /* The game directory, DOS memory for [lowmem_base, +lowmem_size) with the
- * first first_free bytes taken (Game_DosMemInit), the vectors (Game_DosIntInit),
+ * first first_free bytes taken (Game_DosMemInit), the vectors (Game_DosIntInit, all to the stub of llasm/Game-llasm.llasm),
  * the DOS files, the keyboard, the PIT and the audio device.  0 on success. */
-int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free, uint32_t null_isr);
+int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free);
 void Game_DosRuntimeDeinit(void);
 
 /* Any thread: asks the main loop to show a frame (EC_DISPLAY_FLIP_START). */

@@ -129,7 +129,25 @@ void Game_DosRequestPresent(void)
     SDL_PushEvent(&event);
 }
 
-int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free, uint32_t null_isr)
+/* The shadows of the privileged registers and the descriptor table that the
+ * translated `mov cr0`, `lsl`, `smsw` and `sidt` load and store
+ * (instruction_replacements.sci, llasm/dos.llinc).  The IDT is a fake one,
+ * never dispatched through; DS spans the flat 4 GB minus the top (the limit
+ * `lsl` reports). */
+extern "C" {
+uint32_t Game_DosCr0 = 0x13;
+uint32_t Game_DosDsLimit = 0x00ffffffu;
+uint32_t Game_DosIdtBase;
+/* WATCOM int386() dispatches a software interrupt by returning into a raw
+ * `int N / ret` stub; the game's replacement stashes N here and returns into
+ * Game_DosInt86Thunk instead (llasm/Game-llasm.llasm). */
+uint32_t Game_DosInt86No;
+/* The handler every vector starts with (llasm/Game-llasm.llasm). */
+extern void CCALL c_Game_DosNullIsr(void *cpu);
+}
+static uint8_t idt[2048];
+
+int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free)
 {
     if (Game_FilesInit() != 0) return -1;
     /* No interrupt vector table or BIOS data area at 0: the translated code
@@ -139,7 +157,8 @@ int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t fir
         fprintf(stderr, GAME_NAME ": could not map DOS memory (%u KiB)\n", lowmem_size / 1024u);
         return -1;
     }
-    Game_DosIntInit(null_isr);
+    Game_DosIdtBase = GAME_PTR_TO_GUEST32(idt);
+    Game_DosIntInit(GAME_PTR_TO_GUEST32(&c_Game_DosNullIsr));
     Game_DosFileInit();
     Game_DosKbdInit();
     Game_DosPitInit();
