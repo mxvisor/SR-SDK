@@ -514,9 +514,16 @@ int Game_CdInit(const char *game_dir)
     const char *configured = getenv(GAME_ENV("CD_IMAGE"));
     char dir[PATH_MAX];
     const char *data = NULL;
+    char parent[PATH_MAX] = "";
+#ifdef GAME_DATA_SUBDIR
+    /* the disc's files sit above the data directory (DATA/ of the disc) */
+    directory_of(game_dir, parent, sizeof(parent));
+    if (strcmp(parent, game_dir) == 0 || strcmp(parent, ".") == 0) parent[0] = 0;
+#endif
     if (configured != NULL && configured[0] != 0) {
         snprintf(cue_path, sizeof(cue_path), "%s", configured);
-    } else if (find_in_dir(game_dir, "CD", dir, sizeof(dir), 1)) {
+    } else if (find_in_dir(game_dir, "CD", dir, sizeof(dir), 1) ||
+               (parent[0] != 0 && find_in_dir(parent, "CD", dir, sizeof(dir), 1))) {
         find_cue(dir);
     }
     if (cue_path[0] != 0) {
@@ -527,8 +534,11 @@ int Game_CdInit(const char *game_dir)
         } else {
             fprintf(stderr, GAME_NAME ": no readable data track in %s\n", cue_path);
         }
-    } else if (find_in_dir(game_dir, GAME_CD_MARKER, dir, sizeof(dir), 1)) {
-        snprintf(disc_dir, sizeof(disc_dir), "%s", game_dir);
+    } else if (find_in_dir(game_dir, GAME_CD_MARKER, dir, sizeof(dir), 1) ||
+               (parent[0] != 0 && find_in_dir(parent, GAME_CD_MARKER, dir, sizeof(dir), 1))) {
+        /* directory_of(dir): the disc root, game_dir or its parent */
+        directory_of(dir, disc_dir, sizeof(disc_dir));
+        game_dir = disc_dir;
         data = "the disc's files";
         if (find_in_dir(game_dir, "AUDIO", dir, sizeof(dir), 1) && find_cue(dir) && load_cue(cue_path) != 0) {
             fprintf(stderr, GAME_NAME ": cannot read %s\n", cue_path);

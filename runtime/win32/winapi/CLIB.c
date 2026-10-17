@@ -483,6 +483,13 @@ int CLIB_FindFile(const char *src, char *dst)
     int dirlen, found;
 
     filename_start = src;
+    if (src[0] == '/')
+    {
+        /* an absolute path (the copy of the disc as D:): component by component */
+        dst[0] = '/';
+        dst[1] = 0;
+        return CLIB_FindPath(dst, dst + 1, src + 1);
+    }
     if (src[0] == '.')
     {
         if (src[1] == 0)

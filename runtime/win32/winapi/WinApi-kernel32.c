@@ -225,7 +225,7 @@ static void redirect_d_drive(const char *src, char *dst)
     {
         char *p;
 
-        snprintf(dst, MAX_PATH, "Z:%s%s", disc_dir, src + 3);
+        snprintf(dst, MAX_PATH, "Z:%s\\%s", disc_dir, src + 3);
         for (p = dst; *p; p++)
         {
             if (*p == '/') *p = '\\';
@@ -233,7 +233,7 @@ static void redirect_d_drive(const char *src, char *dst)
         return;
     }
 #endif
-    snprintf(dst, MAX_PATH, "%s%s", disc_dir, src + 3);
+    snprintf(dst, MAX_PATH, "%s/%s", disc_dir, src + 3);
 }
 
 /* D: when the disc is an image, not a directory: its files are inside the
