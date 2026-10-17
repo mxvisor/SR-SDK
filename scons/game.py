@@ -516,7 +516,10 @@ if want('recomp'):
     # files are read from the current directory, so the .sci files of
     # game/recomp/.../llasm/ land beside them here, the way build-llasm.sh
     # copies them in.
+    # bssborder.csv is optional, SR goes on without it (SR_loader.c)
     for name in ('SR.cfg', 'bssborder.csv'):
+        if name == 'bssborder.csv' and not os.path.exists(os.path.join(RECOMP_SRC, name)):
+            continue
         copy_if_newer(os.path.join(RECOMP_SRC, name), os.path.join(RECOMP_DIR, name))
     for sci in sorted(glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci'))):
         copy_if_newer(sci, os.path.join(RECOMP_DIR, os.path.basename(sci)))
@@ -528,8 +531,9 @@ if want('recomp'):
     sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
     sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
     sr_sources = [INPUT_EXE, File(sr_exe),
-                  File(os.path.join(RECOMP_SRC, 'SR.cfg')),
-                  File(os.path.join(RECOMP_SRC, 'bssborder.csv'))]
+                  File(os.path.join(RECOMP_SRC, 'SR.cfg'))]
+    if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
+        sr_sources.append(File(os.path.join(RECOMP_SRC, 'bssborder.csv')))
     sr_sources += [File(path) for path in sorted(
         glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci')))]
     if os.path.exists(_outputs):
