@@ -324,6 +324,32 @@ for utility in ['opt', 'llc']:
         if utility_directory not in env['ENV']['PATH'].split(os.pathsep):
             env['ENV']['PATH'] += os.pathsep + utility_directory
 
+# Fail before the first compile with the full list of what is missing, not
+# deep in the obj stage when the shell reports "opt: not found".  Checked
+# against the PATH of the actions (SCons gives them its own), which the loop
+# above has already extended with the directory of opt and llc.
+def tool_exists(tool):
+    tool = env.subst(tool).split()[0]
+    if os.path.isabs(tool):
+        return os.path.exists(tool)
+    return shutil.which(tool, path=env['ENV'].get('PATH')) is not None
+
+
+missing = []
+if want('obj'):
+    if not tool_exists(env['CC']):
+        missing.append('%s (C compiler of device %s)' % (env.subst(env['CC']), device))
+    for utility in ('opt', 'llc'):
+        if not tool_exists(utility):
+            missing.append('%s (LLVM: llasm.py | opt | llc)' % utility)
+if want('bin') and not tool_exists(env['LINK']):
+    missing.append('%s (linker of device %s)' % (env.subst(env['LINK']), device))
+if missing:
+    raise Exception('toolchain of device %s: missing %s\n'
+                    '  install LLVM (dnf install llvm / apt install llvm) and the C toolchain; '
+                    'a versioned opt-NN/llc-NN must also be on PATH as opt and llc'
+                    % (device, ', '.join(missing)))
+
 # ------------------------------------------------- stage 1: host tools --
 
 # The SDK and its SR/ are submodules and stay read-only: one checkout of the
