@@ -41,7 +41,6 @@
 #include "Game_vfs.h"
 #include "Game_hooks.h"
 
-#define FLAG_CF 0x0001u
 
 /* request header status: done, busy (audio playing), error */
 #define STATUS_DONE 0x0100u
@@ -239,26 +238,6 @@ static void device_request(uint8_t *request)
     store16(request + 3, status);
 }
 
-static uint16_t regs_cx(const Game_DosRegs *regs)
-{
-    return (uint16_t)regs->ecx;
-}
-
-static void set_ax(Game_DosRegs *regs, uint16_t value)
-{
-    regs->eax = (regs->eax & 0xffff0000u) | value;
-}
-
-static void set_bx(Game_DosRegs *regs, uint16_t value)
-{
-    regs->ebx = (regs->ebx & 0xffff0000u) | value;
-}
-
-static void set_cx(Game_DosRegs *regs, uint16_t value)
-{
-    regs->ecx = (regs->ecx & 0xffff0000u) | value;
-}
-
 int Game_DosCdCall(Game_DosRegs *regs, uint16_t es)
 {
     const uint16_t function = (uint16_t)regs->eax;
@@ -266,13 +245,13 @@ int Game_DosCdCall(Game_DosRegs *regs, uint16_t es)
     uint8_t *pointer;
 
     if ((function >> 8) != 0x15) return 0;
-    if (trace_cd()) fprintf(stderr, "CD int2f %04x bx=%04x cx=%04x es=%04x\n", function, (unsigned)(uint16_t)regs->ebx, regs_cx(regs), es);
-    regs->eflags &= ~FLAG_CF;
+    if (trace_cd()) fprintf(stderr, "CD int2f %04x bx=%04x cx=%04x es=%04x\n", function, Game_DosBX(regs), Game_DosCX(regs), es);
+    Game_DosSetCarry(regs, 0);
     switch (function) {
     case 0x1500:
         /* installation check: the number of CD drives and the first one */
-        set_bx(regs, 1);
-        set_cx(regs, GAME_CD_DRIVE_INDEX);
+        Game_DosSetBX(regs, 1);
+        Game_DosSetCX(regs, GAME_CD_DRIVE_INDEX);
         break;
     case 0x1501:
         /* drive device list: subunit and device header for each drive */
@@ -288,12 +267,12 @@ int Game_DosCdCall(Game_DosRegs *regs, uint16_t es)
     case 0x150b:
         /* drive check: AX nonzero for a CD drive (5AD4h, as MSCDEX gives it),
          * BX = ADADh (MSCDEX is there) */
-        set_ax(regs, regs_cx(regs) == GAME_CD_DRIVE_INDEX ? 0x5ad4u : 0);
-        set_bx(regs, 0xadadu);
+        Game_DosSetAX(regs, Game_DosCX(regs) == GAME_CD_DRIVE_INDEX ? 0x5ad4u : 0);
+        Game_DosSetBX(regs, 0xadadu);
         break;
     case 0x150c:
         /* version 2.10 */
-        set_bx(regs, 0x020au);
+        Game_DosSetBX(regs, 0x020au);
         break;
     case 0x150d:
         /* drive letters */
@@ -304,10 +283,10 @@ int Game_DosCdCall(Game_DosRegs *regs, uint16_t es)
         /* device request: CX = drive */
         pointer = Game_DosMemPtr(buffer, 0x16);
         if (pointer == NULL) {
-            regs->eflags |= FLAG_CF;
+            Game_DosSetCarry(regs, 1);
             break;
         }
-        if (regs_cx(regs) != GAME_CD_DRIVE_INDEX) {
+        if (Game_DosCX(regs) != GAME_CD_DRIVE_INDEX) {
             store16(pointer + 3, STATUS_DONE | STATUS_ERROR | ERROR_UNKNOWN_UNIT);
             break;
         }
@@ -315,8 +294,8 @@ int Game_DosCdCall(Game_DosRegs *regs, uint16_t es)
         break;
     default:
         fprintf(stderr, GAME_NAME ": unimplemented MSCDEX function %04x\n", function);
-        set_ax(regs, 1);   /* invalid function */
-        regs->eflags |= FLAG_CF;
+        Game_DosSetAX(regs, 1);   /* invalid function */
+        Game_DosSetCarry(regs, 1);
         break;
     }
     return 1;

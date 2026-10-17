@@ -192,13 +192,18 @@ and `GAME_ENV("WRITE_ROOT")` to the directories `GameActivity` made.
 The game directory, the write root, the disc and the DOS handle table are
 `runtime/core/Game_gamedir.c` (`Game_FilesInit`, declared in `Game_vfs.h`); the game
 names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_DATA_SUBDIR`,
-`GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). A DOS game hands the file
-functions of INT 21h to `Game_DosFileCall` (`runtime/dos/Game_dosfile.c`), the keyboard
-(ports 60h/64h, IRQ 1, INT 16h, INT 21h 08h/0Bh) to `runtime/dos/Game_doskbd.c`, MSCDEX
-(INT 2Fh AH=15h) to `Game_DosCdCall` (`runtime/dos/Game_doscd.c`), PIT channel 0 (ports
-40h/43h, the IRQ 0 schedule, the BIOS ticks of INT 1Ah) to `runtime/dos/Game_dospit.c`, and brings
-`Game_CallGuestInterrupt`, `Game_GuestIsrRunning` and `Game_DumpGuestMemory`. The game also
-brings `main.c`, its `display` frontend, its sound and its llasm glue.
+`GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). The runtime of a DOS game is
+`runtime/dos`: `Game_DosRuntimeInit`/`Deinit` (`Game_dosrt.c`) start and end it, and it owns the
+procedures the translated code calls -- `X86_InterruptProcedure` (`Game_dosint.c`: the vectors,
+the game's handlers run as hardware interrupts, INT 08h, 16h, 1Ah, 21h, 2Fh and 31h),
+`X86_InPortProcedure`/`X86_OutPortProcedure` and `X86_ReadMemProcedure`/`X86_WriteMemProcedure`
+(`Game_dosrt.c`: the PIT, the keyboard, the VGA DAC and retrace, the segment-override accesses).
+Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Game_doskbd.c`),
+MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`) and the VGA ports (`Game_dosvga.c`).
+The game brings `Game_DosInterrupt` (its own services, asked first), `Game_DosVideoWindow`
+(its A0000h window) and `Game_DumpGuestMemory`, may route ports of its own devices through
+`GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT` in `Game_hooks.h`, and brings `main.c`, its `display`
+frontend, its sound and its llasm glue (with the handler every vector starts with).
 
 `<GAME>_AUTO_KEYS="seconds:Key[~hold_ms],..."` (or `@fifo`) presses keys for unattended runs
 (`runtime/core/Game_keys.c`, DOS and DirectInput alike; `run-sdl.sh --keys=`); a game may set
@@ -227,9 +232,11 @@ runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         Game_file), the game directory (Game_gamedir), CD image
                         (Game_cdrom), CD audio (Game_music), PC scancodes and
                         AUTO_KEYS (Game_keys)
-runtime/dos/            DOS memory (Game_dosmem), INT 21h file functions (Game_dosfile),
-                        the keyboard (Game_doskbd), MSCDEX (Game_doscd), the PIT
-                        (Game_dospit) and the llasm includes of the DOS ports
+runtime/dos/            the runtime of a DOS4GW game: start and end, ports and segment
+                        accesses (Game_dosrt), interrupts (Game_dosint), registers
+                        (Game_dosregs.h), DOS memory (Game_dosmem), INT 21h file functions
+                        (Game_dosfile), the keyboard (Game_doskbd), MSCDEX (Game_doscd),
+                        the PIT (Game_dospit), the VGA ports (Game_dosvga)
 runtime/dos/llasm/      shared llasm includes of the DOS ports
 runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
                         llasm/ (asm-cpu.c, Game-asm.c)
@@ -252,6 +259,13 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_cdrom.c`, `.h`: drive D: from a cue sheet (ISO9660 data track,
   CDDA or ogg/flac/wav audio tracks) or from a copy of the disc;
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
+- `Game_dosrt.c`, `.h`: start and end of a DOS game's runtime, the I/O ports, the
+  segment-override accesses (PSP, the last DOS block, the game's A0000h window);
+- `Game_dosint.c`, `.h`: the interrupt vectors, the game's handlers run as hardware
+  interrupts and AIL timer callbacks, the software interrupts every DOS game here shares
+  (INT 21h and DPMI as far as a flat game asks them), after the game's `Game_DosInterrupt`;
+- `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
+- `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h) and Input Status #1 (3DAh);
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
   buffers, the PSP) in one pool;
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
@@ -266,7 +280,7 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
 
-`Game_dosmem`, `Game_dosfile`, `Game_doskbd`, `Game_doscd` and `Game_dospit` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
+The `Game_dos*` files are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
 
 ## License

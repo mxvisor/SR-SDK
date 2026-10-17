@@ -26,6 +26,7 @@
 #define _GAME_DOSFILE_H_INCLUDED_
 
 #include <stdint.h>
+#include "Game_dosregs.h"
 
 /* The file functions of INT 21h for a DOS4GW game, on the game directory,
  * the disc and the handle table of Game_gamedir.c (Game_vfs.h). */
@@ -33,20 +34,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* The registers of a software interrupt, as SR's X86_InterruptProcedure
- * hands them over: pushad order, then the flags. */
-typedef struct {
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t ignored_esp;
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
-    uint32_t eflags;
-} Game_DosRegs;
 
 /* The default DTA, no search in progress. */
 void Game_DosFileInit(void);

@@ -45,7 +45,6 @@
 #include "virtualfs.h"
 #include "Game_dosfile.h"
 
-#define DOS_CF 0x0001u
 #define MAX_FIND_RESULTS 256
 
 typedef struct {
@@ -66,29 +65,6 @@ static unsigned int find_next;
 static char find_pattern[16];
 
 static void *(*guest_pointer)(uint32_t address);
-
-static uint8_t regs_al(const Game_DosRegs *regs) { return (uint8_t)regs->eax; }
-static uint8_t regs_ah(const Game_DosRegs *regs) { return (uint8_t)(regs->eax >> 8); }
-static uint16_t regs_bx(const Game_DosRegs *regs) { return (uint16_t)regs->ebx; }
-static uint16_t regs_cx(const Game_DosRegs *regs) { return (uint16_t)regs->ecx; }
-static uint16_t regs_dx(const Game_DosRegs *regs) { return (uint16_t)regs->edx; }
-
-static void set_ax(Game_DosRegs *regs, uint16_t value)
-{
-    regs->eax = (regs->eax & 0xffff0000u) | value;
-}
-
-static void set_carry(Game_DosRegs *regs, int value)
-{
-    if (value) regs->eflags |= DOS_CF;
-    else regs->eflags &= ~DOS_CF;
-}
-
-static void dos_error(Game_DosRegs *regs, uint16_t error)
-{
-    set_ax(regs, error);
-    set_carry(regs, 1);
-}
 
 static uint16_t dos_error_from_errno(int value)
 {
@@ -135,12 +111,12 @@ static void attach(Game_DosRegs *regs, game_file *file, const char *what, const 
     int handle = Game_AttachHandle(file);
     if (handle < 0) {
         game_fclose(file);
-        dos_error(regs, 4);
+        Game_DosError(regs, 4);
         return;
     }
     if (Game_TraceFileEnabled()) fprintf(stderr, "FILE %s h=%d '%s'\n", what, handle, dos_path);
-    set_ax(regs, (uint16_t)handle);
-    set_carry(regs, 0);
+    Game_DosSetAX(regs, (uint16_t)handle);
+    Game_DosSetCarry(regs, 0);
 }
 
 /* AH=3Dh: AL's low bits are the access, 0 reading, else reading and writing. */
@@ -149,15 +125,15 @@ static void dos_open(Game_DosRegs *regs)
     const char *dos_path = (const char *)guest_pointer(regs->edx);
     int device = device_handle(dos_path);
     if (device != 0) {
-        set_ax(regs, (uint16_t)device);
-        set_carry(regs, 0);
+        Game_DosSetAX(regs, (uint16_t)device);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     errno = 0;
-    game_file *file = Game_OpenGameFile(dos_path, 'r', (regs_al(regs) & 3) != 0);
+    game_file *file = Game_OpenGameFile(dos_path, 'r', (Game_DosAL(regs) & 3) != 0);
     if (file == NULL) {
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE OPENFAIL '%s'\n", dos_path);
-        dos_error(regs, dos_error_from_errno(errno));
+        Game_DosError(regs, dos_error_from_errno(errno));
         return;
     }
     attach(regs, file, "OPEN", dos_path);
@@ -173,7 +149,7 @@ static void dos_create(Game_DosRegs *regs)
     game_file *file = Game_OpenGameFile(dos_path, 'w', 1);
     if (file == NULL) {
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE CREATEFAIL '%s'\n", dos_path);
-        dos_error(regs, errno == EACCES ? 5 : 3);
+        Game_DosError(regs, errno == EACCES ? 5 : 3);
         return;
     }
     attach(regs, file, "CREATE", dos_path);
@@ -190,16 +166,16 @@ static int is_device(uint16_t handle)
  * handles and the devices give end of file. */
 static void dos_read(Game_DosRegs *regs)
 {
-    uint16_t handle = regs_bx(regs);
+    uint16_t handle = Game_DosBX(regs);
     uint32_t count = regs->ecx;
     if (handle <= 2 || is_device(handle)) {
         regs->eax = 0;
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     game_file *file = Game_HandleFile(handle);
     if (file == NULL) {
-        dos_error(regs, 6);
+        Game_DosError(regs, 6);
         return;
     }
     if (Game_TraceFileEnabled()) {
@@ -208,18 +184,18 @@ static void dos_read(Game_DosRegs *regs)
     size_t length = game_fread(guest_pointer(regs->edx), count, file);
     if (game_ferror(file)) {
         game_clearerr(file);
-        dos_error(regs, 5);
+        Game_DosError(regs, 5);
         return;
     }
     regs->eax = (uint32_t)length;
-    set_carry(regs, 0);
+    Game_DosSetCarry(regs, 0);
 }
 
 /* AH=40h.  The count as in dos_read.  Standard output, standard error and CON
  * go to the host's; NUL takes everything. */
 static void dos_write(Game_DosRegs *regs)
 {
-    uint16_t handle = regs_bx(regs);
+    uint16_t handle = Game_DosBX(regs);
     uint32_t length = regs->ecx;
     if (handle == 1 || handle == 2 || is_device(handle)) {
         if (handle != GAME_HANDLE_NUL && length != 0) {
@@ -228,12 +204,12 @@ static void dos_write(Game_DosRegs *regs)
             fflush(out);
         }
         regs->eax = length;
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     game_file *file = Game_HandleFile(handle);
     if (file == NULL) {
-        dos_error(regs, 6);
+        Game_DosError(regs, 6);
         return;
     }
     /* A count of 0 cuts the file at the current position: WATCOM's open does
@@ -242,79 +218,79 @@ static void dos_write(Game_DosRegs *regs)
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE TRUNC h=%02x at=%08lx\n", handle, game_ftell(file));
         if (game_ftruncate(file) != 0) {
             game_clearerr(file);
-            dos_error(regs, 5);
+            Game_DosError(regs, 5);
             return;
         }
         regs->eax = 0;
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     size_t written = game_fwrite(guest_pointer(regs->edx), length, file);
     if (written != length) {
-        dos_error(regs, 5);
+        Game_DosError(regs, 5);
         return;
     }
     regs->eax = length;
-    set_carry(regs, 0);
+    Game_DosSetCarry(regs, 0);
 }
 
 /* AH=42h: CX:DX the offset, AL the origin; the position comes back in DX:AX
  * (and whole in EAX). */
 static void dos_seek(Game_DosRegs *regs)
 {
-    uint16_t handle = regs_bx(regs);
+    uint16_t handle = Game_DosBX(regs);
     game_file *file = Game_HandleFile(handle);
     int origin;
-    int32_t offset = (int32_t)(((uint32_t)regs_cx(regs) << 16) | regs_dx(regs));
-    switch (regs_al(regs)) {
+    int32_t offset = (int32_t)(((uint32_t)Game_DosCX(regs) << 16) | Game_DosDX(regs));
+    switch (Game_DosAL(regs)) {
         case 0: origin = SEEK_SET; break;
         case 1: origin = SEEK_CUR; break;
         case 2: origin = SEEK_END; break;
         default:
-            dos_error(regs, 1);
+            Game_DosError(regs, 1);
             return;
     }
     if (Game_TraceFileEnabled()) {
         fprintf(stderr, "FILE SEEK h=%02x al=%02x off=%08x at=%08lx\n",
-                handle, regs_al(regs), (uint32_t)offset, file != NULL ? game_ftell(file) : -1L);
+                handle, Game_DosAL(regs), (uint32_t)offset, file != NULL ? game_ftell(file) : -1L);
     }
     if (file == NULL) {
-        dos_error(regs, 6);
+        Game_DosError(regs, 6);
         return;
     }
     if (game_fseek(file, offset, origin) != 0) {
-        dos_error(regs, 1);
+        Game_DosError(regs, 1);
         return;
     }
     long position = game_ftell(file);
     if (position < 0) {
-        dos_error(regs, 1);
+        Game_DosError(regs, 1);
         return;
     }
     regs->eax = (uint32_t)position;
     regs->edx = (uint32_t)position >> 16;
-    set_carry(regs, 0);
+    Game_DosSetCarry(regs, 0);
 }
 
 /* AH=3Eh.  Closing a standard handle or a device does nothing. */
 static void dos_close(Game_DosRegs *regs)
 {
-    uint16_t handle = regs_bx(regs);
+    uint16_t handle = Game_DosBX(regs);
     if (handle <= 2 || is_device(handle)) {
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     game_file *file = Game_HandleFile(handle);
     if (file == NULL) {
-        dos_error(regs, 6);
+        Game_DosError(regs, 6);
         return;
     }
     Game_ReleaseHandle(handle);
     if (game_fclose(file) != 0) {
-        dos_error(regs, 6);
+        Game_DosError(regs, 6);
         return;
     }
-    set_carry(regs, 0);
+    Game_DosSetCarry(regs, 0);
 }
 
 /* DOS 8.3 wildcard match against an uppercased name (file_pattern_match
@@ -430,11 +406,11 @@ static void find_advance(Game_DosRegs *regs)
             fprintf(stderr, "FILE FIND '%s' -> '%s' attr=%02x (%s)\n",
                     find_pattern, result->dos_name, result->attr, result->host_path);
         }
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return;
     }
     if (Game_TraceFileEnabled()) fprintf(stderr, "FILE FIND '%s' -> done\n", find_pattern);
-    dos_error(regs, 0x12); /* no more files */
+    Game_DosError(regs, 0x12); /* no more files */
 }
 
 static void clear_find_results(void)
@@ -546,10 +522,10 @@ static void dos_findfirst(Game_DosRegs *regs)
     file_entry *realdir = NULL;
     int vfs_err = 0;
     unsigned int index;
-    uint16_t attr_mask = regs_cx(regs);
+    uint16_t attr_mask = Game_DosCX(regs);
 
     if (split_find_path(path, dir_path, sizeof(dir_path), pattern, sizeof(pattern)) != 0) {
-        dos_error(regs, 0x03);
+        Game_DosError(regs, 0x03);
         return;
     }
     for (index = 0; pattern[index] != 0; index++) pattern[index] = (char)toupper((unsigned char)pattern[index]);
@@ -562,7 +538,7 @@ static void dos_findfirst(Game_DosRegs *regs)
         cd_find find = { attr_mask, cd_dir };
         if (Game_CdList(cd_dir, add_cd_match, &find) != 0) {
             if (Game_TraceFileEnabled()) fprintf(stderr, "FILE FINDFAIL '%s' (CD dir '%s')\n", path, cd_dir);
-            dos_error(regs, 0x03);
+            Game_DosError(regs, 0x03);
             return;
         }
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE FIND1 '%s' CD dir='%s' cx=%04x: %u match(es)\n", path, cd_dir, attr_mask, find_count);
@@ -575,7 +551,7 @@ static void dos_findfirst(Game_DosRegs *regs)
     if (dir_source[0] != 0 && dir_source[1] == ':') {
         if (toupper((unsigned char)dir_source[0]) != 'C' ||
             snprintf(rewritten, sizeof(rewritten), "C:%s", dir_source + 2) >= (int)sizeof(rewritten)) {
-            dos_error(regs, 0x03);
+            Game_DosError(regs, 0x03);
             return;
         }
         dir_source = rewritten;
@@ -605,7 +581,7 @@ static void dos_findfirst(Game_DosRegs *regs)
     }
     if (dir_entry == NULL && find_count == 0) {
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE FINDFAIL '%s' (dir '%s' err=%d)\n", path, dir_path, vfs_err);
-        dos_error(regs, 0x03);
+        Game_DosError(regs, 0x03);
         return;
     }
     find_advance(regs);
@@ -614,7 +590,7 @@ static void dos_findfirst(Game_DosRegs *regs)
 static void dos_findnext(Game_DosRegs *regs)
 {
     if (find_pattern[0] == 0) {
-        dos_error(regs, 0x12);
+        Game_DosError(regs, 0x12);
         return;
     }
     find_advance(regs);
@@ -636,15 +612,15 @@ void Game_DosFileDeinit(void)
 int Game_DosFileCall(Game_DosRegs *regs, void *(*pointer)(uint32_t address))
 {
     guest_pointer = pointer;
-    switch (regs_ah(regs)) {
+    switch (Game_DosAH(regs)) {
     case 0x1a:
         dta_addr = regs->edx;
         if (Game_TraceFileEnabled()) fprintf(stderr, "FILE SETDTA %08x\n", dta_addr);
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return 1;
     case 0x2f:
         regs->ebx = dta_addr;
-        set_carry(regs, 0);
+        Game_DosSetCarry(regs, 0);
         return 1;
     case 0x3c: dos_create(regs); return 1;
     case 0x3d: dos_open(regs); return 1;

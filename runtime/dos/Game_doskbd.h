@@ -26,7 +26,7 @@
 #define _GAME_DOSKBD_H_INCLUDED_
 
 #include <stdint.h>
-#include "Game_dosfile.h"
+#include "Game_dosregs.h"
 
 /* The keyboard of a DOS4GW game: the controller's port 60h with its IRQ 1,
  * and the BIOS buffer behind INT 16h and INT 21h 08h/0Bh. */
@@ -60,12 +60,6 @@ int Game_DosKbdInt21(Game_DosRegs *regs);
  * 0; the next character, as INT 21h 08h gives it. */
 int32_t Game_checkch(void);
 int32_t Game_getch(void);
-
-/* The game provides these (its interrupt vectors): run the guest's handler of
- * that vector as a hardware interrupt, 1 if it ran; whether a guest handler
- * is running now. */
-int Game_CallGuestInterrupt(uint8_t vector);
-int Game_GuestIsrRunning(void);
 
 #ifdef __cplusplus
 }

@@ -36,6 +36,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_doskbd.h"
+#include "Game_dosint.h"
 #include "Game_keys.h"
 #include "Game_hooks.h"
 
@@ -46,8 +47,6 @@
  * waits this long after it. */
 #define KBD_MIN_HOLD_MS 60u
 
-#define FLAG_CF 0x0001u
-#define FLAG_ZF 0x0040u
 
 typedef struct {
     uint8_t scan;
@@ -273,16 +272,6 @@ static uint8_t getch_blocking(void)
     return 0;
 }
 
-static void set_ax(Game_DosRegs *regs, uint16_t value)
-{
-    regs->eax = (regs->eax & 0xffff0000u) | value;
-}
-
-static void set_al(Game_DosRegs *regs, uint8_t value)
-{
-    regs->eax = (regs->eax & 0xffffff00u) | value;
-}
-
 int Game_DosKbdInt16(Game_DosRegs *regs)
 {
     bios_key key;
@@ -297,17 +286,17 @@ int Game_DosKbdInt16(Game_DosRegs *regs)
                 SDL_Delay(1);
             }
             if (trace_keys()) fprintf(stderr, "KEY int16 %02x %02x\n", key.scan, key.ascii);
-            set_ax(regs, (uint16_t)((key.scan << 8) | key.ascii));
+            Game_DosSetAX(regs, (uint16_t)((key.scan << 8) | key.ascii));
             return 1;
         case 0x01:
         case 0x11:
             Game_DosKbdDrain();
             if (bios_read != bios_write) {
                 key = bios_queue[bios_read];
-                set_ax(regs, (uint16_t)((key.scan << 8) | key.ascii));
-                regs->eflags &= ~FLAG_ZF;
+                Game_DosSetAX(regs, (uint16_t)((key.scan << 8) | key.ascii));
+                regs->eflags &= ~GAME_DOS_ZF;
             } else {
-                regs->eflags |= FLAG_ZF;
+                regs->eflags |= GAME_DOS_ZF;
             }
             return 1;
         default:
@@ -319,15 +308,15 @@ int Game_DosKbdInt21(Game_DosRegs *regs)
 {
     switch ((regs->eax >> 8) & 0xffu) {
         case 0x08:
-            set_al(regs, getch_blocking());
+            Game_DosSetAL(regs, getch_blocking());
             break;
         case 0x0b:
-            set_al(regs, kbhit() ? 0xffu : 0u);
+            Game_DosSetAL(regs, kbhit() ? 0xffu : 0u);
             break;
         default:
             return 0;
     }
-    regs->eflags &= ~FLAG_CF;
+    Game_DosSetCarry(regs, 0);
     return 1;
 }
 

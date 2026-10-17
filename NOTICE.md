@@ -93,6 +93,7 @@ freely, subject to the following restrictions:
 `runtime/core/Game_clib.c`, `Game_cdrom.*`, `Game_file.*`, `Game_gamedir.c`,
 `Game_keys.*`, `Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `Game_android.*`,
 `runtime/dos/Game_dosfile.*`, `Game_doskbd.*`, `Game_doscd.*`, `Game_dospit.*`,
+`Game_dosint.*`, `Game_dosrt.*`, `Game_dosvga.*`, `Game_dosregs.h`,
 `android/GameActivity.java`, `tools/android_apk.py`, `tools/android_sdl.sh`
 and `llasm/llasm_compare.py`, `llasm_edge.py`, `llasm_fuzz.py`: Copyright (C)
 2026 mxvisor, MIT; so are `tools/image/*.py` and `tools/regress/*`.

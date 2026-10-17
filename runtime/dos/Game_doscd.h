@@ -26,7 +26,7 @@
 #define _GAME_DOSCD_H_INCLUDED_
 
 #include <stdint.h>
-#include "Game_dosfile.h"
+#include "Game_dosregs.h"
 
 /* MSCDEX for a DOS4GW game: the CD drive of Game_cdrom.c's disc, its table
  * of contents from the cue sheet, and its Red Book audio played by
