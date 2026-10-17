@@ -194,7 +194,9 @@ The game directory, the write root, the disc and the DOS handle table are
 names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_DATA_SUBDIR`,
 `GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). A DOS game hands the file
 functions of INT 21h to `Game_DosFileCall` (`runtime/dos/Game_dosfile.c`), the keyboard
-(ports 60h/64h, IRQ 1, INT 16h, INT 21h 08h/0Bh) to `runtime/dos/Game_doskbd.c`, and brings
+(ports 60h/64h, IRQ 1, INT 16h, INT 21h 08h/0Bh) to `runtime/dos/Game_doskbd.c`, MSCDEX
+(INT 2Fh AH=15h) to `Game_DosCdCall` (`runtime/dos/Game_doscd.c`), PIT channel 0 (ports
+40h/43h, the IRQ 0 schedule, the BIOS ticks of INT 1Ah) to `runtime/dos/Game_dospit.c`, and brings
 `Game_CallGuestInterrupt`, `Game_GuestIsrRunning` and `Game_DumpGuestMemory`. The game also
 brings `main.c`, its `display` frontend, its sound and its llasm glue.
 
@@ -226,7 +228,8 @@ runtime/core/           threads, memory, frontends, virtual keyboard, printf,
                         (Game_cdrom), CD audio (Game_music), PC scancodes and
                         AUTO_KEYS (Game_keys)
 runtime/dos/            DOS memory (Game_dosmem), INT 21h file functions (Game_dosfile),
-                        the keyboard (Game_doskbd) and the llasm includes of the DOS ports
+                        the keyboard (Game_doskbd), MSCDEX (Game_doscd), the PIT
+                        (Game_dospit) and the llasm includes of the DOS ports
 runtime/dos/llasm/      shared llasm includes of the DOS ports
 runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
                         llasm/ (asm-cpu.c, Game-asm.c)
@@ -256,10 +259,14 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_doskbd.c`, `.h`: the keyboard: the controller's bytes (port 60h, E0 before a grey
   key) delivered to the game's INT 9 handler, the BIOS buffer behind INT 16h, INT 21h
   08h/0Bh and WATCOM's kbhit/getch;
+- `Game_doscd.c`, `.h`: MSCDEX on drive D:: the install and drive checks, the table of
+  contents and the audio status (IOCTL input), PLAY/STOP/RESUME AUDIO through `Game_music.c`;
+- `Game_dospit.c`, `.h`: PIT channel 0 on the host clock: the reload value and the counter
+  of ports 40h/43h, when IRQ 0 is due (`Game_DosPitRun`), the BIOS ticks;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_sound.h`: the interface of a game's Miles AIL replacement.
 
-`Game_dosmem`, `Game_dosfile` and `Game_doskbd` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
+`Game_dosmem`, `Game_dosfile`, `Game_doskbd`, `Game_doscd` and `Game_dospit` are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
 
 ## License

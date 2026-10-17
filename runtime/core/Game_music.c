@@ -25,8 +25,8 @@
 /* Music: a game's soundtrack as Red Book audio tracks of its CD.
  *
  * The game asks MSCDEX to PLAY AUDIO (84h) from a track's sector for a number
- * of sectors, and to STOP AUDIO (85h) or RESUME AUDIO (88h).  The game
- * runtime's handle_mscdex turns the request into (track, offset, sectors) and
+ * of sectors, and to STOP AUDIO (85h) or RESUME AUDIO (88h).  MSCDEX
+ * (runtime/dos/Game_doscd.c) turns the request into (track, offset, sectors) and
  * this file plays it from the CD's cue sheet (Game_cdrom.c):
  *
  *  - raw CDDA in the image (2352-byte sectors of 44.1 kHz 16-bit stereo) goes

@@ -67,6 +67,10 @@ int Game_GameDirWritePath(const char *dos_path, char *host_path, size_t host_pat
 void Game_GameDirAdded(void *new_in, const char *host_path);
 int Game_AttachHandle(game_file *file);
 game_file *Game_HandleFile(int handle);
+/* Drive letter of the CD, 0-based (3 = D:), as Game_cdrom.c's disc: the
+ * drive of the DOS paths and the one MSCDEX reports (Game_doscd.c). */
+#define GAME_CD_DRIVE_INDEX 3
+
 /* A path on the CD drive: its part after the drive, else NULL. */
 const char *Game_CdRelativePath(const char *dos_path);
 /* A path on the CD drive: *on_cd = 1 and the file opened (NULL, errno set,

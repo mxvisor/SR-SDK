@@ -51,9 +51,6 @@
 #include "Game_vfs.h"
 #include "virtualfs.h"
 
-/* Drive letter of the CD, 0-based (3 = D:), as Game_cdrom.c's disc. */
-#define GAME_CD_DRIVE_INDEX 3
-
 extern file_entry Game_CDir;
 
 static game_file *dos_handles[GAME_MAX_HANDLES];

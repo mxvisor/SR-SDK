@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-/* CD audio for MSCDEX PLAY/STOP/RESUME AUDIO (the game runtime's handle_mscdex).
+/* CD audio for MSCDEX PLAY/STOP/RESUME AUDIO (runtime/dos/Game_doscd.c).
  * The music sources are looked up as Game_cdrom.c finds the disc
  * (Game_music.c). */
 void Game_MusicInit(void);
