@@ -640,15 +640,6 @@ uint32_t CCALL GetFullPathNameA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_
 }
 #endif
 
-#ifdef STUB_GetKeyboardState
-uint32_t CCALL GetKeyboardState_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetKeyboardState");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetLastError
 uint32_t CCALL GetLastError_c(void)
 {

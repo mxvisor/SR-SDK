@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright (C) 2019-2026 Roman Pauer
+ *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -43,6 +44,7 @@ uint32_t CCALL DispatchMessageA_c(void *lpMsg);
 int16_t CCALL GetAsyncKeyState_c(int32_t vKey);
 uint32_t CCALL GetCursorPos_c(void *lpPoint);
 int16_t CCALL GetKeyState_c(int32_t nVirtKey);
+uint32_t CCALL GetKeyboardState_c(void *lpKeyState);
 uint32_t CCALL GetMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax);
 uint32_t CCALL GetMessagePos_c(void);
 uint32_t CCALL GetMessageTime_c(void);

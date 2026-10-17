@@ -33,6 +33,7 @@ func DispatchMessageA_c *lpMsg
 func GetAsyncKeyState_c vKey
 func GetCursorPos_c *lpPoint
 func GetKeyState_c nVirtKey
+func GetKeyboardState_c *lpKeyState
 func GetMessageA_c *lpMsg, *hWnd, wMsgFilterMin, wMsgFilterMax
 func GetMessagePos_c
 func GetMessageTime_c
@@ -202,6 +203,18 @@ proc GetKeyState_asm2c public
         Call_Asm_Return 1
 
 endp ; end procedure GetKeyState_asm2c
+
+
+proc GetKeyboardState_asm2c public
+
+; [esp +   4] = PBYTE lpKeyState
+; [esp      ] = return address
+
+        Call_Asm_Stack1 GetKeyboardState_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetKeyboardState_asm2c
 
 
 proc GetMessageA_asm2c public

@@ -2870,6 +2870,43 @@ int16_t CCALL GetKeyState_c(int32_t nVirtKey)
     exit(1);
 }
 
+/* 256 bytes: the high bit of the byte of a virtual key is set while the key is
+ * down, the low bit of a toggle key while it is on.  The bytes are never left
+ * unwritten, a game may poll them (to cancel a movie, for example). */
+uint32_t CCALL GetKeyboardState_c(void *lpKeyState)
+{
+    uint8_t *state = (uint8_t *)lpKeyState;
+    const uint8_t *keys;
+    SDL_Keymod mods = SDL_GetModState();
+    int count = 0, sc;
+
+    if (state == NULL) return 0;
+    memset(state, 0, 256);
+    keys = SDL_GetKeyboardState(&count);
+    for (sc = 0; sc < count; sc++)
+    {
+        SDL_Keycode key;
+        if (!keys[sc]) continue;
+        key = SDL_GetKeyFromScancode((SDL_Scancode)sc);
+        if (key >= 'a' && key <= 'z') state[key - 'a' + 'A'] = 0x80;
+        else if (key >= '0' && key <= '9') state[key] = 0x80;
+        else if (key == SDLK_SPACE) state[0x20] = 0x80;
+        else if (key == SDLK_RETURN) state[0x0D] = 0x80;
+        else if (key == SDLK_ESCAPE) state[0x1B] = 0x80;
+        else if (key == SDLK_BACKSPACE) state[0x08] = 0x80;
+        else if (key == SDLK_TAB) state[0x09] = 0x80;
+        else if (key == SDLK_LEFT) state[0x25] = 0x80;
+        else if (key == SDLK_UP) state[0x26] = 0x80;
+        else if (key == SDLK_RIGHT) state[0x27] = 0x80;
+        else if (key == SDLK_DOWN) state[0x28] = 0x80;
+    }
+    if (mods & KMOD_SHIFT) state[0x10] = 0x80;
+    if (mods & KMOD_CTRL) state[0x11] = 0x80;
+    if (mods & KMOD_ALT) state[0x12] = 0x80;
+    if (mods & KMOD_CAPS) state[VK_CAPITAL] = 0x01;
+    return 1;
+}
+
 uint32_t CCALL GetMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax)
 {
 #ifdef DEBUG_USER32
