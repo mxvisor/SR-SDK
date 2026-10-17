@@ -34,12 +34,18 @@
 #include "VKfont.h"
 #include "WinApi-guest.h"
 #include "Game_hooks.h"
+#include "main.h"
 
-/* Game_hooks.h may set: the message pump delivers key events (default 1), and
+/* Game_hooks.h may set: GAME_WINAPI_KEY_MESSAGES, the message pump delivers key events
+ * (default 1); GAME_KEYBOARD_BLOCKED(), the game reads keys by itself, so none go to
+ * its keyboard queue (default 0); and
  * GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption): a button to answer a message box with,
  * without showing it (default 0: show it) */
 #ifndef GAME_WINAPI_KEY_MESSAGES
 #define GAME_WINAPI_KEY_MESSAGES 1
+#endif
+#ifndef GAME_KEYBOARD_BLOCKED
+#define GAME_KEYBOARD_BLOCKED() 0
 #endif
 #ifndef GAME_WINAPI_MESSAGEBOX_ANSWER
 #define GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption) 0
@@ -1096,6 +1102,13 @@ static int find_event(SDL_Event *event, int remove, int wait)
             if (GAME_WINAPI_KEY_MESSAGES && !virtual_keyboard_state)
             {
                 keep_event = 1;
+            }
+            // this pump is the only reader of the keys (Game_Event_Loop leaves them
+            // alone): the guest's own keyboard queue (BIOS, kbhit) gets them here;
+            // a peek that keeps the event is not the last look at it
+            if ((remove || !keep_event) && !GAME_KEYBOARD_BLOCKED())
+            {
+                Game_QueueKeyboardEvent(event);
             }
             keyboard_mods = event->key.keysym.mod;
             {

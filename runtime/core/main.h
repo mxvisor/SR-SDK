@@ -36,6 +36,10 @@ void Game_CleanState(int imm);
 /* Game_eventloop.c */
 extern int Game_QuitRequested;
 void Game_Event_Loop(void);
+/* queues a key event for the guest (Game_EventKQueue) unless the game's
+ * GAME_KEY_FILTER takes it or it is a repeat; 1 if queued.  Called by the
+ * event loop, and on win32 by the winapi message pump, which then owns input. */
+int Game_QueueKeyboardEvent(const SDL_Event *event);
 /* the game's main.c: draws one frame; the event loop calls it */
 void Game_Display_Flip(void);
 

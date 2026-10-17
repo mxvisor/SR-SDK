@@ -59,6 +59,32 @@
 #define GAME_MOUSE_BLOCKED() 0
 #endif
 
+/* Who takes keyboard and mouse events out of SDL's queue: on win32 with the
+ * winapi layer its message pump (find_event in WinApi-user32.c), which runs
+ * on the guest's thread; two readers would split the events between them.
+ * The loop below then leaves everything from SDL_KEYDOWN up to the user events
+ * (keys, mouse, joystick, controller, finger, text, drops) alone. */
+#ifndef GAME_CORE_CONSUMES_INPUT
+#ifdef GAME_WINAPI
+#define GAME_CORE_CONSUMES_INPUT 0
+#else
+#define GAME_CORE_CONSUMES_INPUT 1
+#endif
+#endif
+
+int Game_QueueKeyboardEvent(const SDL_Event *event)
+{
+    if (GAME_KEY_FILTER(&event->key) || event->key.repeat) return 0;
+    if (((Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1)) == Game_KQueueRead)
+    {
+        /* keyboard event queue overflow */
+        return 0;
+    }
+    Game_EventKQueue[Game_KQueueWrite] = *event;
+    Game_KQueueWrite = (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1);
+    return 1;
+}
+
 /* the player closed the window: the game's stop is not an error to report */
 int Game_QuitRequested;
 
@@ -146,7 +172,14 @@ void Game_Event_Loop(void)
 
     while (!Thread_Exited || !Thread_Exit)
     {
+#if GAME_CORE_CONSUMES_INPUT
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+#else
+        /* SDL_FIRSTEVENT..SDL_KEYDOWN-1: quit, window, syswm */
+        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_KEYDOWN - 1);
+        if (NumEvents <= 0)
+            NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_USEREVENT, SDL_LASTEVENT);
+#endif
         if (NumEvents <= 0)
         {
             if (PumpEvents)
@@ -197,20 +230,12 @@ void Game_Event_Loop(void)
                 }
                 break;
 
+#if GAME_CORE_CONSUMES_INPUT
             case SDL_KEYDOWN:
             case SDL_KEYUP:
-                if (GAME_KEY_FILTER(&event.key)) break;
-                if (!event.key.repeat && AppActive && AppInputFocus && !GAME_KEYBOARD_BLOCKED())
+                if (AppActive && AppInputFocus && !GAME_KEYBOARD_BLOCKED())
                 {
-                    if (((Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1)) == Game_KQueueRead)
-                    {
-                        /* keyboard event queue overflow */
-                    }
-                    else
-                    {
-                        Game_EventKQueue[Game_KQueueWrite] = event;
-                        Game_KQueueWrite = (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1);
-                    }
+                    Game_QueueKeyboardEvent(&event);
                 }
                 break;
 
@@ -231,6 +256,8 @@ void Game_Event_Loop(void)
                     }
                 }
                 break;
+
+#endif
 
             case SDL_QUIT:
                 Game_QuitRequested = 1;

@@ -588,6 +588,8 @@ if want('obj'):
     # of the runtime that the game has under the same relative path is not
     # built (an override). Headers are looked up the same way for the game's
     # .c only: a .c of the runtime finds the runtime's headers beside it first.
+    if WINAPI:
+        env.Append(CPPDEFINES=['GAME_WINAPI'])
     env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
                + ([os.path.join(RUNTIME_DIRS[1], 'glide', 'glad', 'include')] if GLIDE else [])
                + [os.path.join(RUNTIME_CORE, 'display'),
