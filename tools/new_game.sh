@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Start the repository of a new port: the skeleton a game needs before SR can run.
 #
-#   new_game.sh DIR NAME dos|win32 [--exe PATH] [--sdk URL_OR_PATH] [--env PREFIX]
+#   new_game.sh DIR NAME dos|win32 [--exe PATH|disc:NAME] [--image IMAGE] [--sdk URL_OR_PATH] [--env PREFIX]
 #
 #   DIR     the new repository (created; must be empty or missing)
 #   NAME    the program name, lowercase with dashes: build/bin/<device>/NAME (game.cfg program=)
 #   --exe   the original executable: its sha256 goes to game/recomp/, input_exe= to game.cfg
-#           (path relative to DIR, or absolute); without it the sha256 is a placeholder
+#           (path relative to DIR, or absolute); without it the sha256 is a placeholder.
+#           disc:NAME is a file of the game's disc (needs --image): it is taken from
+#           build/disc/, made by tools/disc_tree.py, so the exe need not be unpacked by hand
+#   --image the disc image (.iso/.nrg/.mds/.bin/.cue; path relative to DIR, or absolute):
+#           game/portable.cfg gets image= and cue= (CD/NAME.cue beside the image, made on
+#           first use); the launchers take the data from build/disc and the disc from the cue
 #   --sdk   where SR-SDK comes from (default: the repository this script is in)
 #   --sr    where SR comes from (default: SR of the --sdk repository when that is a directory,
 #           else the URL in SR-SDK/.gitmodules)
@@ -24,11 +29,12 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 
 [ $# -ge 3 ] || { usage; exit 1; }
 DIR="$1"; NAME="$2"; PLATFORM="$3"; shift 3
-EXE=""; SDK_URL="$SDK_DIR"; SR_URL=""
+EXE=""; IMAGE=""; SDK_URL="$SDK_DIR"; SR_URL=""
 ENVP="$(printf '%s' "$NAME" | tr -d '-' | tr '[:lower:]' '[:upper:]')"
 while [ $# -gt 0 ]; do
   case "$1" in
     --exe) EXE="$2"; shift ;;
+    --image) IMAGE="$2"; shift ;;
     --sdk) SDK_URL="$2"; shift ;;
     --sr) SR_URL="$2"; shift ;;
     --env) ENVP="$2"; shift ;;
@@ -46,10 +52,58 @@ DIR="$(cd "$DIR" && pwd)"
 MODULE="Game-main"
 SHA="0000000000000000000000000000000000000000000000000000000000000000"
 INPUT_EXE="../GAME.EXE"
-if [ -n "$EXE" ]; then
+ORIG_NAME="GAME.EXE"
+DATA_LINE='DATA_DEFAULT="$GAME_REPO/../iso"        # TODO: the game'"'"'s files'
+CD_LINE='CD_DEFAULT="$GAME_REPO/../iso/CD/*.cue"     # TODO: the disc, if any'
+if [ -n "$IMAGE" ]; then
+  SRC="$IMAGE"; case "$IMAGE" in /*) ;; *) SRC="$DIR/$IMAGE" ;; esac
+  [ -f "$SRC" ] || { echo "No such file: $SRC" >&2; exit 1; }
+  SRC="$(realpath "$SRC")"
+  REL_IMAGE="$(realpath -m --relative-to="$DIR" "$SRC")"
+  CUE_BASE="$(basename "${SRC%.*}")"
+  REL_CUE="$(dirname "$REL_IMAGE")/CD/$CUE_BASE.cue"
+  mkdir -p "$DIR/game"
+  cat > "$DIR/game/portable.cfg" <<EOF
+# The copy of the disc for SR-SDK/tools/disc_tree.py and portable_cd.py.
+# Paths are relative to the repository's root.
+
+# the disc: the cue sheet is made from the image (SR-SDK/tools/image/image.py) when it is missing
+cue=$REL_CUE
+image=$REL_IMAGE
+
+# the files that belong to the installer, not to the game: add them here
+skip_files=AUTORUN.* SETUP.* INSTALL.* 
+
+# music: the audio tracks of the disc
+audio_dir=AUDIO
+audio_cue=$CUE_BASE.cue
+audio=ogg
+EOF
+  DATA_LINE='DATA_DEFAULT="$GAME_REPO/build/disc"     # make disc: the image with game/portable.cfg over it'
+  CD_LINE="CD_DEFAULT=\"\$GAME_REPO/$REL_CUE\""
+fi
+case "$EXE" in
+  disc:*)
+    [ -n "$IMAGE" ] || { echo "--exe $EXE needs --image" >&2; exit 1; }
+    DISC_NAME="${EXE#disc:}"
+    (cd "$DIR" && python3 -I "$SDK_DIR/tools/disc_tree.py" build/disc) >&2
+    FOUND="$DIR/build/disc"
+    IFS=/ read -ra PARTS <<< "$DISC_NAME"
+    for part in "${PARTS[@]}"; do
+      next="$(ls -1 "$FOUND" | awk -v p="$part" 'tolower($0) == tolower(p) { print; exit }')"
+      [ -n "$next" ] || { echo "No $DISC_NAME on the disc (build/disc)" >&2; exit 1; }
+      FOUND="$FOUND/$next"
+    done
+    SHA="$(sha256sum "$FOUND" | cut -d' ' -f1)"; INPUT_EXE="$EXE"
+    ORIG_NAME="$(basename "$FOUND")"
+    DATA_LINE="DATA_DEFAULT=\"\$GAME_REPO/build/disc\"     # make disc: the image with game/portable.cfg over it"
+    ;;
+esac
+if [ -n "$EXE" ] && [ -z "${DISC_NAME:-}" ]; then
   SRC="$EXE"; case "$EXE" in /*) ;; *) SRC="$DIR/$EXE" ;; esac
   [ -f "$SRC" ] || { echo "No such file: $SRC" >&2; exit 1; }
   SHA="$(sha256sum "$SRC" | cut -d' ' -f1)"; INPUT_EXE="$EXE"
+  ORIG_NAME="$(basename "$SRC" | tr '[:lower:]' '[:upper:]')"
 fi
 TITLE="$(printf '%s' "$NAME" | tr '-' ' ')"
 COPYRIGHT="Copyright (C) $(date +%Y) $(git config user.name 2>/dev/null || echo 'the author')"
@@ -95,7 +149,6 @@ cat > "game/recomp/$MODULE/default/SR.cfg" <<EOF
 # keys are added after the first run of SR, when something needs them.
 EOF
 
-ORIG_NAME="GAME.EXE"
 cat > game/Game_hooks.h <<EOF
 /* What SR-SDK's runtime asks of this game.  Every hook is optional: see the
  * #ifndef defaults in SR-SDK/runtime/ for the full list. */
@@ -166,8 +219,8 @@ EOF
 }
 COMMON="PROG=$NAME
 ENVP=$ENVP
-DATA_DEFAULT=\"\$GAME_REPO/../iso\"        # TODO: the game's files
-DATA_MARKER=GAME.EXE                      # TODO: a file the data directory must hold"
+$DATA_LINE
+DATA_MARKER=$ORIG_NAME                    # a file the data directory must hold$([ -z "$IMAGE" ] || printf '\nCD_DEFAULT=%s' "\"\$GAME_REPO/$REL_CUE\"")"
 launcher run-sdl.sh "Run the native port ($TITLE)." run_common.sh "$COMMON
 
 run_native \"\$@\""
@@ -177,16 +230,16 @@ WINE_NAME=$NAME-wine
 run_wine \"\$@\""
 if [ "$PLATFORM" = dos ]; then
   launcher run-orig-dosbox.sh "Run the ORIGINAL $TITLE under DOSBox (the reference for the port)." run_orig_common.sh "ENVP=$ENVP
-DATA_DEFAULT=\"\$GAME_REPO/../iso\"            # TODO: C:
-CD_DEFAULT=\"\$GAME_REPO/../iso/CD/*.cue\"     # TODO: the disc, if any
-DOS_CMD=GAME.EXE                              # TODO
+$DATA_LINE
+$CD_LINE
+DOS_CMD=$ORIG_NAME$([ -n "$IMAGE" ] || echo '                              # TODO')
 
 run_orig_dosbox \"\$@\""
 else
   launcher run-orig-wine.sh "Run the ORIGINAL $TITLE under Wine (the reference for the port)." run_orig_common.sh "ENVP=$ENVP
-DATA_DEFAULT=\"\$GAME_REPO/../iso/iso_unpacked\"   # TODO: the directory with the exe
-CD_DEFAULT=\"\$GAME_REPO/../iso/iso_unpacked\"     # TODO: D:, if any
-WIN_EXE=GAME.EXE                                  # TODO
+$DATA_LINE
+$CD_LINE
+WIN_EXE=$ORIG_NAME$([ -n "$IMAGE" ] || echo '                                  # TODO')
 WINE_NAME=$NAME-wine
 
 run_orig_wine \"\$@\""
@@ -203,4 +256,8 @@ git -C SR-SDK -c protocol.file.allow=always submodule update -q --init --recursi
 git -C SR-SDK/SR checkout -q master 2>/dev/null || true
 
 echo "A new $PLATFORM port is in $DIR (SR-SDK at ${SDK_HEAD:0:7})."
-echo "Next: put the original at $INPUT_EXE$([ -n "$EXE" ] || echo ' and its sha256 into game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
+if [ -n "${DISC_NAME:-}" ]; then
+  echo "Next: scons stage=input (takes $DISC_NAME from the disc, build/disc)"
+else
+  echo "Next: put the original at $INPUT_EXE$([ -n "$EXE" ] || echo ' and its sha256 into game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
+fi

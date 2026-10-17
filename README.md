@@ -38,12 +38,15 @@ version of SR's `llasm` that is developed here; on SR's reference games its outp
 
 ## Starting a new port
 
-`tools/new_game.sh DIR NAME dos|win32 [--exe PATH]` makes the skeleton of a game
+`tools/new_game.sh DIR NAME dos|win32 [--exe PATH|disc:NAME] [--image IMAGE]` makes the skeleton of a game
 repository: `SConstruct`, `Makefile`, `.gitignore`, `game/game.cfg`,
 `game/Game_hooks.h`, `game/recomp/Game-main/default/` (`sha256`, `SR.cfg`), the
 launchers (`run-sdl.sh`, `run_sdl_wine.sh`, `run-orig-dosbox.sh` or
 `run-orig-wine.sh`), a git repository and SR-SDK (with SR) as a submodule. With
-`--exe` the original's sha256 is written, and `scons stage=input` then passes.
+`--exe` the original's sha256 is written, and `scons stage=input` then passes. With
+`--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
+executable from the disc (`build/disc/`, unpacked by `tools/disc_tree.py`) instead of a
+file unpacked by hand; the launchers read the data from `build/disc`.
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 `TODO` lines of the launchers name what to fill in.
 
