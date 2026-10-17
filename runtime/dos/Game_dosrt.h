@@ -34,7 +34,15 @@
  * A port goes to the game's GAME_DOS_PORT_IN(port, &value) or
  * GAME_DOS_PORT_OUT(port, value) first, when Game_hooks.h defines them
  * (nonzero: served), then to the PIT (40h, 43h), the keyboard (60h, 64h) and
- * the VGA (3C7h-3C9h, 3DAh); any other reads 0. */
+ * the VGA (3C7h-3C9h, 3DAh); any other reads 0.
+ *
+ * A segment-override access above the PSP goes to the game's
+ * GAME_DOS_VIDEO_WINDOW(address, size) when Game_hooks.h defines it: the host
+ * copy of an access of `size` bytes to the VGA window at A0000h, NULL if the
+ * access is not in it.  Without it nothing is there.
+ *
+ * Game_DumpGuestMemory (called when the game fails to open its error log)
+ * calls GAME_DUMP_GUEST_MEMORY() when Game_hooks.h defines it. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,10 +56,6 @@ void Game_DosRuntimeDeinit(void);
 
 /* Any thread: asks the main loop to show a frame (EC_DISPLAY_FLIP_START). */
 void Game_DosRequestPresent(void);
-
-/* The game provides: the host copy of a guest access of `size` bytes to the
- * VGA window at A0000h, NULL if the access is not in it. */
-uint8_t *Game_DosVideoWindow(uint32_t address, uint32_t size);
 
 #ifdef __cplusplus
 }

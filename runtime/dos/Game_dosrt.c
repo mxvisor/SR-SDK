@@ -72,6 +72,27 @@ static uint32_t port_in(uint16_t port)
     return 0;
 }
 
+/* The FS segment: the translated code reaches it through llasm_fs_mem.c.  A
+ * DOS4GW game keeps nothing there, so it reads 0 and writes go nowhere. */
+extern "C" uint32_t CCALL X86_ReadFsDword(uint32_t addr)
+{
+    (void)addr;
+    return 0;
+}
+
+extern "C" void CCALL X86_WriteFsDword(uint32_t addr, uint32_t value)
+{
+    (void)addr;
+    (void)value;
+}
+
+extern "C" void Game_DumpGuestMemory(void)
+{
+#ifdef GAME_DUMP_GUEST_MEMORY
+    GAME_DUMP_GUEST_MEMORY();
+#endif
+}
+
 extern "C" uint32_t CCALL X86_InPortProcedure(uint16_t port, uint32_t size)
 {
     const uint32_t value = port_in(port);
@@ -99,7 +120,12 @@ static uint8_t *segment_access(uint32_t address, uint32_t size)
             return (uint8_t *)GAME_GUEST32_TO_PTR(Game_DosMemLastBlock + address);
         return Game_DosMemBase() + address;
     }
-    return Game_DosVideoWindow(address, size);
+#ifdef GAME_DOS_VIDEO_WINDOW
+    return GAME_DOS_VIDEO_WINDOW(address, size);
+#else
+    (void)size;
+    return NULL;
+#endif
 }
 
 extern "C" uint32_t CCALL X86_ReadMemProcedure(uint32_t address, uint32_t size)

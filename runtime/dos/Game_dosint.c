@@ -390,7 +390,9 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
         Game_DosSetCarry(regs, 1);
         return;
     }
-    if (Game_DosInterrupt(number, regs)) return;
+#ifdef GAME_DOS_INTERRUPT
+    if (GAME_DOS_INTERRUPT(number, regs)) return;
+#endif
 
     switch (number) {
     case 0x08:

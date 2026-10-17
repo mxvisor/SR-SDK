@@ -47,7 +47,7 @@ static void pit_irq(void)
     if (Thread_Exit) Game_StopMain();
 }
 
-void SR_CheckTimer(void)
+extern "C" void SR_CheckTimer(void)
 {
     static uint32_t last_present;
     uint32_t now;

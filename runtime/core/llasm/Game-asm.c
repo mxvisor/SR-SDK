@@ -37,7 +37,15 @@
 #include <windows.h>
 #endif
 #endif
+#include "Game_hooks.h"
 #include "llasm_cpu.h"
+
+/* the symbol the game starts at: the llasm procedure exported as c_main_ (the
+ * global alias main_ of the port's input, the game's C main), or the program's
+ * entry point, which SR exports as c_start_; GAME_ENTRY in Game_hooks.h */
+#ifndef GAME_ENTRY
+#define GAME_ENTRY c_main_
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,7 +54,7 @@ extern "C" {
 extern _cpu *x86_initialize_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
-extern void CCALL c_main_(CPU);
+extern void CCALL GAME_ENTRY(CPU);
 
 #ifdef __cplusplus
 }
@@ -121,7 +129,7 @@ int CCALL Game_Main_Asm(int argc, char *argv[])
         eax = argc;
         edx = PTR2REG(argv);
 
-        c_main_(cpu);
+        GAME_ENTRY(cpu);
 
         retval = eax;
 
