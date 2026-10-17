@@ -96,6 +96,28 @@ static int32_t cd_msf_to_frames(uint32_t msf)
     return (int32_t)(((msf >> 16) & 0xffu) * 4500u + ((msf >> 8) & 0xffu) * 75u + (msf & 0xffu)) - 150;
 }
 
+/* Audio channel control: input channel and volume (0-255) of outputs 0-3 as
+ * the game last set them.  SDL_mixer has one music volume, so the louder of
+ * the left and right outputs (0 and 1) sets it. */
+static uint8_t channel_input[4] = { 0, 1, 2, 3 };
+static uint8_t channel_volume[4] = { 0xff, 0xff, 0xff, 0xff };
+
+/* IOCTL output (command 0Ch): the control block's first byte says what. */
+static uint16_t ioctl_output(const uint8_t *control)
+{
+    if (control[0] == 0x03) {
+        for (int output = 0; output < 4; output++) {
+            channel_input[output] = control[1 + 2 * output];
+            channel_volume[output] = control[2 + 2 * output];
+        }
+        const int louder = channel_volume[0] > channel_volume[1] ? channel_volume[0] : channel_volume[1];
+        if (trace_cd()) fprintf(stderr, "CD volume %d\n", louder);
+        Game_MusicVolume(louder * 128 / 255);
+    }
+    /* eject, lock, reset, close: accepted, nothing changes */
+    return 0;
+}
+
 /* IOCTL input (command 03h): the control block's first byte says what. */
 static uint16_t ioctl_input(uint8_t *control)
 {
@@ -111,8 +133,8 @@ static uint16_t ioctl_input(uint8_t *control)
     case 0x04:
         /* audio channel info: input channel and volume of outputs 0-3 */
         for (int output = 0; output < 4; output++) {
-            control[1 + 2 * output] = (uint8_t)output;
-            control[2 + 2 * output] = 0xff;
+            control[1 + 2 * output] = channel_input[output];
+            control[2 + 2 * output] = channel_volume[output];
         }
         return 0;
     case 0x06:
@@ -210,8 +232,12 @@ static void device_request(uint8_t *request)
         error = control != NULL ? ioctl_input(control) : ERROR_GENERAL;
         break;
     }
-    case 0x0c: /* IOCTL output (eject, lock, reset, audio channel control,
-                * close): accepted, nothing changes */
+    case 0x0c: {
+        uint8_t *control = Game_DosMemPtr(((uint32_t)load16(request + 0x10) << 4) + load16(request + 0x0e), 9);
+        if (trace_cd()) fprintf(stderr, "CD ioctl out %02x\n", control != NULL ? control[0] : 0xff);
+        error = control != NULL ? ioctl_output(control) : ERROR_GENERAL;
+        break;
+    }
     case 0x0d: /* device open */
     case 0x0e: /* device close */
         break;
