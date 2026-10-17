@@ -179,6 +179,25 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_DATA_SUBDIR` | Win32 ports, optional: the directory of a copy of the disc that is the game directory (`"DATA"`), so `<PREFIX>_DATA_DIR` may name the disc |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
+A DOS game (`runtime/dos`) also takes, all optional:
+
+| Macro | Meaning |
+|---|---|
+| `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_main_`, the game's C `main` named by `main_` in `global_aliases.sci`; `c_start_` is the program's entry point, which SR exports by itself |
+| `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` |
+| `GAME_CONFIG()` | the port's configuration, read after the options |
+| `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed) |
+| `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
+| `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
+| `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
+| `GAME_DOS_VIDEO_WINDOW(address, size)` | the host copy of a guest access to the VGA window at A0000h, NULL if it is not in it |
+| `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
+
+`Game_dosmain.c` is the `main` of a DOS game's port, `Game_dosdisplay.c` its window (mode-13h
+palette, whole-pixel scaling, 4:3), `Game_dosaudio.c` the SDL_mixer device, `Game_dostimer.c`
+`SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the
+functions the file's head names.
+
 The Win32 API layer (`runtime/win32/winapi/`) also takes, all optional:
 `GAME_WINAPI_KEY_MESSAGES` (0: the message pump does not deliver key events; default 1),
 `GAME_WINAPI_START_DIRECTORY` (the directory the game starts in, `"D:\\"` for the disc;
@@ -203,10 +222,10 @@ the game's handlers run as hardware interrupts, INT 08h, 16h, 1Ah, 21h, 2Fh and 
 (`Game_dosrt.c`: the PIT, the keyboard, the VGA DAC and retrace, the segment-override accesses).
 Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Game_doskbd.c`),
 MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`) and the VGA ports (`Game_dosvga.c`).
-The game brings `Game_DosInterrupt` (its own services, asked first), `Game_DosVideoWindow`
-(its A0000h window) and `Game_DumpGuestMemory`, may route ports of its own devices through
-`GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT` in `Game_hooks.h`, and brings `main.c`, its `display`
-frontend, its sound and its llasm glue (with the handler every vector starts with).
+The game's own services (INT, the A0000h window, a memory dump) and ports come through hooks
+(`GAME_DOS_INTERRUPT`, `GAME_DOS_VIDEO_WINDOW`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
+in `Game_hooks.h`). It brings its sound, its llasm glue (with the handler every vector starts
+with) and whatever else of the files above it replaces.
 
 `<GAME>_AUTO_KEYS="seconds:Key[~hold_ms],..."` (or `@fifo`) presses keys for unattended runs
 (`runtime/core/Game_keys.c`, DOS and DirectInput alike; `run-sdl.sh --keys=`); a game may set
