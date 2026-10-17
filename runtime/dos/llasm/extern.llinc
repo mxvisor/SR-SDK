@@ -22,4 +22,6 @@
 ; The default extern.llinc of a DOS4GW game: what the DOS runtime defines.
 ; A game that replaces library routines or adds its own host functions has
 ; its own game/llasm/extern.llinc (it replaces this one) and includes dos.llinc.
+; called by every ACTION_* macro (macros.llinc): Game_dostimer.c
+funcv SR_CheckTimer
 include dos.llinc
