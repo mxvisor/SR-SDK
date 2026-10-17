@@ -720,15 +720,6 @@ uint32_t CCALL GetSystemPaletteEntries_c(uint32_t a0, uint32_t a1, uint32_t a2, 
 }
 #endif
 
-#ifdef STUB_GetTickCount
-uint32_t CCALL GetTickCount_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetTickCount");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetUpdateRect
 uint32_t CCALL GetUpdateRect_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
@@ -1444,41 +1435,6 @@ uint32_t CCALL auxSetVolume_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("auxSetVolume");
-    return 0;
-}
-#endif
-
-#ifdef STUB_joyConfigChanged
-uint32_t CCALL joyConfigChanged_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("joyConfigChanged");
-    return 0;
-}
-#endif
-
-#ifdef STUB_joyGetDevCapsA
-uint32_t CCALL joyGetDevCapsA_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("joyGetDevCapsA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_joyGetNumDevs
-uint32_t CCALL joyGetNumDevs_c(void)
-{
-    GAME_STUBLOG("joyGetNumDevs");
-    return 0;
-}
-#endif
-
-#ifdef STUB_joyGetPosEx
-uint32_t CCALL joyGetPosEx_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("joyGetPosEx");
     return 0;
 }
 #endif

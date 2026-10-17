@@ -35,12 +35,18 @@ extern "C" {
 
 typedef struct { uint32_t wPeriodMin; uint32_t wPeriodMax; } TIMECAPS_c;
 
+uint32_t CCALL GetTickCount_c(void);
 uint32_t CCALL timeGetTime_c(void);
 uint32_t CCALL timeSetEvent_c(uint32_t delay, uint32_t resolution, void *lpTimeProc, void *dwUser, uint32_t fuEvent);
 uint32_t CCALL timeKillEvent_c(uint32_t id);
 uint32_t CCALL timeBeginPeriod_c(uint32_t period_ms);
 uint32_t CCALL timeEndPeriod_c(uint32_t period_ms);
 uint32_t CCALL timeGetDevCaps_c(void *ptc, uint32_t cbtc);
+
+uint32_t CCALL joyGetNumDevs_c(void);
+uint32_t CCALL joyGetDevCapsA_c(uint32_t id, uint32_t pjc, uint32_t cbjc);
+uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji);
+uint32_t CCALL joyConfigChanged_c(uint32_t flags);
 
 #ifdef __cplusplus
 }

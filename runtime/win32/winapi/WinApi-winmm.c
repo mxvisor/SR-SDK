@@ -89,6 +89,17 @@ static uint32_t SDLCALL winapi_timer_callback(uint32_t interval, void *userdata)
 }
 
 
+/* kernel32's GetTickCount, here beside timeGetTime: milliseconds since the
+ * start; games time fades and frames with it */
+uint32_t CCALL GetTickCount_c(void)
+{
+#ifdef _WIN32
+    return GetTickCount();
+#else
+    return Winapi_GetTicks();
+#endif
+}
+
 uint32_t CCALL timeGetTime_c(void)
 {
 #ifdef DEBUG_WINMM
@@ -154,5 +165,34 @@ uint32_t CCALL timeGetDevCaps_c(void *ptc, uint32_t cbtc)
     TIMECAPS_c *tc = (TIMECAPS_c *)ptc;
     tc->wPeriodMin = 1;
     tc->wPeriodMax = 1000000;
+    return 0;
+}
+/* Joysticks: none is attached.  A success code would make a game read the
+ * JOYCAPS/JOYINFOEX it passed in, which nobody filled (a game took the stack
+ * garbage in dwButtons for a pressed button and skipped every movie). */
+
+#define JOYERR_PARMS_c     165
+#define JOYERR_UNPLUGGED_c 167
+
+uint32_t CCALL joyGetNumDevs_c(void)
+{
+    return 0;
+}
+
+uint32_t CCALL joyGetDevCapsA_c(uint32_t id, uint32_t pjc, uint32_t cbjc)
+{
+    (void)id; (void)pjc; (void)cbjc;
+    return JOYERR_PARMS_c;
+}
+
+uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji)
+{
+    (void)id; (void)pji;
+    return JOYERR_UNPLUGGED_c;
+}
+
+uint32_t CCALL joyConfigChanged_c(uint32_t flags)
+{
+    (void)flags;
     return 0;
 }
