@@ -120,6 +120,7 @@
 #define DDSD_DEPTH              0x00800000l
 #define DDSD_ALL                0x00fff9eel
 
+#define DDPF_ZBUFFER                            0x00000400l
 #define DDPF_PALETTEINDEXED8                    0x00000020l
 #define DDPF_RGB                                0x00000040l
 
@@ -297,6 +298,7 @@ typedef struct _ddbltfx
 #define DDPCAPS_2BIT                            0x00000002l
 #define DDPCAPS_1BIT                            0x00000100l
 
+#define DDCAPS_3D                               0x00000001l
 #define DDCAPS_BLT                              0x00000040l
 #define DDCAPS_PALETTE                          0x00000400l
 #define DDCAPS_COLORKEY                         0x00400000l
@@ -309,55 +311,8 @@ typedef struct _ddbltfx
  * 8, 16 or 32 bits per pixel. The primary surface is converted through the
  * palette (8 bpp) into one ARGB8888 streaming texture whenever it changes. */
 
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_ADDR(p) ((uint32_t)((p) ? ((uintptr_t)(p) - pointer_offset) : 0))
-#else
-#define GUEST_ADDR(p) ((uint32_t)(uintptr_t)(p))
-#endif
-
-struct IDirectDraw_c {
-    PTR32(void) lpVtbl;
-    uint32_t RefCount;
-    SDL_Window *Window;
-    SDL_Renderer *Renderer;
-    SDL_Texture *Texture;
-    uint32_t width, height, bpp;
-    struct IDirectDrawSurface_c *Primary;
-    struct IDirectDraw_c *base;     /* IDirectDraw2 proxy only: the object it stands for */
-    struct IDirectDraw_c *proxy;    /* the IDirectDraw2 proxy of this object, once asked for */
-};
-
-/* the object a method works on: a program that asked for IDirectDraw2 holds the proxy */
-#define DDBase(p) (((p) != NULL && (p)->base != NULL) ? (p)->base : (p))
-
-struct IDirectDrawClipper_c {
-    PTR32(void) lpVtbl;
-    uint32_t RefCount;
-};
-
-struct IDirectDrawPalette_c {
-    PTR32(void) lpVtbl;
-    uint32_t RefCount;
-    uint32_t entries;
-    uint32_t argb[256];
-};
-
-struct IDirectDrawSurface_c {
-    PTR32(void) lpVtbl;
-    uint32_t RefCount;
-    struct IDirectDraw_c *dd;
-    uint32_t width, height, bpp, pitch;
-    uint8_t *mem;
-    uint8_t *pixels;
-    int primary, backbuffer, locked;
-    int has_colorkey;
-    uint32_t colorkey_low, colorkey_high;
-    struct IDirectDrawPalette_c *palette;
-    struct IDirectDrawClipper_c *clipper;
-    struct IDirectDrawSurface_c *lpBackbuffer;
-};
-
+#include "WinApi-ddraw-priv.h"
+#include "WinApi-d3d.h"
 
 extern int sdl_versionnum;
 
@@ -497,6 +452,8 @@ static void FreeSurface(struct IDirectDrawSurface_c *s)
 {
     if (s->palette != NULL) s->palette->RefCount--;
     if (s->clipper != NULL) s->clipper->RefCount--;
+    if (s->zsurf != NULL) IDirectDrawSurface_Release_c(s->zsurf);
+    Winapi_D3dSurfaceFree(s);
     x86_free(s->mem);
     x86_free(s);
 }
@@ -667,6 +624,11 @@ uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context)
     return DD_OK;
 }
 
+uint32_t CCALL DirectDrawEnumerateA_c(uint32_t callback, uint32_t context)
+{
+    return Winapi_DirectDrawEnumerate(callback, context);
+}
+
 
 static const uint8_t IID_IDirectDraw[16] = { 0x80, 0xdb, 0x14, 0x6c, 0x33, 0xa7, 0xce, 0x11, 0xa5, 0x21, 0x00, 0x20, 0xaf, 0x0b, 0xe5, 0x60 };
 static const uint8_t IID_IDirectDraw2[16] = { 0xe0, 0xf3, 0xa6, 0xb3, 0x43, 0x2b, 0xcf, 0x11, 0xa2, 0xde, 0x00, 0xaa, 0x00, 0xb9, 0x33, 0x56 };
@@ -700,6 +662,10 @@ uint32_t CCALL IDirectDraw_QueryInterface_c(struct IDirectDraw_c *lpThis, void *
         }
         lpThis->RefCount++;
         *ppvObj = (void *)lpThis->proxy;
+        return DD_OK;
+    }
+    if ((lpThis != NULL) && (riid != NULL) && Winapi_D3dQuery(lpThis, riid, (uint32_t *)ppvObj))
+    {
         return DD_OK;
     }
     *ppvObj = (void *)NULL;
@@ -856,6 +822,7 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
         s = NewSurface(lpThis, pwidth, pheight, pbpp);
         if (s == NULL) return DDERR_OUTOFVIDEOMEMORY;
         s->primary = 1;
+        s->caps = lpDDSurfaceDesc->ddsCaps.dwCaps;
 
         if ((lpDDSurfaceDesc->dwFlags & DDSD_BACKBUFFERCOUNT) && (lpDDSurfaceDesc->dwBackBufferCount != 0))
         {
@@ -882,7 +849,12 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
     }
     if (lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT)
     {
-        if (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_PALETTEINDEXED8)
+        if (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_ZBUFFER)
+        {
+            /* a Z-buffer: dwZBufferBitDepth shares the slot of dwRGBBitCount */
+            bpp = lpDDSurfaceDesc->ddpfPixelFormat.dwRGBBitCount;
+        }
+        else if (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_PALETTEINDEXED8)
         {
             bpp = 8;
         }
@@ -895,6 +867,9 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
 
     s = NewSurface(lpThis, width, height, bpp);
     if (s == NULL) return DDERR_OUTOFVIDEOMEMORY;
+    s->caps = lpDDSurfaceDesc->ddsCaps.dwCaps;
+    s->zbuffer = ((lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT) && (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_ZBUFFER)) ||
+                 (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER);
 
     *lplpDDSurface = s;
     return DD_OK;
@@ -981,6 +956,7 @@ uint32_t CCALL IDirectDraw_GetCaps_c(struct IDirectDraw_c *lpThis, void * lpDDDr
         memset(c, 0, size);
         c[0] = size;
         c[1] = DDCAPS_BLT | DDCAPS_PALETTE | DDCAPS_COLORKEY | DDCAPS_BLTCOLORFILL;    /* dwCaps */
+        if ((i == 0) && Winapi_Direct3DEnabled()) c[1] |= DDCAPS_3D;    /* the driver, not the emulation */
         c[3] = DDCKEYCAPS_SRCBLT;                                                      /* dwCKeyCaps */
         c[15] = 16 * 1024 * 1024;                                                      /* dwVidMemTotal */
         c[16] = 16 * 1024 * 1024;                                                      /* dwVidMemFree */
@@ -1209,6 +1185,10 @@ uint32_t CCALL IDirectDrawSurface_QueryInterface_c(struct IDirectDrawSurface_c *
         *ppvObj = (void *)lpThis;
         return DD_OK;
     }
+    if ((lpThis != NULL) && (riid != NULL) && Winapi_D3dSurfaceQuery(lpThis, riid, (uint32_t *)ppvObj))
+    {
+        return DD_OK;
+    }
     *ppvObj = (void *)NULL;
     return E_NOINTERFACE;
 }
@@ -1245,6 +1225,15 @@ uint32_t CCALL IDirectDrawSurface_Release_c(struct IDirectDrawSurface_c *lpThis)
 
 uint32_t CCALL IDirectDrawSurface_AddAttachedSurface_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDrawSurface_c * param1)
 {
+    if ((lpThis == NULL) || (param1 == NULL)) return DDERR_INVALIDPARAMS;
+    if (param1->zbuffer)
+    {
+        /* a Z-buffer for Direct3D: kept with the surface it was attached to */
+        if (lpThis->zsurf != NULL) return DDERR_SURFACEBUSY;
+        param1->RefCount++;
+        lpThis->zsurf = param1;
+        return DD_OK;
+    }
     eprintf("Unsupported method: %s\n", "IDirectDrawSurface_AddAttachedSurface");
     return DDERR_UNSUPPORTED;
 }
@@ -1387,6 +1376,13 @@ uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(struct IDirectDrawSurface
         return DD_OK;
     }
 
+    if ((lpDDSCaps->dwCaps & DDSCAPS_ZBUFFER) && (lpThis->zsurf != NULL))
+    {
+        lpThis->zsurf->RefCount++;
+        *lplpDDAttachedSurface = lpThis->zsurf;
+        return DD_OK;
+    }
+
     return DDERR_NOTFOUND;
 }
 
@@ -1403,7 +1399,8 @@ uint32_t CCALL IDirectDrawSurface_GetCaps_c(struct IDirectDrawSurface_c *lpThis,
 
     caps->dwCaps =
         ((lpThis->primary)?DDSCAPS_PRIMARYSURFACE:((lpThis->backbuffer)?DDSCAPS_BACKBUFFER:DDSCAPS_OFFSCREENPLAIN)) |
-        ((lpThis->primary)?DDSCAPS_VIDEOMEMORY:DDSCAPS_SYSTEMMEMORY);
+        ((lpThis->primary)?DDSCAPS_VIDEOMEMORY:DDSCAPS_SYSTEMMEMORY) |
+        (lpThis->caps & (DDSCAPS_TEXTURE | DDSCAPS_3DDEVICE | DDSCAPS_ZBUFFER));
     return DD_OK;
 }
 
@@ -1619,6 +1616,7 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
     if (lpThis == NULL) return DDERR_INVALIDPARAMS;
 
     lpThis->locked = 0;
+    lpThis->texture_gen++;
     if (lpThis->primary) Present(lpThis->dd);
     else if (lpThis->backbuffer && lpThis->dd->Primary != NULL)
     {

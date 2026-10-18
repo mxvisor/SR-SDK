@@ -132,6 +132,7 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpTh
 
 /* DirectDrawEnumerateA: reports the primary display to the guest callback */
 uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context);
+uint32_t CCALL DirectDrawEnumerateA_c(uint32_t callback, uint32_t context);
 
 /* Destroy the DirectDraw window (the one created by SetDisplayMode) */
 void Winapi_DestroyDirectDrawWindow(void);

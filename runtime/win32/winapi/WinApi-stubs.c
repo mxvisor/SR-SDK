@@ -299,15 +299,6 @@ uint32_t CCALL DirectDrawCreate_c(uint32_t a0, uint32_t a1, uint32_t a2)
 }
 #endif
 
-#ifdef STUB_DirectDrawEnumerateA
-uint32_t CCALL DirectDrawEnumerateA_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("DirectDrawEnumerateA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_DirectInputCreateA
 uint32_t CCALL DirectInputCreateA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
@@ -995,78 +986,6 @@ uint32_t CCALL ReadProcessMemory_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
     GAME_STUBLOG("ReadProcessMemory");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegCloseKey
-uint32_t CCALL RegCloseKey_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("RegCloseKey");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegCreateKeyA
-uint32_t CCALL RegCreateKeyA_c(uint32_t a0, uint32_t a1, uint32_t a2)
-{
-    (void)a0; (void)a1; (void)a2;
-    GAME_STUBLOG("RegCreateKeyA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegDeleteKeyA
-uint32_t CCALL RegDeleteKeyA_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("RegDeleteKeyA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegEnumKeyA
-uint32_t CCALL RegEnumKeyA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("RegEnumKeyA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegFlushKey
-uint32_t CCALL RegFlushKey_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("RegFlushKey");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegOpenKeyExA
-uint32_t CCALL RegOpenKeyExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("RegOpenKeyExA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegQueryValueExA
-uint32_t CCALL RegQueryValueExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
-    GAME_STUBLOG("RegQueryValueExA");
-    return 0;
-}
-#endif
-
-#ifdef STUB_RegSetValueExA
-uint32_t CCALL RegSetValueExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
-    GAME_STUBLOG("RegSetValueExA");
     return 0;
 }
 #endif

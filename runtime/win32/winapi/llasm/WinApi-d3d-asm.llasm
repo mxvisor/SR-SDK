@@ -1,0 +1,750 @@
+;;
+;;  Direct3D 2 COM objects: stdcall vtable bridges into WinApi-d3d.c.
+;;
+
+include llasm.llinc
+include Game-asm-calls.llinc
+
+; ---- IDirect3D2 ----
+
+func IDirect3D2_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3D2_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_QueryInterface_asm2c
+
+func IDirect3D2_AddRef_c *lpThis
+proc IDirect3D2_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3D2_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3D2_AddRef_asm2c
+
+func IDirect3D2_Release_c *lpThis
+proc IDirect3D2_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3D2_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3D2_Release_asm2c
+
+func IDirect3D2_EnumDevices_c *lpThis, a1, a2
+proc IDirect3D2_EnumDevices_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_EnumDevices_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_EnumDevices_asm2c
+
+func IDirect3D2_CreateLight_c *lpThis, *a1, *a2
+proc IDirect3D2_CreateLight_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_CreateLight_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_CreateLight_asm2c
+
+func IDirect3D2_CreateMaterial_c *lpThis, *a1, *a2
+proc IDirect3D2_CreateMaterial_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_CreateMaterial_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_CreateMaterial_asm2c
+
+func IDirect3D2_CreateViewport_c *lpThis, *a1, *a2
+proc IDirect3D2_CreateViewport_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_CreateViewport_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_CreateViewport_asm2c
+
+func IDirect3D2_FindDevice_c *lpThis, *a1, *a2
+proc IDirect3D2_FindDevice_asm2c public
+
+        Call_Asm_Stack3 IDirect3D2_FindDevice_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D2_FindDevice_asm2c
+
+func IDirect3D2_CreateDevice_c *lpThis, *a1, *a2, *a3
+proc IDirect3D2_CreateDevice_asm2c public
+
+        Call_Asm_Stack4 IDirect3D2_CreateDevice_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3D2_CreateDevice_asm2c
+
+; ---- IDirect3DDevice2 ----
+
+func IDirect3DDevice2_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DDevice2_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_QueryInterface_asm2c
+
+func IDirect3DDevice2_AddRef_c *lpThis
+proc IDirect3DDevice2_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice2_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice2_AddRef_asm2c
+
+func IDirect3DDevice2_Release_c *lpThis
+proc IDirect3DDevice2_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice2_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice2_Release_asm2c
+
+func IDirect3DDevice2_GetCaps_c *lpThis, *a1, *a2
+proc IDirect3DDevice2_GetCaps_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_GetCaps_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_GetCaps_asm2c
+
+func IDirect3DDevice2_SwapTextureHandles_c *lpThis, *a1, *a2
+proc IDirect3DDevice2_SwapTextureHandles_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_SwapTextureHandles_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_SwapTextureHandles_asm2c
+
+func IDirect3DDevice2_GetStats_c *lpThis, *a1
+proc IDirect3DDevice2_GetStats_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_GetStats_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_GetStats_asm2c
+
+func IDirect3DDevice2_AddViewport_c *lpThis, *a1
+proc IDirect3DDevice2_AddViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_AddViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_AddViewport_asm2c
+
+func IDirect3DDevice2_DeleteViewport_c *lpThis, *a1
+proc IDirect3DDevice2_DeleteViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_DeleteViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_DeleteViewport_asm2c
+
+func IDirect3DDevice2_NextViewport_c *lpThis, *a1, *a2, a3
+proc IDirect3DDevice2_NextViewport_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice2_NextViewport_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice2_NextViewport_asm2c
+
+func IDirect3DDevice2_EnumTextureFormats_c *lpThis, a1, a2
+proc IDirect3DDevice2_EnumTextureFormats_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_EnumTextureFormats_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_EnumTextureFormats_asm2c
+
+func IDirect3DDevice2_BeginScene_c *lpThis
+proc IDirect3DDevice2_BeginScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice2_BeginScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice2_BeginScene_asm2c
+
+func IDirect3DDevice2_EndScene_c *lpThis
+proc IDirect3DDevice2_EndScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice2_EndScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice2_EndScene_asm2c
+
+func IDirect3DDevice2_GetDirect3D_c *lpThis, *a1
+proc IDirect3DDevice2_GetDirect3D_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_GetDirect3D_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_GetDirect3D_asm2c
+
+func IDirect3DDevice2_SetCurrentViewport_c *lpThis, *a1
+proc IDirect3DDevice2_SetCurrentViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_SetCurrentViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_SetCurrentViewport_asm2c
+
+func IDirect3DDevice2_GetCurrentViewport_c *lpThis, *a1
+proc IDirect3DDevice2_GetCurrentViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_GetCurrentViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_GetCurrentViewport_asm2c
+
+func IDirect3DDevice2_SetRenderTarget_c *lpThis, *a1, a2
+proc IDirect3DDevice2_SetRenderTarget_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_SetRenderTarget_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_SetRenderTarget_asm2c
+
+func IDirect3DDevice2_GetRenderTarget_c *lpThis, *a1
+proc IDirect3DDevice2_GetRenderTarget_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_GetRenderTarget_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_GetRenderTarget_asm2c
+
+func IDirect3DDevice2_Begin_c *lpThis, a1, a2, a3
+proc IDirect3DDevice2_Begin_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice2_Begin_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice2_Begin_asm2c
+
+func IDirect3DDevice2_BeginIndexed_c *lpThis, a1, a2, *a3, a4, a5
+proc IDirect3DDevice2_BeginIndexed_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice2_BeginIndexed_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice2_BeginIndexed_asm2c
+
+func IDirect3DDevice2_Vertex_c *lpThis, *a1
+proc IDirect3DDevice2_Vertex_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_Vertex_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_Vertex_asm2c
+
+func IDirect3DDevice2_Index_c *lpThis, a1
+proc IDirect3DDevice2_Index_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_Index_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_Index_asm2c
+
+func IDirect3DDevice2_End_c *lpThis, a1
+proc IDirect3DDevice2_End_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_End_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_End_asm2c
+
+func IDirect3DDevice2_GetRenderState_c *lpThis, a1, *a2
+proc IDirect3DDevice2_GetRenderState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_GetRenderState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_GetRenderState_asm2c
+
+func IDirect3DDevice2_SetRenderState_c *lpThis, a1, a2
+proc IDirect3DDevice2_SetRenderState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_SetRenderState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_SetRenderState_asm2c
+
+func IDirect3DDevice2_GetLightState_c *lpThis, a1, *a2
+proc IDirect3DDevice2_GetLightState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_GetLightState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_GetLightState_asm2c
+
+func IDirect3DDevice2_SetLightState_c *lpThis, a1, a2
+proc IDirect3DDevice2_SetLightState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_SetLightState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_SetLightState_asm2c
+
+func IDirect3DDevice2_SetTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice2_SetTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_SetTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_SetTransform_asm2c
+
+func IDirect3DDevice2_GetTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice2_GetTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_GetTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_GetTransform_asm2c
+
+func IDirect3DDevice2_MultiplyTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice2_MultiplyTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice2_MultiplyTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice2_MultiplyTransform_asm2c
+
+func IDirect3DDevice2_DrawPrimitive_c *lpThis, a1, a2, *a3, a4, a5
+proc IDirect3DDevice2_DrawPrimitive_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice2_DrawPrimitive_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice2_DrawPrimitive_asm2c
+
+func IDirect3DDevice2_DrawIndexedPrimitive_c *lpThis, a1, a2, *a3, a4, *a5, a6, a7
+proc IDirect3DDevice2_DrawIndexedPrimitive_asm2c public
+
+        Call_Asm_Stack8 IDirect3DDevice2_DrawIndexedPrimitive_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure IDirect3DDevice2_DrawIndexedPrimitive_asm2c
+
+func IDirect3DDevice2_SetClipStatus_c *lpThis, *a1
+proc IDirect3DDevice2_SetClipStatus_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_SetClipStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_SetClipStatus_asm2c
+
+func IDirect3DDevice2_GetClipStatus_c *lpThis, *a1
+proc IDirect3DDevice2_GetClipStatus_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice2_GetClipStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice2_GetClipStatus_asm2c
+
+; ---- IDirect3DViewport2 ----
+
+func IDirect3DViewport2_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DViewport2_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DViewport2_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DViewport2_QueryInterface_asm2c
+
+func IDirect3DViewport2_AddRef_c *lpThis
+proc IDirect3DViewport2_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DViewport2_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DViewport2_AddRef_asm2c
+
+func IDirect3DViewport2_Release_c *lpThis
+proc IDirect3DViewport2_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DViewport2_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DViewport2_Release_asm2c
+
+func IDirect3DViewport2_Initialize_c *lpThis, *a1
+proc IDirect3DViewport2_Initialize_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_Initialize_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_Initialize_asm2c
+
+func IDirect3DViewport2_GetViewport_c *lpThis, *a1
+proc IDirect3DViewport2_GetViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_GetViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_GetViewport_asm2c
+
+func IDirect3DViewport2_SetViewport_c *lpThis, *a1
+proc IDirect3DViewport2_SetViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_SetViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_SetViewport_asm2c
+
+func IDirect3DViewport2_TransformVertices_c *lpThis, a1, *a2, a3, *a4
+proc IDirect3DViewport2_TransformVertices_asm2c public
+
+        Call_Asm_Stack5 IDirect3DViewport2_TransformVertices_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirect3DViewport2_TransformVertices_asm2c
+
+func IDirect3DViewport2_LightElements_c *lpThis, a1, *a2
+proc IDirect3DViewport2_LightElements_asm2c public
+
+        Call_Asm_Stack3 IDirect3DViewport2_LightElements_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DViewport2_LightElements_asm2c
+
+func IDirect3DViewport2_SetBackground_c *lpThis, a1
+proc IDirect3DViewport2_SetBackground_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_SetBackground_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_SetBackground_asm2c
+
+func IDirect3DViewport2_GetBackground_c *lpThis, *a1, *a2
+proc IDirect3DViewport2_GetBackground_asm2c public
+
+        Call_Asm_Stack3 IDirect3DViewport2_GetBackground_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DViewport2_GetBackground_asm2c
+
+func IDirect3DViewport2_SetBackgroundDepth_c *lpThis, *a1
+proc IDirect3DViewport2_SetBackgroundDepth_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_SetBackgroundDepth_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_SetBackgroundDepth_asm2c
+
+func IDirect3DViewport2_GetBackgroundDepth_c *lpThis, *a1, *a2
+proc IDirect3DViewport2_GetBackgroundDepth_asm2c public
+
+        Call_Asm_Stack3 IDirect3DViewport2_GetBackgroundDepth_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DViewport2_GetBackgroundDepth_asm2c
+
+func IDirect3DViewport2_Clear_c *lpThis, a1, *a2, a3
+proc IDirect3DViewport2_Clear_asm2c public
+
+        Call_Asm_Stack4 IDirect3DViewport2_Clear_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DViewport2_Clear_asm2c
+
+func IDirect3DViewport2_AddLight_c *lpThis, *a1
+proc IDirect3DViewport2_AddLight_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_AddLight_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_AddLight_asm2c
+
+func IDirect3DViewport2_DeleteLight_c *lpThis, *a1
+proc IDirect3DViewport2_DeleteLight_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_DeleteLight_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_DeleteLight_asm2c
+
+func IDirect3DViewport2_NextLight_c *lpThis, *a1, *a2, a3
+proc IDirect3DViewport2_NextLight_asm2c public
+
+        Call_Asm_Stack4 IDirect3DViewport2_NextLight_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DViewport2_NextLight_asm2c
+
+func IDirect3DViewport2_GetViewport2_c *lpThis, *a1
+proc IDirect3DViewport2_GetViewport2_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_GetViewport2_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_GetViewport2_asm2c
+
+func IDirect3DViewport2_SetViewport2_c *lpThis, *a1
+proc IDirect3DViewport2_SetViewport2_asm2c public
+
+        Call_Asm_Stack2 IDirect3DViewport2_SetViewport2_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DViewport2_SetViewport2_asm2c
+
+; ---- IDirect3DMaterial2 ----
+
+func IDirect3DMaterial2_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DMaterial2_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DMaterial2_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DMaterial2_QueryInterface_asm2c
+
+func IDirect3DMaterial2_AddRef_c *lpThis
+proc IDirect3DMaterial2_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DMaterial2_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DMaterial2_AddRef_asm2c
+
+func IDirect3DMaterial2_Release_c *lpThis
+proc IDirect3DMaterial2_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DMaterial2_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DMaterial2_Release_asm2c
+
+func IDirect3DMaterial2_SetMaterial_c *lpThis, *a1
+proc IDirect3DMaterial2_SetMaterial_asm2c public
+
+        Call_Asm_Stack2 IDirect3DMaterial2_SetMaterial_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DMaterial2_SetMaterial_asm2c
+
+func IDirect3DMaterial2_GetMaterial_c *lpThis, *a1
+proc IDirect3DMaterial2_GetMaterial_asm2c public
+
+        Call_Asm_Stack2 IDirect3DMaterial2_GetMaterial_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DMaterial2_GetMaterial_asm2c
+
+func IDirect3DMaterial2_GetHandle_c *lpThis, *a1, *a2
+proc IDirect3DMaterial2_GetHandle_asm2c public
+
+        Call_Asm_Stack3 IDirect3DMaterial2_GetHandle_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DMaterial2_GetHandle_asm2c
+
+; ---- IDirect3DTexture2 ----
+
+func IDirect3DTexture2_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DTexture2_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture2_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture2_QueryInterface_asm2c
+
+func IDirect3DTexture2_AddRef_c *lpThis
+proc IDirect3DTexture2_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DTexture2_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DTexture2_AddRef_asm2c
+
+func IDirect3DTexture2_Release_c *lpThis
+proc IDirect3DTexture2_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DTexture2_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DTexture2_Release_asm2c
+
+func IDirect3DTexture2_GetHandle_c *lpThis, *a1, *a2
+proc IDirect3DTexture2_GetHandle_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture2_GetHandle_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture2_GetHandle_asm2c
+
+func IDirect3DTexture2_PaletteChanged_c *lpThis, a1, a2
+proc IDirect3DTexture2_PaletteChanged_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture2_PaletteChanged_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture2_PaletteChanged_asm2c
+
+func IDirect3DTexture2_Load_c *lpThis, *a1
+proc IDirect3DTexture2_Load_asm2c public
+
+        Call_Asm_Stack2 IDirect3DTexture2_Load_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DTexture2_Load_asm2c
+
+datasegment d3d_data constant
+
+dlabel IDirect3D2Vtbl_asm2c global
+daddr IDirect3D2_QueryInterface_asm2c
+daddr IDirect3D2_AddRef_asm2c
+daddr IDirect3D2_Release_asm2c
+daddr IDirect3D2_EnumDevices_asm2c
+daddr IDirect3D2_CreateLight_asm2c
+daddr IDirect3D2_CreateMaterial_asm2c
+daddr IDirect3D2_CreateViewport_asm2c
+daddr IDirect3D2_FindDevice_asm2c
+daddr IDirect3D2_CreateDevice_asm2c
+
+dlabel IDirect3DDevice2Vtbl_asm2c global
+daddr IDirect3DDevice2_QueryInterface_asm2c
+daddr IDirect3DDevice2_AddRef_asm2c
+daddr IDirect3DDevice2_Release_asm2c
+daddr IDirect3DDevice2_GetCaps_asm2c
+daddr IDirect3DDevice2_SwapTextureHandles_asm2c
+daddr IDirect3DDevice2_GetStats_asm2c
+daddr IDirect3DDevice2_AddViewport_asm2c
+daddr IDirect3DDevice2_DeleteViewport_asm2c
+daddr IDirect3DDevice2_NextViewport_asm2c
+daddr IDirect3DDevice2_EnumTextureFormats_asm2c
+daddr IDirect3DDevice2_BeginScene_asm2c
+daddr IDirect3DDevice2_EndScene_asm2c
+daddr IDirect3DDevice2_GetDirect3D_asm2c
+daddr IDirect3DDevice2_SetCurrentViewport_asm2c
+daddr IDirect3DDevice2_GetCurrentViewport_asm2c
+daddr IDirect3DDevice2_SetRenderTarget_asm2c
+daddr IDirect3DDevice2_GetRenderTarget_asm2c
+daddr IDirect3DDevice2_Begin_asm2c
+daddr IDirect3DDevice2_BeginIndexed_asm2c
+daddr IDirect3DDevice2_Vertex_asm2c
+daddr IDirect3DDevice2_Index_asm2c
+daddr IDirect3DDevice2_End_asm2c
+daddr IDirect3DDevice2_GetRenderState_asm2c
+daddr IDirect3DDevice2_SetRenderState_asm2c
+daddr IDirect3DDevice2_GetLightState_asm2c
+daddr IDirect3DDevice2_SetLightState_asm2c
+daddr IDirect3DDevice2_SetTransform_asm2c
+daddr IDirect3DDevice2_GetTransform_asm2c
+daddr IDirect3DDevice2_MultiplyTransform_asm2c
+daddr IDirect3DDevice2_DrawPrimitive_asm2c
+daddr IDirect3DDevice2_DrawIndexedPrimitive_asm2c
+daddr IDirect3DDevice2_SetClipStatus_asm2c
+daddr IDirect3DDevice2_GetClipStatus_asm2c
+
+dlabel IDirect3DViewport2Vtbl_asm2c global
+daddr IDirect3DViewport2_QueryInterface_asm2c
+daddr IDirect3DViewport2_AddRef_asm2c
+daddr IDirect3DViewport2_Release_asm2c
+daddr IDirect3DViewport2_Initialize_asm2c
+daddr IDirect3DViewport2_GetViewport_asm2c
+daddr IDirect3DViewport2_SetViewport_asm2c
+daddr IDirect3DViewport2_TransformVertices_asm2c
+daddr IDirect3DViewport2_LightElements_asm2c
+daddr IDirect3DViewport2_SetBackground_asm2c
+daddr IDirect3DViewport2_GetBackground_asm2c
+daddr IDirect3DViewport2_SetBackgroundDepth_asm2c
+daddr IDirect3DViewport2_GetBackgroundDepth_asm2c
+daddr IDirect3DViewport2_Clear_asm2c
+daddr IDirect3DViewport2_AddLight_asm2c
+daddr IDirect3DViewport2_DeleteLight_asm2c
+daddr IDirect3DViewport2_NextLight_asm2c
+daddr IDirect3DViewport2_GetViewport2_asm2c
+daddr IDirect3DViewport2_SetViewport2_asm2c
+
+dlabel IDirect3DMaterial2Vtbl_asm2c global
+daddr IDirect3DMaterial2_QueryInterface_asm2c
+daddr IDirect3DMaterial2_AddRef_asm2c
+daddr IDirect3DMaterial2_Release_asm2c
+daddr IDirect3DMaterial2_SetMaterial_asm2c
+daddr IDirect3DMaterial2_GetMaterial_asm2c
+daddr IDirect3DMaterial2_GetHandle_asm2c
+
+dlabel IDirect3DTexture2Vtbl_asm2c global
+daddr IDirect3DTexture2_QueryInterface_asm2c
+daddr IDirect3DTexture2_AddRef_asm2c
+daddr IDirect3DTexture2_Release_asm2c
+daddr IDirect3DTexture2_GetHandle_asm2c
+daddr IDirect3DTexture2_PaletteChanged_asm2c
+daddr IDirect3DTexture2_Load_asm2c
+
+endd
