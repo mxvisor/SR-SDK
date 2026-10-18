@@ -608,7 +608,8 @@ if want('obj'):
     if WINAPI:
         env.Append(CPPDEFINES=['GAME_WINAPI'])
     env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
-               + ([os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
+               + ([os.path.join(RUNTIME_CORE, 'gl'),
+                   os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
                + [os.path.join(RUNTIME_CORE, 'display'),
                   os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
 
