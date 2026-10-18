@@ -28,9 +28,10 @@
  * textures from the surfaces, makes a viewport and a material, and draws pre-transformed
  * (D3DTLVERTEX) primitives with DrawPrimitive and DrawIndexedPrimitive.  This file is
  * the part that answers the game: the objects, the description of the one device (the
- * "HAL": the rasteriser of the port) and the render state.  The drawing is not here yet. */
+ * "HAL": the rasteriser of the port) and the render state and the software rasteriser. */
 
 #include "WinApi-d3d.h"
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -671,26 +672,431 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void *lpThis, uint32_t a1, v
     return D3D_OK;
 }
 
-/* type, vertex type (D3DVT_TLVERTEX), vertices, count, flags: the drawing comes later */
-uint32_t CCALL IDirect3DDevice2_DrawPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+/* ---- the rasteriser: pre-transformed triangles into the target surface, in software ----
+ * The surfaces are memory of the host (WinApi-ddraw.c presents them), so the primitives are
+ * drawn into the target surface and its Z-buffer directly: 2D blits, the 3D scene and the
+ * overlay stay in one picture.  Done: Z test and write, flat and Gouraud colour, textures
+ * (8 bit palette, 5-6-5, 1-5-5-5, 4-4-4-4) with perspective correction, wrap/mirror/clamp,
+ * the colour key, the texture blend modes, alpha blending, culling, lines. */
+
+#define RS_TEXTUREHANDLE    1
+#define RS_TEXTUREADDRESS   3
+#define RS_TEXTUREPERSPECTIVE 4
+#define RS_ZENABLE          7
+#define RS_FILLMODE         8
+#define RS_SHADEMODE        9
+#define RS_ZWRITEENABLE     14
+#define RS_TEXTUREMAG       17
+#define RS_SRCBLEND         19
+#define RS_DESTBLEND        20
+#define RS_TEXTUREMAPBLEND  21
+#define RS_CULLMODE         22
+#define RS_ZFUNC            23
+#define RS_ALPHABLENDENABLE 27
+#define RS_SPECULARENABLE   29
+#define RS_COLORKEYENABLE   41
+
+typedef struct {
+    float x, y, z, rhw, u, v;
+    int r, g, b, a, sr, sg, sb;
+} rvert;
+
+typedef struct {
+    const struct IDirectDrawSurface_c *s;
+    int w, h;
+    int shift[4], max[4];       /* r, g, b, a of a 16 bit format */
+} rtex;
+
+static void rt_channel(uint32_t mask, int *shift, int *max)
 {
-    d3d_device *dev = (d3d_device *)lpThis;
+    int sh = 0;
+    if (mask == 0) { *shift = 0; *max = 0; return; }
+    while (!(mask & 1)) { mask >>= 1; sh++; }
+    *shift = sh;
+    *max = (int)mask;
+}
+
+static void rt_setup(rtex *t, const struct IDirectDrawSurface_c *s)
+{
+    uint32_t r = s->rmask, g = s->gmask, b = s->bmask, a = s->amask;
+
+    t->s = s; t->w = (int)s->width; t->h = (int)s->height;
+    if ((r | g | b) == 0) { r = 0xf800; g = 0x07e0; b = 0x001f; }
+    rt_channel(r, &t->shift[0], &t->max[0]);
+    rt_channel(g, &t->shift[1], &t->max[1]);
+    rt_channel(b, &t->shift[2], &t->max[2]);
+    rt_channel(a, &t->shift[3], &t->max[3]);
+}
+
+static int rt_addr(int c, int n, uint32_t mode)
+{
+    if (mode == 3) return (c < 0) ? 0 : (c >= n ? n - 1 : c);       /* CLAMP */
+    if (mode == 2)                                                  /* MIRROR */
+    {
+        int m = c % (2 * n);
+        if (m < 0) m += 2 * n;
+        return (m >= n) ? (2 * n - 1 - m) : m;
+    }
+    c %= n;                                                         /* WRAP */
+    return (c < 0) ? c + n : c;
+}
+
+/* argb of the texel; returns 0 when the colour key hides it */
+static int rt_sample(const rtex *t, int x, int y, int ckey, int *r, int *g, int *b, int *a)
+{
+    const struct IDirectDrawSurface_c *s = t->s;
+    uint32_t raw;
+
+    if (s->bpp == 8)
+    {
+        uint32_t c;
+        raw = s->pixels[(size_t)y * s->pitch + x];
+        if (ckey && s->has_colorkey && (raw >= s->colorkey_low) && (raw <= s->colorkey_high)) return 0;
+        c = (s->palette != NULL) ? s->palette->argb[raw] : (raw * 0x010101u);
+        *r = (c >> 16) & 255; *g = (c >> 8) & 255; *b = c & 255; *a = 255;
+        return 1;
+    }
+    if (s->bpp == 16)
+    {
+        int c[4], i;
+        raw = ((const uint16_t *)(s->pixels + (size_t)y * s->pitch))[x];
+        if (ckey && s->has_colorkey && (raw >= s->colorkey_low) && (raw <= s->colorkey_high)) return 0;
+        for (i = 0; i < 4; i++)
+        {
+            c[i] = (t->max[i] == 0) ? 255 : (int)((((raw >> t->shift[i]) & t->max[i]) * 255u + t->max[i] / 2) / t->max[i]);
+        }
+        *r = c[0]; *g = c[1]; *b = c[2]; *a = c[3];
+        return 1;
+    }
+    raw = ((const uint32_t *)(s->pixels + (size_t)y * s->pitch))[x];
+    if (ckey && s->has_colorkey && (raw >= s->colorkey_low) && (raw <= s->colorkey_high)) return 0;
+    *r = (raw >> 16) & 255; *g = (raw >> 8) & 255; *b = raw & 255; *a = (raw >> 24) ? (int)(raw >> 24) : 255;
+    return 1;
+}
+
+static int blend_factor(uint32_t mode, int sc, int sa, int dc, int da)
+{
+    switch (mode)
+    {
+        case 1: return 0;
+        case 2: return 255;
+        case 3: return sc;
+        case 4: return 255 - sc;
+        case 5: return sa;
+        case 6: return 255 - sa;
+        case 7: return da;
+        case 8: return 255 - da;
+        case 9: return dc;
+        case 10: return 255 - dc;
+        case 11: return sa;                 /* SRCALPHASAT */
+        case 12: return sa;                 /* BOTHSRCALPHA */
+        case 13: return 255 - sa;           /* BOTHINVSRCALPHA */
+        default: return 255;
+    }
+}
+
+static int z_test(uint32_t func, uint32_t z, uint32_t old)
+{
+    switch (func)
+    {
+        case 1: return 0;
+        case 2: return z < old;
+        case 3: return z == old;
+        case 4: return z <= old;
+        case 5: return z > old;
+        case 6: return z != old;
+        case 7: return z >= old;
+        default: return 1;
+    }
+}
+
+static inline int clamp255(int v) { return (v < 0) ? 0 : (v > 255 ? 255 : v); }
+
+static void put_pixel(struct IDirectDrawSurface_c *t, int x, int y, int r, int g, int b)
+{
+    uint8_t *row = t->pixels + (size_t)y * t->pitch;
+    if (t->bpp == 16) ((uint16_t *)row)[x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+    else if (t->bpp == 32) ((uint32_t *)row)[x] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+static void get_pixel(const struct IDirectDrawSurface_c *t, int x, int y, int *r, int *g, int *b)
+{
+    const uint8_t *row = t->pixels + (size_t)y * t->pitch;
+    if (t->bpp == 16)
+    {
+        uint32_t v = ((const uint16_t *)row)[x];
+        *r = (int)(((v >> 11) & 31) * 255 / 31); *g = (int)(((v >> 5) & 63) * 255 / 63); *b = (int)((v & 31) * 255 / 31);
+    }
+    else
+    {
+        uint32_t v = ((const uint32_t *)row)[x];
+        *r = (v >> 16) & 255; *g = (v >> 8) & 255; *b = v & 255;
+    }
+}
+
+static void load_vertex(rvert *o, const float *p)
+{
+    uint32_t c = ((const uint32_t *)p)[4], sp = ((const uint32_t *)p)[5];
+
+    o->x = p[0]; o->y = p[1]; o->z = p[2]; o->rhw = p[3];
+    o->a = (c >> 24) & 255; o->r = (c >> 16) & 255; o->g = (c >> 8) & 255; o->b = c & 255;
+    o->sr = (sp >> 16) & 255; o->sg = (sp >> 8) & 255; o->sb = sp & 255;
+    o->u = p[6]; o->v = p[7];
+}
+
+typedef struct {
+    d3d_device *dev;
+    struct IDirectDrawSurface_c *target, *zs;
+    int cx1, cy1, cx2, cy2;
+    rtex tex;
+    int textured;
+} rctx;
+
+static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rvert *v2)
+{
+    const uint32_t *st = c->dev->state;
+    float area, ia;
+    int minx, maxx, miny, maxy, x, y;
+    int flat = (st[RS_SHADEMODE] == 1);
+    int persp = (st[RS_TEXTUREPERSPECTIVE] != 0) && (v0->rhw > 0) && (v1->rhw > 0) && (v2->rhw > 0);
+    int ztest = (st[RS_ZENABLE] != 0) && (c->zs != NULL);
+    int zwrite = ztest && (st[RS_ZWRITEENABLE] != 0);
+    int blend = (st[RS_ALPHABLENDENABLE] != 0);
+    int ckey = (st[RS_COLORKEYENABLE] != 0);
+    int spec = (st[RS_SPECULARENABLE] != 0);
+    uint32_t cull = st[RS_CULLMODE], tmb = st[RS_TEXTUREMAPBLEND], addr = st[RS_TEXTUREADDRESS];
+    float fminx, fmaxx, fminy, fmaxy;
+
+    area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
+    if (area == 0.0f) return;
+    if ((cull == 2) && (area > 0)) return;      /* CW: clockwise on the screen (y down) */
+    if ((cull == 3) && (area < 0)) return;      /* CCW */
+    ia = 1.0f / area;
+
+    fminx = fminf(v0->x, fminf(v1->x, v2->x)); fmaxx = fmaxf(v0->x, fmaxf(v1->x, v2->x));
+    fminy = fminf(v0->y, fminf(v1->y, v2->y)); fmaxy = fmaxf(v0->y, fmaxf(v1->y, v2->y));
+    minx = (int)floorf(fminx); maxx = (int)ceilf(fmaxx);
+    miny = (int)floorf(fminy); maxy = (int)ceilf(fmaxy);
+    if (minx < c->cx1) minx = c->cx1;
+    if (miny < c->cy1) miny = c->cy1;
+    if (maxx > c->cx2) maxx = c->cx2;
+    if (maxy > c->cy2) maxy = c->cy2;
+
+    for (y = miny; y < maxy; y++)
+    {
+        float py = (float)y + 0.5f;
+        for (x = minx; x < maxx; x++)
+        {
+            float px = (float)x + 0.5f;
+            float w0 = ((v1->x - px) * (v2->y - py) - (v2->x - px) * (v1->y - py)) * ia;
+            float w1 = ((v2->x - px) * (v0->y - py) - (v0->x - px) * (v2->y - py)) * ia;
+            float w2 = 1.0f - w0 - w1;
+            float z;
+            uint32_t zi, zold = 0;
+            int r, g, b, a, tr, tg, tb, ta;
+
+            if ((w0 < 0) || (w1 < 0) || (w2 < 0)) continue;
+            z = w0 * v0->z + w1 * v1->z + w2 * v2->z;
+            if (z < 0) z = 0; else if (z > 1) z = 1;
+            if (c->zs != NULL)
+            {
+                zi = (c->zs->bpp == 16) ? (uint32_t)(z * 65535.0f) : (uint32_t)(z * 4294967040.0f);
+                if (c->zs->bpp == 16) zold = ((const uint16_t *)(c->zs->pixels + (size_t)y * c->zs->pitch))[x];
+                else zold = ((const uint32_t *)(c->zs->pixels + (size_t)y * c->zs->pitch))[x];
+                if (ztest && !z_test(st[23], zi, zold)) continue;
+            }
+            else zi = 0;
+
+            if (flat)
+            {
+                r = v0->r; g = v0->g; b = v0->b; a = v0->a;
+            }
+            else
+            {
+                r = (int)(w0 * v0->r + w1 * v1->r + w2 * v2->r + 0.5f);
+                g = (int)(w0 * v0->g + w1 * v1->g + w2 * v2->g + 0.5f);
+                b = (int)(w0 * v0->b + w1 * v1->b + w2 * v2->b + 0.5f);
+                a = (int)(w0 * v0->a + w1 * v1->a + w2 * v2->a + 0.5f);
+            }
+
+            if (c->textured)
+            {
+                float u, v;
+                int tx, ty;
+                if (persp)
+                {
+                    float rw = w0 * v0->rhw + w1 * v1->rhw + w2 * v2->rhw;
+                    float k = (rw != 0.0f) ? 1.0f / rw : 0.0f;
+                    u = (w0 * v0->u * v0->rhw + w1 * v1->u * v1->rhw + w2 * v2->u * v2->rhw) * k;
+                    v = (w0 * v0->v * v0->rhw + w1 * v1->v * v1->rhw + w2 * v2->v * v2->rhw) * k;
+                }
+                else
+                {
+                    u = w0 * v0->u + w1 * v1->u + w2 * v2->u;
+                    v = w0 * v0->v + w1 * v1->v + w2 * v2->v;
+                }
+                tx = rt_addr((int)floorf(u * (float)c->tex.w), c->tex.w, addr);
+                ty = rt_addr((int)floorf(v * (float)c->tex.h), c->tex.h, addr);
+                if (!rt_sample(&c->tex, tx, ty, ckey, &tr, &tg, &tb, &ta)) continue;
+                switch (tmb)
+                {
+                    case 1: r = tr; g = tg; b = tb; break;                                          /* DECAL */
+                    case 3: r = (tr * ta + r * (255 - ta)) / 255; g = (tg * ta + g * (255 - ta)) / 255;
+                            b = (tb * ta + b * (255 - ta)) / 255; break;                            /* DECALALPHA */
+                    case 4: r = r * tr / 255; g = g * tg / 255; b = b * tb / 255; a = a * ta / 255; break;   /* MODULATEALPHA */
+                    case 7: r = tr; g = tg; b = tb; a = ta; break;                                  /* COPY */
+                    default: r = r * tr / 255; g = g * tg / 255; b = b * tb / 255; a = ta; break;   /* MODULATE */
+                }
+            }
+            if (spec)
+            {
+                r += (int)(w0 * v0->sr + w1 * v1->sr + w2 * v2->sr);
+                g += (int)(w0 * v0->sg + w1 * v1->sg + w2 * v2->sg);
+                b += (int)(w0 * v0->sb + w1 * v1->sb + w2 * v2->sb);
+            }
+            r = clamp255(r); g = clamp255(g); b = clamp255(b); a = clamp255(a);
+
+            if (blend)
+            {
+                int dr, dg, db, fs, fd;
+                uint32_t sm = st[RS_SRCBLEND], dm = st[RS_DESTBLEND];
+                get_pixel(c->target, x, y, &dr, &dg, &db);
+                fs = blend_factor(sm, r, a, dr, 255); fd = blend_factor(dm, r, a, dr, 255);
+                if (sm == 12) fd = 255 - a;
+                r = clamp255((r * fs + dr * fd) / 255);
+                fs = blend_factor(sm, g, a, dg, 255); fd = blend_factor(dm, g, a, dg, 255);
+                if (sm == 12) fd = 255 - a;
+                g = clamp255((g * fs + dg * fd) / 255);
+                fs = blend_factor(sm, b, a, db, 255); fd = blend_factor(dm, b, a, db, 255);
+                if (sm == 12) fd = 255 - a;
+                b = clamp255((b * fs + db * fd) / 255);
+            }
+            put_pixel(c->target, x, y, r, g, b);
+            if (zwrite)
+            {
+                if (c->zs->bpp == 16) ((uint16_t *)(c->zs->pixels + (size_t)y * c->zs->pitch))[x] = (uint16_t)zi;
+                else ((uint32_t *)(c->zs->pixels + (size_t)y * c->zs->pitch))[x] = zi;
+            }
+        }
+    }
+}
+
+static void raster_line(rctx *c, const rvert *a, const rvert *b)
+{
+    int x0 = (int)a->x, y0 = (int)a->y, x1 = (int)b->x, y1 = (int)b->y;
+    int dx = abs(x1 - x0), dy = -abs(y1 - y0), sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1, err = dx + dy;
+
+    for (;;)
+    {
+        if ((x0 >= c->cx1) && (x0 < c->cx2) && (y0 >= c->cy1) && (y0 < c->cy2)) put_pixel(c->target, x0, y0, a->r, a->g, a->b);
+        if ((x0 == x1) && (y0 == y1)) break;
+        if (2 * err >= dy) { err += dy; x0 += sx; }
+        if (2 * err <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+/* <GAME>_D3D_DUMP=dir: each texture as a PPM, once per handle */
+static void dump_texture(uint32_t th, const struct IDirectDrawSurface_c *ts)
+{
+    static uint8_t done[MAX_TEXTURES];
+    const char *dir = getenv(GAME_ENV("D3D_DUMP"));
+    char name[512];
+    FILE *f;
+    uint32_t x, y;
+
+    if ((dir == NULL) || done[th - 1] || (ts->bpp != 16)) return;
+    done[th - 1] = 1;
+    snprintf(name, sizeof(name), "%s/tex%03u.ppm", dir, th);
+    f = fopen(name, "wb");
+    if (f == NULL) return;
+    fprintf(f, "P6 %u %u 255\n", ts->width, ts->height);
+    for (y = 0; y < ts->height; y++)
+    {
+        for (x = 0; x < ts->width; x++)
+        {
+            uint32_t v = ((const uint16_t *)(ts->pixels + (size_t)y * ts->pitch))[x];
+            fputc((int)(((v >> 11) & 31) * 255 / 31), f); fputc((int)(((v >> 5) & 63) * 255 / 63), f); fputc((int)((v & 31) * 255 / 31), f);
+        }
+    }
+    fclose(f);
+}
+
+/* type: 2 line list, 3 line strip, 4 triangle list, 5 strip, 6 fan; index == NULL: in order */
+static uint32_t draw_primitive(d3d_device *dev, uint32_t type, uint32_t vtype, const float *verts, uint32_t nverts,
+                               const uint16_t *index, uint32_t count)
+{
+    rctx c;
+    rvert *rv;
+    uint32_t i, n;
+    uint32_t th = dev->state[RS_TEXTUREHANDLE];
 
     if (!dev->in_scene) return D3DERR_GENERIC;
     dev->draws++;
-    dev->vertices += a4;
+    dev->vertices += count;
+    if ((vtype != 3) || (verts == NULL) || (dev->target == NULL)) return D3D_OK;     /* D3DVT_TLVERTEX only */
+    if ((index != NULL) && (nverts == 0)) return D3D_OK;
+
+    memset(&c, 0, sizeof(c));
+    c.dev = dev;
+    c.target = dev->target;
+    c.zs = dev->target->zsurf;
+    if ((c.target->bpp != 16) && (c.target->bpp != 32)) return D3D_OK;
+    if ((c.zs != NULL) && (c.zs->bpp != 16) && (c.zs->bpp != 32)) c.zs = NULL;
+    c.cx1 = 0; c.cy1 = 0; c.cx2 = (int)c.target->width; c.cy2 = (int)c.target->height;
+    if (dev->current != NULL && dev->current->has_vp)
+    {
+        int x1 = (int)dev->current->vp[1], y1 = (int)dev->current->vp[2];
+        int x2 = x1 + (int)dev->current->vp[3], y2 = y1 + (int)dev->current->vp[4];
+        if (x1 > c.cx1) c.cx1 = x1;
+        if (y1 > c.cy1) c.cy1 = y1;
+        if (x2 < c.cx2) c.cx2 = x2;
+        if (y2 < c.cy2) c.cy2 = y2;
+    }
+    if ((th >= 1) && (th <= MAX_TEXTURES) && (texture_handles[th - 1] != NULL))
+    {
+        const struct IDirectDrawSurface_c *ts = texture_handles[th - 1]->surface;
+        if ((ts->width != 0) && (ts->height != 0) && (ts->pixels != NULL)) { rt_setup(&c.tex, ts); c.textured = 1; }
+        dump_texture(th, ts);
+    }
+
+    n = (index != NULL) ? count : nverts;
+    rv = (rvert *)malloc((size_t)(n ? n : 1) * sizeof(rvert));
+    if (rv == NULL) return D3DERR_GENERIC;
+    for (i = 0; i < n; i++)
+    {
+        uint32_t k = (index != NULL) ? index[i] : i;
+        if (index != NULL && k >= nverts) k = 0;
+        load_vertex(&rv[i], verts + (size_t)k * 8);
+    }
+    switch (type)
+    {
+        case 2: for (i = 0; i + 1 < n; i += 2) raster_line(&c, &rv[i], &rv[i + 1]); break;
+        case 3: for (i = 0; i + 1 < n; i++) raster_line(&c, &rv[i], &rv[i + 1]); break;
+        case 4: for (i = 0; i + 2 < n; i += 3) raster_triangle(&c, &rv[i], &rv[i + 1], &rv[i + 2]); break;
+        case 5:
+            for (i = 0; i + 2 < n; i++)
+            {
+                if (i & 1) raster_triangle(&c, &rv[i + 1], &rv[i], &rv[i + 2]);
+                else raster_triangle(&c, &rv[i], &rv[i + 1], &rv[i + 2]);
+            }
+            break;
+        case 6: for (i = 1; i + 1 < n; i++) raster_triangle(&c, &rv[0], &rv[i], &rv[i + 1]); break;
+        default: break;
+    }
+    free(rv);
     return D3D_OK;
+}
+
+/* type, vertex type (D3DVT_TLVERTEX), vertices, count, flags */
+uint32_t CCALL IDirect3DDevice2_DrawPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+{
+    return draw_primitive((d3d_device *)lpThis, a1, a2, (const float *)a3, a4, NULL, a4);
 }
 
 /* type, vertex type, vertices, vertex count, indices (WORD), index count, flags */
 uint32_t CCALL IDirect3DDevice2_DrawIndexedPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, void *a5, uint32_t a6, uint32_t a7)
 {
-    d3d_device *dev = (d3d_device *)lpThis;
-
-    if (!dev->in_scene) return D3DERR_GENERIC;
-    dev->draws++;
-    dev->vertices += a6;
-    return D3D_OK;
+    return draw_primitive((d3d_device *)lpThis, a1, a2, (const float *)a3, a4, (const uint16_t *)a5, a6);
 }
 
 uint32_t CCALL IDirect3DDevice2_SetClipStatus_c(void *lpThis, void *a1)
@@ -1039,6 +1445,7 @@ uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
     if (from == NULL) return D3DERR_INVALIDARG;
     src = from->surface;
     if ((src->width != dst->width) || (src->height != dst->height) || (src->bpp != dst->bpp)) return D3DERR_INVALIDARG;
+    d3d_log("D3D: Load %ux%u masks %x/%x/%x/%x -> %x/%x/%x/%x\n", src->width, src->height, src->rmask, src->gmask, src->bmask, src->amask, dst->rmask, dst->gmask, dst->bmask, dst->amask);
     row = dst->width * (dst->bpp >> 3);
     for (y = 0; y < dst->height; y++)
     {

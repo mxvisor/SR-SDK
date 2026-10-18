@@ -120,6 +120,7 @@
 #define DDSD_DEPTH              0x00800000l
 #define DDSD_ALL                0x00fff9eel
 
+#define DDPF_ALPHAPIXELS                        0x00000001l
 #define DDPF_ZBUFFER                            0x00000400l
 #define DDPF_PALETTEINDEXED8                    0x00000020l
 #define DDPF_RGB                                0x00000040l
@@ -868,6 +869,13 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
     s = NewSurface(lpThis, width, height, bpp);
     if (s == NULL) return DDERR_OUTOFVIDEOMEMORY;
     s->caps = lpDDSurfaceDesc->ddsCaps.dwCaps;
+    if ((bpp == 16) && (lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT) && (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_RGB))
+    {
+        s->rmask = lpDDSurfaceDesc->ddpfPixelFormat.dwRBitMask;
+        s->gmask = lpDDSurfaceDesc->ddpfPixelFormat.dwGBitMask;
+        s->bmask = lpDDSurfaceDesc->ddpfPixelFormat.dwBBitMask;
+        s->amask = (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_ALPHAPIXELS) ? lpDDSurfaceDesc->ddpfPixelFormat.dwRGBAlphaBitMask : 0;
+    }
     s->zbuffer = ((lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT) && (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_ZBUFFER)) ||
                  (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER);
 
@@ -1458,7 +1466,18 @@ static void FillPixelFormat(struct IDirectDrawSurface_c *lpThis, struct _ddpixel
     pf->dwSize = sizeof(*pf);
     pf->dwFlags = (lpThis->bpp == 8) ? (DDPF_PALETTEINDEXED8 | DDPF_RGB) : DDPF_RGB;
     pf->dwRGBBitCount = lpThis->bpp;
-    if (lpThis->bpp == 16)
+    if ((lpThis->bpp == 16) && ((lpThis->rmask | lpThis->gmask | lpThis->bmask) != 0))
+    {
+        pf->dwRBitMask = lpThis->rmask;
+        pf->dwGBitMask = lpThis->gmask;
+        pf->dwBBitMask = lpThis->bmask;
+        if (lpThis->amask != 0)
+        {
+            pf->dwFlags |= DDPF_ALPHAPIXELS;
+            pf->dwRGBAlphaBitMask = lpThis->amask;
+        }
+    }
+    else if (lpThis->bpp == 16)
     {
         pf->dwRBitMask = 0xf800;
         pf->dwGBitMask = 0x07e0;

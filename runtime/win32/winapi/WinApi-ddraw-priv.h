@@ -86,6 +86,7 @@ struct IDirectDrawSurface_c {
     struct IDirectDrawSurface_c *zsurf;  /* the Z-buffer attached to this surface */
     void *d3dtex;                   /* its IDirect3DTexture2 object, once asked for (WinApi-d3d.c) */
     uint32_t texture_gen;           /* counts the changes of a texture's pixels and palette */
+    uint32_t rmask, gmask, bmask, amask;    /* the channels of a 16 bit surface made with a pixel format */
 };
 
 #endif
