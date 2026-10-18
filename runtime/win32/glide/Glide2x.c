@@ -40,7 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
-#include <glad/glad.h>
+#include "Game_gl.h"
 #include "Glide2x.h"
 #include "WinApi-config.h"
 #include "Game_memory.h"
@@ -496,9 +496,8 @@ struct gl_vertex {
 static SDL_Window *gl_window;
 static SDL_GLContext gl_context;
 static GLuint fbo[3], fbo_tex[3];
-static GLuint prog_draw, prog_present;
+static GLuint prog_draw;
 static GLint u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
-static GLint u_present_tex;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
@@ -573,93 +572,18 @@ static const char draw_fs[] =
     "    gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), a);\n"
     "}\n";
 
-static const char present_vs[] =
-    "#version 120\n"
-    "attribute vec2 a_pos;\n"
-    "attribute vec2 a_uv;\n"
-    "varying vec2 v_uv;\n"
-    "void main() {\n"
-    "    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
-    "    v_uv = a_uv;\n"
-    "}\n";
-
-static const char present_fs[] =
-    "#version 120\n"
-    "uniform sampler2D u_tex;\n"
-    "varying vec2 v_uv;\n"
-    "void main() {\n"
-    "    gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0);\n"
-    "}\n";
-
-static GLuint gl_compile(GLenum type, const char *src)
-{
-    GLuint sh = glCreateShader(type);
-    GLint ok = 0;
-
-    glShaderSource(sh, 1, &src, NULL);
-    glCompileShader(sh);
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok)
-    {
-        char log[1024];
-        glGetShaderInfoLog(sh, sizeof(log), NULL, log);
-        eprintf("Glide: shader: %s\n", log);
-        glDeleteShader(sh);
-        return 0;
-    }
-    return sh;
-}
-
-static GLuint gl_program(const char *vs, const char *fs, const char *attr0, const char *attr1, const char *attr2)
-{
-    GLuint v = gl_compile(GL_VERTEX_SHADER, vs), f = gl_compile(GL_FRAGMENT_SHADER, fs), p;
-    GLint ok = 0;
-
-    if (v == 0 || f == 0) return 0;
-    p = glCreateProgram();
-    glAttachShader(p, v);
-    glAttachShader(p, f);
-    glBindAttribLocation(p, 0, attr0);
-    if (attr1 != NULL) glBindAttribLocation(p, 1, attr1);
-    if (attr2 != NULL) glBindAttribLocation(p, 2, attr2);
-    glLinkProgram(p);
-    glDeleteShader(v);
-    glDeleteShader(f);
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    if (!ok)
-    {
-        char log[1024];
-        glGetProgramInfoLog(p, sizeof(log), NULL, log);
-        eprintf("Glide: shader link: %s\n", log);
-        glDeleteProgram(p);
-        return 0;
-    }
-    return p;
-}
-
 static int gl_start(uint32_t nbuf)
 {
     uint32_t i;
 
     gl_window = Winapi_ScreenOpenGL(scr_width, scr_height);
     if (gl_window == NULL) return 0;
-    gl_context = SDL_GL_CreateContext(gl_window);
-    if (gl_context == NULL)
-    {
-        eprintf("Glide: SDL_GL_CreateContext: %s\n", SDL_GetError());
-        goto fail;
-    }
-    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress) || !GLAD_GL_VERSION_2_0 || !GLAD_GL_ARB_framebuffer_object)
-    {
-        eprintf("Glide: OpenGL 2.0 with frame buffer objects is needed\n");
-        goto fail;
-    }
-    SDL_GL_SetSwapInterval(Display_VSync ? 1 : 0);
+    gl_context = Game_GlCreateContext(gl_window, Display_VSync);
+    if (gl_context == NULL) goto fail;
     DEBUG("Glide: OpenGL %s, %s\n", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER));
 
-    prog_draw = gl_program(draw_vs, draw_fs, "a_pos", "a_col", "a_stq");
-    prog_present = gl_program(present_vs, present_fs, "a_pos", "a_uv", NULL);
-    if (prog_draw == 0 || prog_present == 0) goto fail;
+    prog_draw = Game_GlProgram(draw_vs, draw_fs, "a_pos", "a_col", "a_stq", "Glide");
+    if (prog_draw == 0) goto fail;
     u_inv_size = glGetUniformLocation(prog_draw, "inv_size");
     u_tex = glGetUniformLocation(prog_draw, "u_tex");
     u_texscale = glGetUniformLocation(prog_draw, "u_texscale");
@@ -669,29 +593,10 @@ static int gl_start(uint32_t nbuf)
     u_ccolor = glGetUniformLocation(prog_draw, "u_ccolor");
     u_chroma = glGetUniformLocation(prog_draw, "u_chroma");
     u_chroma_on = glGetUniformLocation(prog_draw, "u_chroma_on");
-    u_present_tex = glGetUniformLocation(prog_present, "u_tex");
 
-    glGenFramebuffers(nbuf, fbo);
-    glGenTextures(nbuf, fbo_tex);
     for (i = 0; i < nbuf; i++)
     {
-        glBindTexture(GL_TEXTURE_2D, fbo_tex[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, scr_width, scr_height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex[i], 0);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        {
-            eprintf("Glide: incomplete frame buffer\n");
-            goto fail;
-        }
-        glDisable(GL_SCISSOR_TEST);
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], scr_width, scr_height, 0, NULL)) goto fail;
         shadow_valid[i] = 1;
         shadow_dirty[i] = 0;
     }
@@ -710,21 +615,21 @@ static void gl_stop(void)
 
     if (gl_context != NULL)
     {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(3, fbo);
-        glDeleteTextures(3, fbo_tex);
+        for (i = 0; i < 3; i++)
+        {
+            Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
+        }
         for (i = 0; i < num_textures; i++)
         {
             if (textures[i].gltex != 0) glDeleteTextures(1, &textures[i].gltex);
             textures[i].gltex = 0;
         }
         if (prog_draw != 0) glDeleteProgram(prog_draw);
-        if (prog_present != 0) glDeleteProgram(prog_present);
         SDL_GL_DeleteContext(gl_context);
     }
     memset(fbo, 0, sizeof(fbo));
     memset(fbo_tex, 0, sizeof(fbo_tex));
-    prog_draw = prog_present = 0;
+    prog_draw = 0;
     gl_context = NULL;
     gl_ok = 0;
     if (gl_window != NULL) Winapi_ScreenCloseGL();
@@ -945,64 +850,13 @@ static void shadow_to_gl(int pi)
 /* the front buffer, scaled to the window with the aspect of the screen */
 static void present_front(void)
 {
-    int ww, wh, vx, vy, vw, vh;
-    float top, bottom;
-    static const float pos[8] = { -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f, 1.0f,  1.0f, 1.0f };
-    float uv[8];
     int pi = bidx[0];
 
     if (!gl_ok) return;
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
-
-    SDL_GL_GetDrawableSize(gl_window, &ww, &wh);
-    if (ww < 1 || wh < 1) return;
-    if ((int64_t)ww * scr_height > (int64_t)wh * scr_width)
-    {
-        vh = wh;
-        vw = (int)((int64_t)wh * scr_width / scr_height);
-    }
-    else
-    {
-        vw = ww;
-        vh = (int)((int64_t)ww * scr_height / scr_width);
-    }
-    vx = (ww - vw) / 2;
-    vy = (wh - vh) / 2;
-
-    /* row 0 of the image is the top of the screen (the bottom for a lower left origin) */
-    top = (buffer_origin == GR_ORIGIN_LOWER_LEFT) ? 1.0f : 0.0f;
-    bottom = 1.0f - top;
-    uv[0] = 0.0f; uv[1] = bottom;
-    uv[2] = 1.0f; uv[3] = bottom;
-    uv[4] = 0.0f; uv[5] = top;
-    uv[6] = 1.0f; uv[7] = top;
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_BLEND);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glViewport(0, 0, ww, wh);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glViewport(vx, vy, vw, vh);
-
-    glUseProgram(prog_present);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, fbo_tex[pi]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Display_ScalingQuality ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, Display_ScalingQuality ? GL_LINEAR : GL_NEAREST);
-    glUniform1i(u_present_tex, 0);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glDisableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
-    glUseProgram(0);
-
-    SDL_GL_SwapWindow(gl_window);
+    Game_GlPresentTexture(gl_window, fbo_tex[pi], scr_width, scr_height,
+                          (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
 }
 
 

@@ -166,6 +166,12 @@ if WINAPI:
 GLIDE = WINAPI and CFG.get('glide', 'no') == 'yes'
 if GLIDE:
     RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'glide'))
+# OpenGL in the SDK: runtime/core/gl/ (glad, a context on an SDL window,
+# shaders, frame buffer objects, the scaled present), plus the gl/ directory
+# of the platform (a consumer like the winapi Direct3D backend). The module
+# is built for opengl=yes alone; glide=yes and d3d_gl=yes imply it.
+D3D_GL = WINAPI and CFG.get('d3d_gl', 'no') == 'yes'
+GL = (CFG.get('opengl', 'no') == 'yes') or GLIDE or D3D_GL
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 # the runtime's llasm/ directories: includes, and (for a game without its own
 # game/llasm/SConscript) the .llasm and .c of its glue
@@ -313,9 +319,11 @@ else:
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
                  if lib.strip()])
-if GLIDE:
-    # Glide is drawn with OpenGL (runtime/win32/glide/glad.c loads it)
+if GL:
+    # OpenGL: glad (runtime/core/gl/glad.c) loads it
     env.Append(LIBS=['opengl32' if device.endswith('windows') else 'GL'])
+if D3D_GL:
+    env.Append(CPPDEFINES=['GAME_D3D_GL'])
 
 for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)
@@ -600,7 +608,7 @@ if want('obj'):
     if WINAPI:
         env.Append(CPPDEFINES=['GAME_WINAPI'])
     env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
-               + ([os.path.join(RUNTIME_DIRS[1], 'glide', 'glad', 'include')] if GLIDE else [])
+               + ([os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
                + [os.path.join(RUNTIME_CORE, 'display'),
                   os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
 
@@ -618,7 +626,7 @@ if want('obj'):
         obj_runtime = os.path.join(obj_device, 'runtime',
                                    os.path.relpath(runtime_dir, os.path.join(SDK_ROOT, 'runtime')))
         VariantDir(obj_runtime, runtime_dir, duplicate=0)
-        for sub in ('', 'display', 'audio', 'input'):
+        for sub in ('', 'display', 'audio', 'input') + (('gl',) if GL else ()):
             for source in sorted(glob.glob(os.path.join(runtime_dir, sub, '*.c'))):
                 name = os.path.join(sub, os.path.basename(source))
                 if (not os.path.exists(os.path.join(ROOT, 'game', name))
