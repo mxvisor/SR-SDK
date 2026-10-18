@@ -41,6 +41,10 @@
 #include "WinApi-ddraw.h"
 #include "WinApi-ddraw-priv.h"
 #include "WinApi-game.h"
+#include "WinApi-config.h"
+#ifdef GAME_D3D_GL
+#include "Game_gl.h"
+#endif
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
 
@@ -1455,3 +1459,99 @@ uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
     dst->texture_gen++;
     return D3D_OK;
 }
+
+int Winapi_Direct3DGL(void)
+{
+#ifdef GAME_D3D_GL
+    static int use_gl = -1;
+    if (use_gl < 0)
+    {
+        const char *e = getenv(GAME_ENV("D3D_GL"));
+        /* the OpenGL backend is the normal one in a d3d_gl build */
+        use_gl = (e != NULL) ? (atoi(e) != 0) : 1;
+    }
+    return Winapi_Direct3DEnabled() && use_gl;
+#else
+    return 0;
+#endif
+}
+
+#ifdef GAME_D3D_GL
+
+/* The presentation: the primary surface as a BGRA texture scaled to the
+ * window.  The GL context is made when the first surface comes (the SDL
+ * window exists by then), and goes away with the window. */
+
+static SDL_GLContext d3d_gl_context = NULL;
+static GLuint d3d_present_tex = 0;
+static uint32_t *d3d_present_buf = NULL;
+static int d3d_present_w = 0;
+static int d3d_present_h = 0;
+
+void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window)
+{
+    if ((prim == NULL) || (window == NULL)) return;
+
+    if (d3d_gl_context == NULL)
+    {
+        d3d_gl_context = Game_GlCreateContext(window, Display_VSync);
+        if (d3d_gl_context == NULL) return;
+    }
+
+    if ((d3d_present_tex == 0) || (d3d_present_w != (int)prim->width) || (d3d_present_h != (int)prim->height))
+    {
+        if (d3d_present_tex != 0) glDeleteTextures(1, &d3d_present_tex);
+        free(d3d_present_buf);
+        d3d_present_w = (int)prim->width;
+        d3d_present_h = (int)prim->height;
+        d3d_present_buf = (uint32_t *)malloc((size_t)d3d_present_w * d3d_present_h * 4);
+        if (d3d_present_buf == NULL)
+        {
+            d3d_present_w = d3d_present_h = 0;
+            return;
+        }
+        glGenTextures(1, &d3d_present_tex);
+        glBindTexture(GL_TEXTURE_2D, d3d_present_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, d3d_present_w, d3d_present_h, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    }
+
+    Winapi_SurfaceToBgra(prim, d3d_present_buf, d3d_present_w * 4);
+    glBindTexture(GL_TEXTURE_2D, d3d_present_tex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, d3d_present_w, d3d_present_h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, d3d_present_buf);
+    /* row 0 of the surface is the top of the picture */
+    Game_GlPresentTexture(window, d3d_present_tex, d3d_present_w, d3d_present_h, 1, Display_ScalingQuality != 0);
+}
+
+void Winapi_D3dPresentDeinit(void)
+{
+    if (d3d_present_tex != 0)
+    {
+        if (d3d_gl_context != NULL) glDeleteTextures(1, &d3d_present_tex);
+        d3d_present_tex = 0;
+    }
+    free(d3d_present_buf);
+    d3d_present_buf = NULL;
+    d3d_present_w = d3d_present_h = 0;
+    if (d3d_gl_context != NULL)
+    {
+        SDL_GL_DeleteContext(d3d_gl_context);
+        d3d_gl_context = NULL;
+    }
+}
+
+#else
+
+void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window)
+{
+    (void)prim; (void)window;
+}
+
+void Winapi_D3dPresentDeinit(void)
+{
+}
+
+#endif

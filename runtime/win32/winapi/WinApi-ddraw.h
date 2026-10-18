@@ -137,6 +137,10 @@ uint32_t CCALL DirectDrawEnumerateA_c(uint32_t callback, uint32_t context);
 /* Destroy the DirectDraw window (the one created by SetDisplayMode) */
 void Winapi_DestroyDirectDrawWindow(void);
 
+/* the pixels of a surface as ARGB8888 rows of dstpitch bytes (the primary's
+ * conversion of the SDL renderer path and of the GL one alike) */
+void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int dstpitch);
+
 /* The window of a renderer that is not DirectDraw (Glide): a window for
  * OpenGL, shown with the display settings of the game; null if it cannot be
  * made. Close hides it again. */

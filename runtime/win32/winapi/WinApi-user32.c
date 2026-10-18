@@ -285,6 +285,9 @@ static SDL_Renderer *mouse_renderer = NULL;
 static int mouse_clip_w = 0;
 static int mouse_clip_h = 0;
 
+extern uint32_t winapi_get_dd_window_id(void);
+extern int winapi_get_dd_mode(int *width, int *height);
+
 static SDL_Joystick *joystick = NULL;
 static SDL_GameController *controller = NULL;
 static int controller_base_axis;
@@ -458,6 +461,12 @@ static void warp_mouse(int x, int y)
             x = (int) (((x + viewport.x) * scaleX * window_w + output_w - scaleX) / output_w);
             y = (int) (((y + viewport.y) * scaleY * window_h + output_h - scaleY) / output_h);
         }
+        SDL_WarpMouseInWindow(mouse_window, x, y);
+    }
+    else if (mouse_window != NULL)
+    {
+        /* a window without an SDL renderer (Direct3D on OpenGL): the window
+         * is the display mode's size when there are no display overrides */
         SDL_WarpMouseInWindow(mouse_window, x, y);
     }
 }
@@ -1826,6 +1835,13 @@ static int find_event(SDL_Event *event, int remove, int wait)
                     mouse_renderer = renderer;
                     SDL_RenderGetLogicalSize(renderer, &mouse_clip_w, &mouse_clip_h);
                 }
+                else if ((window != NULL) && (event->motion.windowID == winapi_get_dd_window_id()))
+                {
+                    /* the DirectDraw window without an SDL renderer (Direct3D
+                     * on OpenGL): the game's coordinates are the mode's */
+                    mouse_window = window;
+                    winapi_get_dd_mode(&mouse_clip_w, &mouse_clip_h);
+                }
                 break;
             default:
                 break;
@@ -1846,8 +1862,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
         }
     };
 }
-
-extern uint32_t winapi_get_dd_window_id(void);
 
 #ifdef __cplusplus
 extern "C"

@@ -336,8 +336,17 @@ int winapi_is_dd_active(void)
     return winapi_dd_screen != NULL;
 }
 
+int winapi_get_dd_mode(int *width, int *height)
+{
+    if (winapi_dd_screen == NULL) return 0;
+    if (width != NULL) *width = winapi_dd_screen->width;
+    if (height != NULL) *height = winapi_dd_screen->height;
+    return 1;
+}
+
 void Winapi_DestroyDirectDrawWindow(void)
 {
+    Winapi_D3dPresentDeinit();
     if (winapi_dd_screen != NULL && winapi_dd_screen->Window != NULL)
     {
         SDL_DestroyWindow(winapi_dd_screen->Window);
@@ -371,30 +380,20 @@ SDL_Renderer *GetSurfaceRenderer(struct IDirectDrawSurface_c *lpThis)
     return lpThis->dd->Renderer;
 }
 
-
-static void Present(struct IDirectDraw_c *dd)
+void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int dstpitch)
 {
-    struct IDirectDrawSurface_c *prim;
-    uint8_t *dst;
-    int dstpitch;
     uint32_t x, y;
 
-    prim = dd->Primary;
-    if ((prim == NULL) || (dd->Texture == NULL)) return;
-
-    if (0 != SDL_LockTexture(dd->Texture, NULL, (void **)&dst, &dstpitch)) return;
-
-    for (y = 0; y < prim->height; y++, dst += dstpitch)
+    for (y = 0; y < prim->height; y++, dst += dstpitch / 4)
     {
         const uint8_t *src = prim->pixels + y * prim->pitch;
-        uint32_t *out = (uint32_t *)dst;
 
         if (prim->bpp == 8)
         {
             const uint32_t *pal = (prim->palette != NULL) ? prim->palette->argb : NULL;
             for (x = 0; x < prim->width; x++)
             {
-                out[x] = (pal != NULL) ? pal[src[x]] : (0xff000000u | (src[x] * 0x010101u));
+                dst[x] = (pal != NULL) ? pal[src[x]] : (0xff000000u | (src[x] * 0x010101u));
             }
         }
         else if (prim->bpp == 16)
@@ -404,14 +403,37 @@ static void Present(struct IDirectDraw_c *dd)
             {
                 uint32_t p = s16[x];
                 uint32_t r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
-                out[x] = 0xff000000u | (((r << 3) | (r >> 2)) << 16) | (((g << 2) | (g >> 4)) << 8) | ((b << 3) | (b >> 2));
+                dst[x] = 0xff000000u | (((r << 3) | (r >> 2)) << 16) | (((g << 2) | (g >> 4)) << 8) | ((b << 3) | (b >> 2));
             }
         }
         else
         {
-            memcpy(out, src, prim->width * 4);
+            memcpy(dst, src, prim->width * 4);
         }
     }
+}
+
+
+static void Present(struct IDirectDraw_c *dd)
+{
+    struct IDirectDrawSurface_c *prim;
+    uint8_t *dst;
+    int dstpitch;
+
+    prim = dd->Primary;
+#ifdef GAME_D3D_GL
+    if (Winapi_Direct3DGL())
+    {
+        if ((prim == NULL) || (dd->Window == NULL)) return;
+        Winapi_D3dPresentSurface(prim, dd->Window);
+        return;
+    }
+#endif
+    if ((prim == NULL) || (dd->Texture == NULL)) return;
+
+    if (0 != SDL_LockTexture(dd->Texture, NULL, (void **)&dst, &dstpitch)) return;
+
+    Winapi_SurfaceToBgra(prim, (uint32_t *)dst, dstpitch);
 
     SDL_UnlockTexture(dd->Texture);
 
@@ -978,7 +1000,7 @@ uint32_t CCALL IDirectDraw_GetDisplayMode_c(struct IDirectDraw_c *lpThis, void *
     struct _ddsurfacedesc *desc = (struct _ddsurfacedesc *)param1;
 
     if ((lpThis == NULL) || (desc == NULL) || (desc->dwSize != 108)) return DDERR_INVALIDPARAMS;
-    if (lpThis->Renderer == NULL) return DDERR_GENERIC;
+    if (lpThis->width == 0) return DDERR_GENERIC;    /* no mode set */
 
     memset(desc, 0, sizeof(*desc));
     desc->dwSize = sizeof(*desc);
@@ -1081,6 +1103,32 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
     if ((dwBPP != 8) && (dwBPP != 16) && (dwBPP != 32))
     {
         return DDERR_UNSUPPORTEDMODE;
+    }
+
+    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
+    {
+        /* the device is drawn with OpenGL: an OpenGL window without an SDL
+         * renderer, Present shows the primary through WinApi-d3d.c */
+        if (lpThis->Window == NULL)
+        {
+            lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
+            if (lpThis->Window == NULL)
+            {
+                return DDERR_UNSUPPORTEDMODE;
+            }
+        }
+        SDL_ShowWindow(lpThis->Window);
+        winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
+
+        /* The window was just shown; a real Windows would send WM_ACTIVATEAPP */
+        Winapi_PostActivateApp(1);
+
+        winapi_dd_screen = lpThis;
+        lpThis->width = dwWidth;
+        lpThis->height = dwHeight;
+        lpThis->bpp = dwBPP;
+
+        return DD_OK;
     }
 
     if ((lpThis->Window == NULL) && (dd_spare_window != NULL))

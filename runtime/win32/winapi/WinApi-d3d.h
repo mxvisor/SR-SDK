@@ -41,6 +41,18 @@ extern "C" {
 /* does the port offer Direct3D to the game? */
 int Winapi_Direct3DEnabled(void);
 
+struct SDL_Window;
+
+/* Direct3D on OpenGL (a d3d_gl=yes build): the window is an OpenGL one
+ * without an SDL renderer and the device is drawn with the shared GL layer
+ * of runtime/core/gl.  The game env D3D_GL=0 forces the SDL backend. */
+int Winapi_Direct3DGL(void);
+
+/* the GL presentation of the primary surface: convert, upload, scaled quad */
+void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window);
+/* the GL context and the present texture go away (the window is going away) */
+void Winapi_D3dPresentDeinit(void);
+
 /* IDirectDraw::QueryInterface for IID_IDirect3D2: 1 and *out = the object, else 0 */
 int Winapi_D3dQuery(struct IDirectDraw_c *dd, const void *riid, uint32_t *out);
 
