@@ -67,6 +67,8 @@ uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority);
 void CCALL Sleep_c(uint32_t cMilliseconds);
 uint32_t CCALL WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesToWrite, uint32_t *lpNumberOfBytesWritten, void *lpOverlapped);
 unsigned int CCALL Winapi_GetTicks(void);
+/* the letter of the CD drive (the disc, an image or a copy): D, or E when the port is on D: */
+char Winapi_CdDriveLetter(void);
 /* the start of Winapi_GetTicks (Linux) */
 void Winapi_InitTicks(void);
 

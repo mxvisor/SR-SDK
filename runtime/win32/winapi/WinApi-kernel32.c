@@ -93,6 +93,7 @@ static clockid_t monotonic_clock_id;
 #include "Game-Memory.h"
 #include "Game_cdrom.h"
 #include "Game_hooks.h"
+#include "Game_vfs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -201,12 +202,32 @@ typedef struct _win32_find_data_ {
 #endif
 
 
+/* The letter of the CD drive the game sees: D, unless the port itself is on D:
+ * (a real Windows disk), where the game would take its own directory for the
+ * CD ("cannot be run from the CD-ROM"): then E */
+char Winapi_CdDriveLetter(void)
+{
+    static char letter = 0;
+
+    if (letter == 0)
+    {
+        const char *root = NULL;
+
+        letter = 'D';
+#ifdef _WIN32
+        root = Game_DataRoot();
+#endif
+        if (root != NULL && (root[0] == 'D' || root[0] == 'd') && root[1] == ':') letter = 'E';
+    }
+    return letter;
+}
+
 /* The game asks for its files on the CD (D:\\...): they are in the directory
  * of the copy of the disc, when the port runs from one */
 static int is_d_drive_path(const char *path)
 {
-    return (path[0] == 'D' || path[0] == 'd') && path[1] == ':' &&
-           (path[2] == '\\' || path[2] == '/');
+    return (path[0] == Winapi_CdDriveLetter() || path[0] == (Winapi_CdDriveLetter() | 0x20)) &&
+           path[1] == ':' && (path[2] == '\\' || path[2] == '/');
 }
 
 static void redirect_d_drive(const char *src, char *dst)
