@@ -43,7 +43,7 @@
 #include "WinApi-game.h"
 #include "WinApi-config.h"
 #ifdef GAME_D3D_GL
-#include "Game_gl.h"
+#include "WinApi-d3dgl.h"
 #endif
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
@@ -112,6 +112,7 @@ typedef struct {
     struct d3d_viewport *current;
     uint32_t state[MAX_STATES];
     int in_scene;
+    int gl_scene;                       /* the scene is in the GL backend's FBO */
     uint32_t draws;                     /* DrawPrimitive calls in the scene */
     uint32_t vertices;
 } d3d_device;
@@ -537,6 +538,15 @@ uint32_t CCALL IDirect3DDevice2_BeginScene_c(void *lpThis)
     dev->in_scene = 1;
     dev->draws = 0;
     dev->vertices = 0;
+#ifdef GAME_D3D_GL
+    /* the GL backend takes the scene when it can (else the software one) */
+    dev->gl_scene = Winapi_Direct3DGL() && Winapi_D3dGLBeginScene(dev->target);
+    if (dev->gl_scene)
+    {
+        uint32_t s;
+        for (s = 0; s < MAX_STATES; s++) Winapi_D3dGLSetState(s, dev->state[s]);
+    }
+#endif
     return D3D_OK;
 }
 
@@ -546,6 +556,13 @@ uint32_t CCALL IDirect3DDevice2_EndScene_c(void *lpThis)
 
     if (!dev->in_scene) return D3DERR_GENERIC;
     dev->in_scene = 0;
+#ifdef GAME_D3D_GL
+    if (dev->gl_scene)
+    {
+        Winapi_D3dGLEndScene(dev->target);
+        dev->gl_scene = 0;
+    }
+#endif
     d3d_log("D3D: scene: %u draws, %u vertices\n", dev->draws, dev->vertices);
     return D3D_OK;
 }
@@ -586,9 +603,20 @@ uint32_t CCALL IDirect3DDevice2_SetRenderTarget_c(void *lpThis, void *a1, uint32
 
     if (surface == NULL) return D3DERR_INVALIDARG;
     d3d_log("D3D: SetRenderTarget %ux%u, %u bpp, caps 0x%x\n", surface->width, surface->height, surface->bpp, surface->caps);
+#ifdef GAME_D3D_GL
+    /* a scene moves to the new target: read the old FBO back first */
+    if (dev->gl_scene)
+    {
+        Winapi_D3dGLEndScene(dev->target);
+        dev->gl_scene = 0;
+    }
+#endif
     surface->RefCount++;
     if (dev->target != NULL) IDirectDrawSurface_Release_c(dev->target);
     dev->target = surface;
+#ifdef GAME_D3D_GL
+    if (dev->in_scene) dev->gl_scene = Winapi_Direct3DGL() && Winapi_D3dGLBeginScene(dev->target);
+#endif
     return D3D_OK;
 }
 
@@ -646,6 +674,9 @@ uint32_t CCALL IDirect3DDevice2_SetRenderState_c(void *lpThis, uint32_t a1, uint
     d3d_log("D3D: SetRenderState %u = 0x%x\n", a1, a2);
     if (a1 >= MAX_STATES) return D3DERR_INVALIDARG;
     dev->state[a1] = a2;
+#ifdef GAME_D3D_GL
+    if (dev->gl_scene) Winapi_D3dGLSetState(a1, a2);
+#endif
     return D3D_OK;
 }
 
@@ -1072,6 +1103,18 @@ static uint32_t draw_primitive(d3d_device *dev, uint32_t type, uint32_t vtype, c
         if (index != NULL && k >= nverts) k = 0;
         load_vertex(&rv[i], verts + (size_t)k * 8);
     }
+#ifdef GAME_D3D_GL
+    if (dev->gl_scene)
+    {
+        /* rvert and d3dgl_vert are the same pre-transformed vertex */
+        const struct IDirectDrawSurface_c *ts = NULL;
+        if (c.textured) ts = c.tex.s;
+        Winapi_D3dGLDraw(type, (const d3dgl_vert *)rv, n, NULL, n, ts,
+                         c.cx1, c.cy1, c.cx2 - c.cx1, c.cy2 - c.cy1);
+        free(rv);
+        return D3D_OK;
+    }
+#endif
     switch (type)
     {
         case 2: for (i = 0; i + 1 < n; i += 2) raster_line(&c, &rv[i], &rv[i + 1]); break;
@@ -1223,8 +1266,8 @@ static void fill_rect(struct IDirectDrawSurface_c *s, int x1, int y1, int x2, in
     }
 }
 
-/* the colour of the material of the background, in the format of the target */
-static uint32_t background_value(const d3d_viewport *vp, const struct IDirectDrawSurface_c *target)
+/* the colour of the material of the background as 0xFFRRGGBB, 0 if none */
+static uint32_t background_argb(const d3d_viewport *vp)
 {
     const d3d_material *m = NULL;
     const float *diffuse;
@@ -1236,6 +1279,16 @@ static uint32_t background_value(const d3d_viewport *vp, const struct IDirectDra
     r = (uint32_t)(diffuse[0] * 255.0f + 0.5f) & 255;
     g = (uint32_t)(diffuse[1] * 255.0f + 0.5f) & 255;
     b = (uint32_t)(diffuse[2] * 255.0f + 0.5f) & 255;
+    return 0xff000000u | (r << 16) | (g << 8) | b;
+}
+
+/* the colour of the material of the background, in the format of the target */
+static uint32_t background_value(const d3d_viewport *vp, const struct IDirectDrawSurface_c *target)
+{
+    uint32_t c = background_argb(vp);
+    uint32_t r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+
+    if (c == 0) return 0;
     if (target->bpp == 16) return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
     if (target->bpp == 32) return (r << 16) | (g << 8) | b;
     return 0;
@@ -1267,6 +1320,14 @@ uint32_t CCALL IDirect3DViewport2_Clear_c(void *lpThis, uint32_t a1, void *a2, u
         }
         if (a3 & D3DCLEAR_TARGET) fill_rect(target, x1, y1, x2, y2, background_value(vp, target));
         if ((a3 & D3DCLEAR_ZBUFFER) && (target->zsurf != NULL)) fill_rect(target->zsurf, x1, y1, x2, y2, 0xffffffffu);
+#ifdef GAME_D3D_GL
+        if (vp->device->gl_scene)
+        {
+            Winapi_D3dGLClear(target, x1, y1, x2, y2,
+                              (a3 & D3DCLEAR_TARGET) != 0, background_argb(vp),
+                              (a3 & D3DCLEAR_ZBUFFER) != 0);
+        }
+#endif
     }
     return D3D_OK;
 }
@@ -1478,69 +1539,17 @@ int Winapi_Direct3DGL(void)
 
 #ifdef GAME_D3D_GL
 
-/* The presentation: the primary surface as a BGRA texture scaled to the
- * window.  The GL context is made when the first surface comes (the SDL
- * window exists by then), and goes away with the window. */
-
-static SDL_GLContext d3d_gl_context = NULL;
-static GLuint d3d_present_tex = 0;
-static uint32_t *d3d_present_buf = NULL;
-static int d3d_present_w = 0;
-static int d3d_present_h = 0;
+/* The presentation and the context live in the GL backend
+ * (runtime/win32/gl/WinApi-d3dgl.c). */
 
 void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window)
 {
-    if ((prim == NULL) || (window == NULL)) return;
-
-    if (d3d_gl_context == NULL)
-    {
-        d3d_gl_context = Game_GlCreateContext(window, Display_VSync);
-        if (d3d_gl_context == NULL) return;
-    }
-
-    if ((d3d_present_tex == 0) || (d3d_present_w != (int)prim->width) || (d3d_present_h != (int)prim->height))
-    {
-        if (d3d_present_tex != 0) glDeleteTextures(1, &d3d_present_tex);
-        free(d3d_present_buf);
-        d3d_present_w = (int)prim->width;
-        d3d_present_h = (int)prim->height;
-        d3d_present_buf = (uint32_t *)malloc((size_t)d3d_present_w * d3d_present_h * 4);
-        if (d3d_present_buf == NULL)
-        {
-            d3d_present_w = d3d_present_h = 0;
-            return;
-        }
-        glGenTextures(1, &d3d_present_tex);
-        glBindTexture(GL_TEXTURE_2D, d3d_present_tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, d3d_present_w, d3d_present_h, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-    }
-
-    Winapi_SurfaceToBgra(prim, d3d_present_buf, d3d_present_w * 4);
-    glBindTexture(GL_TEXTURE_2D, d3d_present_tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, d3d_present_w, d3d_present_h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, d3d_present_buf);
-    /* row 0 of the surface is the top of the picture */
-    Game_GlPresentTexture(window, d3d_present_tex, d3d_present_w, d3d_present_h, 1, Display_ScalingQuality != 0);
+    Winapi_D3dGLPresent(prim, window);
 }
 
 void Winapi_D3dPresentDeinit(void)
 {
-    if (d3d_present_tex != 0)
-    {
-        if (d3d_gl_context != NULL) glDeleteTextures(1, &d3d_present_tex);
-        d3d_present_tex = 0;
-    }
-    free(d3d_present_buf);
-    d3d_present_buf = NULL;
-    d3d_present_w = d3d_present_h = 0;
-    if (d3d_gl_context != NULL)
-    {
-        SDL_GL_DeleteContext(d3d_gl_context);
-        d3d_gl_context = NULL;
-    }
+    Winapi_D3dGLShutdown();
 }
 
 #else

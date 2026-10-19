@@ -314,6 +314,9 @@ typedef struct _ddbltfx
 
 #include "WinApi-ddraw-priv.h"
 #include "WinApi-d3d.h"
+#ifdef GAME_D3D_GL
+#include "WinApi-d3dgl.h"
+#endif
 
 extern int sdl_versionnum;
 
@@ -476,6 +479,9 @@ static void FreeSurface(struct IDirectDrawSurface_c *s)
     if (s->palette != NULL) s->palette->RefCount--;
     if (s->clipper != NULL) s->clipper->RefCount--;
     if (s->zsurf != NULL) IDirectDrawSurface_Release_c(s->zsurf);
+#ifdef GAME_D3D_GL
+    Winapi_D3dGLTextureFree(s);
+#endif
     Winapi_D3dSurfaceFree(s);
     x86_free(s->mem);
     x86_free(s);
@@ -1312,6 +1318,16 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
 
     ClipRect(lpDestRect, lpThis->width, lpThis->height, &d);
 
+#ifdef GAME_D3D_GL
+    /* mid-scene the FBO has the 3D: the guest reads it before the blit and
+     * writes under it after (the calls no-op outside a scene of the target) */
+    if (Winapi_Direct3DGL())
+    {
+        Winapi_D3dGLSync(lpThis);
+        if (lpDDSrcSurface != NULL) Winapi_D3dGLSync(lpDDSrcSurface);
+    }
+#endif
+
     if (dwFlags & DDBLT_COLORFILL)
     {
         int32_t x, y;
@@ -1353,6 +1369,10 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
         result = BltRects(lpThis, d, lpDDSrcSurface, s, ckey);
     }
 
+#ifdef GAME_D3D_GL
+    if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
+#endif
+
     if ((result == DD_OK) && lpThis->primary) Present(lpThis->dd);
 
     return result;
@@ -1371,6 +1391,14 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
 
     if ((lpThis == NULL) || (lpDDSrcSurface == NULL)) return DDERR_INVALIDPARAMS;
 
+#ifdef GAME_D3D_GL
+    if (Winapi_Direct3DGL())
+    {
+        Winapi_D3dGLSync(lpThis);
+        Winapi_D3dGLSync(lpDDSrcSurface);
+    }
+#endif
+
     ClipRect((const struct _rect *)lpSrcRect, lpDDSrcSurface->width, lpDDSrcSurface->height, &s);
     d.left = dwX;
     d.top = dwY;
@@ -1381,6 +1409,10 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
     key.dwColorSpaceHighValue = lpDDSrcSurface->colorkey_high;
 
     result = BltRects(lpThis, d, lpDDSrcSurface, s, ((dwTrans & DDBLTFAST_SRCCOLORKEY) && lpDDSrcSurface->has_colorkey) ? &key : NULL);
+
+#ifdef GAME_D3D_GL
+    if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
+#endif
 
     if ((result == DD_OK) && lpThis->primary) Present(lpThis->dd);
 
@@ -1610,6 +1642,11 @@ uint32_t CCALL IDirectDrawSurface_Lock_c(struct IDirectDrawSurface_c *lpThis, vo
     lpDDSurfaceDesc->lpSurface = p;
     lpThis->locked = 1;
 
+#ifdef GAME_D3D_GL
+    /* the guest reads the pixels mid-scene: the memory wants the 3D so far */
+    if (Winapi_Direct3DGL()) Winapi_D3dGLSync(lpThis);
+#endif
+
     return DD_OK;
 }
 
@@ -1684,6 +1721,10 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
 
     lpThis->locked = 0;
     lpThis->texture_gen++;
+#ifdef GAME_D3D_GL
+    /* the guest wrote the pixels (or a palette): under the 3D drawn so far */
+    if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
+#endif
     if (lpThis->primary) Present(lpThis->dd);
     else if (lpThis->backbuffer && lpThis->dd->Primary != NULL)
     {
