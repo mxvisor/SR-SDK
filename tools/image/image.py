@@ -26,6 +26,7 @@
 #     image.py disc IMAGE [-o OUT_DIR] [--name NAME] [--no-audio]
 #                         [--iso] [--extract DIR]
 #     image.py installer FILE.z OUT_DIR       (-l: list only)
+#     image.py expand FILE... [-o OUT_FILE]
 #
 # disc: IMAGE is .nrg (Nero), .mds (Alcohol 120%; its .mdf is taken from next
 # to it), .bin or .iso (with or without a .cue next to it). It writes a cue
@@ -45,6 +46,13 @@
 # one of these outputs. Needs no external program.
 #
 # installer: unpack an InstallShield 3 .z archive (see installshield.py).
+#
+# expand: unpack SZDD files (COMPRESS.EXE's LZSS, `*_` installer files such
+# as SETUP.EX_ for SETUP.EXE), each to its original name beside it; with a
+# single FILE, -o says the output file. The name comes from the header; a
+# header that says nothing (installers often leave it 0) falls back to the
+# usual DOS completions (DL_ -> DLL), and when that does not say either,
+# give the name: expand SETUP.IN_ -o SETUP.INF.
 import argparse
 import os
 import struct
@@ -57,6 +65,7 @@ import installshield    # noqa: E402
 import mds              # noqa: E402
 import nrg              # noqa: E402
 import rawbin           # noqa: E402
+import szdd             # noqa: E402
 
 
 def cmd_disc(args):
@@ -100,6 +109,16 @@ def cmd_installer(args):
     return 1 if bad else 0
 
 
+def cmd_expand(args):
+    if args.out and len(args.files) != 1:
+        cdimage.fail('expand -o needs exactly one FILE')
+    for path in args.files:
+        target = args.out if args.out else None
+        source, written = szdd.expand_file(path, target)
+        print('%s -> %s' % (os.path.basename(source), os.path.relpath(written, os.path.dirname(os.path.abspath(source)))))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='disc images and installers of a game')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -116,6 +135,10 @@ def main():
     inst.add_argument('out', nargs='?', help='output directory (omit to list)')
     inst.add_argument('-l', '--list', action='store_true')
     inst.set_defaults(func=cmd_installer)
+    exp = sub.add_parser('expand', help='unpack SZDD (COMPRESS.EXE) files')
+    exp.add_argument('files', nargs='+', metavar='FILE')
+    exp.add_argument('-o', '--out', help='the output file (a single FILE only; default: the original name beside it)')
+    exp.set_defaults(func=cmd_expand)
     args = parser.parse_args()
     return args.func(args)
 

@@ -34,7 +34,9 @@
 #    entries are the audio tracks themselves);
 # 2. every patch= archive over them, in the order of the cfg, later ones win.
 #    Names are matched without regard to case: a patch's general/Boom.tfx
-#    replaces the disc's GENERAL/BOOM.TFX instead of making a second file.
+#    replaces the disc's GENERAL/BOOM.TFX instead of making a second file;
+# 3. every SZDD file the cfg's expand= names, unpacked (COMPRESS.EXE's
+#    LZSS: SETUP.EX_ is SETUP.EXE) over the name it unpacks to.
 #
 # game/portable.cfg (read as portable_cd.py reads it, same keys):
 #     cue=, image=      the disc, as in portable_cd.py
@@ -43,6 +45,10 @@
 #                       is the directory inside it that holds the files, when
 #                       they are not at the top. Repeatable; paths relative to
 #                       the game repository's root.
+#     expand=<name>[=<out>]
+#                       an SZDD file of the disc to unpack, as the disc has
+#                       it (NAME, NAME=the name it unpacks to, or a * pattern
+#                       of names). Repeatable, one per word.
 #     audio_dir=        left out of the data track
 #
 # OUT_DIR is rebuilt when the cfg, the image or a patch changed (a stamp file
@@ -50,6 +56,7 @@
 # archives. Nothing is written outside OUT_DIR.
 
 import argparse
+import fnmatch
 import hashlib
 import os
 import shutil
@@ -63,6 +70,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from portable_cd import Copy, fail, make_cue, read_cfg  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
 from cdimage import Image, parse_cue  # noqa: E402
+import szdd  # noqa: E402
 
 STAMP = '.disc_tree'
 
@@ -79,6 +87,64 @@ def read_patches(path):
                     fail('patch= needs an archive')
                 patches.append((words[0], ' '.join(words[1:])))
     return patches
+
+
+def read_expands(path):
+    """The expand= words of a cfg: SZDD files to unpack, each as NAME,
+    NAME=out (the name to unpack it to) or a * pattern of names."""
+    words = []
+    with open(path, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if line.lower().startswith('expand='):
+                words.extend(line.split('=', 1)[1].split())
+    for word in words:
+        pattern, equal, name = word.partition('=')
+        if not pattern:
+            fail('expand= needs a file name: %s' % word)
+        if equal and not name:
+            fail('expand= needs a name after =: %s' % word)
+        if equal and any(c in pattern for c in '*?['):
+            fail('expand= =NAME needs a single file, not a pattern: %s' % word)
+    return words
+
+
+def expand_tree(out, words):
+    """Unpacks the SZDD files words name in out, as the cfg's expand= says."""
+    if not words:
+        return
+    found = []
+    for base, _, names in os.walk(out):
+        for name in names:
+            found.append(os.path.relpath(os.path.join(base, name), out))
+    for word in words:
+        pattern, equal, name = word.partition('=')
+        if any(c in pattern for c in '*?['):
+            lower = pattern.lower()
+            matches = sorted(r for r in found
+                             if fnmatch.fnmatchcase(r.lower(), lower)
+                             or ('/' not in pattern and
+                                 fnmatch.fnmatchcase(os.path.basename(r).lower(), lower)))
+            if not matches:
+                fail('expand= matches nothing on the disc: %s' % pattern)
+            targets = [None] * len(matches)
+        else:
+            matches = [r for r in found if r.lower() == pattern.lower()]
+            if not matches:
+                fail('expand= has no such file on the disc: %s' % pattern)
+            targets = [name if equal else None]
+        for match, target in zip(matches, targets):
+            source = os.path.join(out, match)
+            written = os.path.join(out, target) if target else None
+            if written is None:
+                with open(source, 'rb') as stream:
+                    parsed = szdd.header(stream.read(14))
+                if parsed is None:
+                    fail('expand= is not an SZDD file: %s' % match)
+                written = os.path.join(os.path.dirname(source),
+                                        szdd.original_name(os.path.basename(match), parsed[3]))
+            szdd.expand_file(source, written)
+            print('expand: %s -> %s' % (match, os.path.relpath(written, out)))
 
 
 def stamp_of(parts):
@@ -144,9 +210,10 @@ def main():
     for archive, _ in patches:
         if not os.path.isfile(archive):
             fail('no such patch: %s' % archive)
+    expands = read_expands(args.cfg)
     image_file = os.path.join(root, cfg['image']) if cfg.get('image') else cue_path
     stamp = stamp_of([image_file, cfg.get('audio_dir', 'AUDIO')] + [a + '|' + i for a, i in patches]
-                     + [a for a, _ in patches])
+                     + [a for a, _ in patches] + ['expand|' + w for w in expands])
     stamp_file = os.path.join(args.out, STAMP)
     if os.path.isfile(stamp_file) and open(stamp_file).read().strip() == stamp:
         print('disc: %s is up to date' % args.out)
@@ -183,6 +250,7 @@ def main():
                     fail('%s has no directory %s' % (archive, inner))
             overlay(top, args.out)
         print('patch: %s' % os.path.basename(archive))
+    expand_tree(args.out, expands)
     with open(stamp_file, 'w') as handle:
         handle.write(stamp + '\n')
 
