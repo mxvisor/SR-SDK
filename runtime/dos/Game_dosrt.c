@@ -75,6 +75,10 @@ static uint32_t port_in(uint16_t port)
 #endif
     if (port == 0x40) return Game_DosPitIn(port);
     if (port == 0x60 || port == 0x64) return Game_DosKbdPort(port);
+    /* the game port with no joystick: the bus floats high, so the axes never
+     * time out (bits 0-3) and no button is pressed (bits 4-7, active low);
+     * zero would be a joystick whose four buttons are all held down */
+    if (port == 0x201) return 0xff;
     if (Game_DosVgaIn(port, &value)) return value;
     return 0;
 }
