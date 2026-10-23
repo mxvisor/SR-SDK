@@ -50,6 +50,8 @@
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
+#     unpack=<disc file>[ <dir>]       an InstallShield .z of the disc, unpacked
+#                                      into the copy (so is build/disc)
 #     image=<the disc image>           .nrg, .mds, .bin or .iso: when the cue
 #                                      sheet is not there yet it is made from
 #                                      this, with image/image.py
@@ -191,16 +193,21 @@ class Copy:
                 if top and name.upper() == self.audio_dir:
                     continue
                 if matches(name, self.skip_dirs):
+                    # what the installer put elsewhere is still wanted: place=
                     self.skipped += 1
+                    self.fs_tree(path, None, prefix + name + '/', False)
                     continue
-                os.mkdir(os.path.join(out, name))
-                self.fs_tree(path, os.path.join(out, name), prefix + name + '/', False)
-            elif name == '.disc_tree' or matches(name, self.skip_files):
+                if out:
+                    os.mkdir(os.path.join(out, name))
+                self.fs_tree(path, os.path.join(out, name) if out else None, prefix + name + '/', False)
+            elif name == '.disc_tree' or (matches(name, self.skip_files) and self.place_dest(prefix + name) is None):
                 self.skipped += 1
             else:
                 rel = prefix + name
                 dest = self.place_dest(rel)
-                target = os.path.join(out, name)
+                target = os.path.join(out, name) if out else None
+                if target is None and dest is None:
+                    continue
                 if dest is not None:
                     self.placed.add(rel)
                     target = os.path.join(self.root, dest, name) if dest.endswith('/') else os.path.join(self.root, dest)
@@ -272,8 +279,9 @@ def main():
     root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
     place_rules = read_place_rules(args.cfg)
     copy = Copy(image, cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir, place_rules, args.out)
-    if any(line.split('#', 1)[0].strip().lower().startswith('patch=') for line in open(args.cfg)):
-        # the disc with its patch= archives over it, not the bare image
+    if any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=')) for line in open(args.cfg)):
+        # the disc with its patch= archives over it and its unpack= archives
+        # unpacked, not the bare image
         disc = os.path.join(root, 'build', 'disc')
         subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
                         disc, '--cfg', args.cfg, '--cue', cue_path], check=True)
@@ -282,6 +290,12 @@ def main():
         tree = enumerate_tree(image, root_lba, root_size)
         copy.tree(root_lba, root_size, args.out)
         copy.write_placed(tree)
+    # the directories whose files all went elsewhere (place=) are not part of the install
+    for rel in copy.placed:
+        directory = os.path.dirname(rel)
+        while directory and os.path.isdir(os.path.join(args.out, directory)) and not os.listdir(os.path.join(args.out, directory)):
+            os.rmdir(os.path.join(args.out, directory))
+            directory = os.path.dirname(directory)
     print('data track: %d files, %.1f MB (%d installer entries skipped, %d placed)'
           % (copy.count, copy.total / 1e6, copy.skipped, len(copy.placed)))
 

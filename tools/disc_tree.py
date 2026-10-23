@@ -35,7 +35,9 @@
 # 2. every patch= archive over them, in the order of the cfg, later ones win.
 #    Names are matched without regard to case: a patch's general/Boom.tfx
 #    replaces the disc's GENERAL/BOOM.TFX instead of making a second file;
-# 3. every SZDD file the cfg's expand= names, unpacked (COMPRESS.EXE's
+# 3. every InstallShield 3 .z archive the cfg's unpack= names, unpacked as
+#    the installer would (the program's own files: exe, data, config);
+# 4. every SZDD file the cfg's expand= names, unpacked (COMPRESS.EXE's
 #    LZSS: SETUP.EX_ is SETUP.EXE) over the name it unpacks to.
 #
 # game/portable.cfg (read as portable_cd.py reads it, same keys):
@@ -45,6 +47,9 @@
 #                       is the directory inside it that holds the files, when
 #                       they are not at the top. Repeatable; paths relative to
 #                       the game repository's root.
+#     unpack=<disc file>[ <dir>]
+#                       an InstallShield 3 .z archive of the disc, unpacked
+#                       into <dir> of the tree (default: its top). Repeatable.
 #     expand=<name>[=<out>]
 #                       an SZDD file of the disc to unpack, as the disc has
 #                       it (NAME, NAME=the name it unpacks to, or a * pattern
@@ -87,6 +92,43 @@ def read_patches(path):
                     fail('patch= needs an archive')
                 patches.append((words[0], ' '.join(words[1:])))
     return patches
+
+
+def read_unpacks(path):
+    """The unpack= lines of a cfg: [(archive on the disc, directory)]."""
+    unpacks = []
+    with open(path, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if line.lower().startswith('unpack='):
+                words = line.split('=', 1)[1].split()
+                if not words:
+                    fail('unpack= needs an archive of the disc')
+                unpacks.append((words[0], ' '.join(words[1:])))
+    return unpacks
+
+
+def find_path_ci(root, name):
+    """root/name, each part of name matched without regard to case."""
+    path = root
+    for part in name.split('/'):
+        entry = find_ci(path, part)
+        if entry is None:
+            fail('no %s in the disc (unpack=)' % name)
+        path = os.path.join(path, entry)
+    return path
+
+
+def unpack_tree(out, unpacks):
+    """Unpacks the InstallShield archives unpack= names, as the installer would."""
+    installer = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image', 'image.py')
+    for name, directory in unpacks:
+        target = os.path.join(out, directory) if directory else out
+        os.makedirs(target, exist_ok=True)
+        if subprocess.run([sys.executable, '-I', installer, 'installer', find_path_ci(out, name), target],
+                          stdout=subprocess.DEVNULL).returncode:
+            fail('cannot unpack %s' % name)
+        print('unpack: %s' % name)
 
 
 def read_expands(path):
@@ -210,10 +252,11 @@ def main():
     for archive, _ in patches:
         if not os.path.isfile(archive):
             fail('no such patch: %s' % archive)
+    unpacks = read_unpacks(args.cfg)
     expands = read_expands(args.cfg)
     image_file = os.path.join(root, cfg['image']) if cfg.get('image') else cue_path
     stamp = stamp_of([image_file, cfg.get('audio_dir', 'AUDIO')] + [a + '|' + i for a, i in patches]
-                     + [a for a, _ in patches] + ['expand|' + w for w in expands])
+                     + [a for a, _ in patches] + ['unpack|' + a + '|' + d for a, d in unpacks] + ['expand|' + w for w in expands])
     stamp_file = os.path.join(args.out, STAMP)
     if os.path.isfile(stamp_file) and open(stamp_file).read().strip() == stamp:
         print('disc: %s is up to date' % args.out)
@@ -250,6 +293,7 @@ def main():
                     fail('%s has no directory %s' % (archive, inner))
             overlay(top, args.out)
         print('patch: %s' % os.path.basename(archive))
+    unpack_tree(args.out, unpacks)
     expand_tree(args.out, expands)
     with open(stamp_file, 'w') as handle:
         handle.write(stamp + '\n')
