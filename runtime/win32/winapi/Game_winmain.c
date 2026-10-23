@@ -37,6 +37,9 @@
 #include <string.h>
 
 #include <SDL.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "Game_android.h"
 #include "Game_defs.h"
@@ -80,6 +83,24 @@ static int Game_ReadArgs(int argc, char *argv[])
     return count;
 }
 
+/* Under Wine SDL's default renderer is Direct3D 11 (then 9), which a prefix with DXVK
+ * runs through Vulkan: on some drivers the device creation hangs in the kernel.  The
+ * port draws with OpenGL or with SDL's software path, so the renderer is OpenGL
+ * (software when there is none) unless SDL_RENDER_DRIVER says otherwise. */
+static void Game_WineRenderer(void)
+{
+#ifdef _WIN32
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if ((ntdll != NULL) && (GetProcAddress(ntdll, "wine_get_version") != NULL) && (getenv("SDL_RENDER_DRIVER") == NULL))
+    {
+        /* the environment, not the hint: SDL reads this one before anything of its own */
+        SetEnvironmentVariableA("SDL_RENDER_DRIVER", "opengl,software");
+        _putenv("SDL_RENDER_DRIVER=opengl,software");
+        fprintf(stderr, "Wine: SDL renderer opengl\n");
+    }
+#endif
+}
+
 static int Game_Run(int argc, char *argv[])
 {
     argc = Game_ReadArgs(argc, argv);
@@ -94,6 +115,8 @@ static int Game_Run(int argc, char *argv[])
     Game_ReadConfig();
 
     Winapi_InitTicks();
+
+    Game_WineRenderer();
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
     {
