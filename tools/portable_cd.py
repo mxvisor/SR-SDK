@@ -45,7 +45,8 @@
 #    uncompressed; ogg is lossy, only smaller.
 #
 # game/portable.cfg (paths relative to the game repository's root):
-#     cue=<the disc's cue sheet>       one BINARY file (required)
+#     cue=<the disc's cue sheet>       BINARY file(s): one for the disc or one per
+#                                      track, as redump has them (required)
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
@@ -75,7 +76,7 @@ import sys
 from typing import NoReturn
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
-from cdimage import (RAW, Image, enumerate_tree, parse_cue,  # noqa: E402
+from cdimage import (RAW, Image, enumerate_tree, parse_cue, track_span,  # noqa: E402
                      records)
 
 
@@ -264,7 +265,7 @@ def main():
     os.makedirs(args.out)
 
     # 1. the data track, without the installer
-    image = Image(image_path, data)
+    image = Image(data['path'], data)
     pvd = image.sector(16)
     if pvd[1:6] != b'CD001':
         fail('no ISO9660 volume in the data track')
@@ -292,17 +293,13 @@ def main():
     # 3. the audio tracks and their cue sheet
     music = os.path.join(args.out, audio_dir)
     os.mkdir(music)
-    image_size = os.path.getsize(image_path)
-    audio = [t for t in tracks if t['mode'] == 'AUDIO']
+    audio = [(position, t) for position, t in enumerate(tracks) if t['mode'] == 'AUDIO']
     cue_lines = []
-    for position, track in enumerate(audio):
-        start = track['index1'] * RAW
-        later = audio[position + 1] if position + 1 < len(audio) else None
-        end = ((later['index0'] if later['index0'] is not None else later['index1']) * RAW
-               if later is not None else image_size)
+    for position, track in audio:
+        source_path, start, end = track_span(tracks, position)
         name = 'track%02d.%s' % (track['number'], audio_format)
         target = os.path.join(music, name)
-        with open(image_path, 'rb') as source:
+        with open(source_path, 'rb') as source:
             source.seek(start)
             pcm = source.read(end - start)
         codec = {'ogg': ['-c:a', 'libvorbis', '-q:a', quality],

@@ -227,7 +227,7 @@ def main():
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
     if data is None:
         fail('no data track in %s' % cue_path)
-    image = Image(image_path, data)
+    image = Image(data['path'], data)
     pvd = image.sector(16)
     if pvd[1:6] != b'CD001':
         fail('no ISO9660 volume in the data track')

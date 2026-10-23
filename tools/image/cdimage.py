@@ -65,8 +65,10 @@ def write_cue(path, tracks):
 
 
 def parse_cue(path):
-    """Tracks of a single-BINARY-file cue: number, mode, index0, index1.
-    Returns (image path, tracks)."""
+    """Tracks of a cue sheet of BINARY files: number, mode, path (their file),
+    index0, index1 (in sectors from the start of that file). One file for the
+    whole disc or one per track, as redump has them. Returns (the first file,
+    tracks)."""
     base = os.path.dirname(os.path.abspath(path))
     files, tracks = [], []
     for line in open(path, encoding='latin1'):
@@ -78,12 +80,14 @@ def parse_cue(path):
             name = line.split('"')[1] if '"' in line else words[1]
             files.append((os.path.join(base, os.path.basename(name.replace('\\', '/'))), words[-1].upper()))
         elif key == 'TRACK':
+            if not files:
+                fail('TRACK before FILE in %s' % path)
             tracks.append({'number': int(words[1]), 'mode': words[2].upper(), 'file': len(files) - 1,
-                           'index0': None, 'index1': None})
+                           'path': files[-1][0], 'index0': None, 'index1': None})
         elif key == 'INDEX' and tracks:
             tracks[-1]['index%d' % int(words[1])] = parse_msf(words[2])
-    if len(files) != 1 or files[0][1] != 'BINARY':
-        fail('expected one BINARY file in %s' % path)
+    if not files or any(kind != 'BINARY' for _, kind in files):
+        fail('expected BINARY files in %s' % path)
     return files[0][0], tracks
 
 
@@ -107,13 +111,17 @@ def sector_layout(mode):
     return RAW, 24 if mode.startswith('MODE2') else 16
 
 
-def track_end(tracks, position, image_size):
-    """The byte offset where the track at `position` ends in the image."""
-    if position + 1 >= len(tracks):
-        return image_size
-    later = tracks[position + 1]
-    start = later['index0'] if later['index0'] is not None else later['index1']
-    return start * RAW
+def track_span(tracks, position):
+    """(file, start, end): the byte range of the track at `position` in its
+    file. It ends where the next track of the same file begins (its pregap
+    included), else at the end of the file."""
+    track = tracks[position]
+    start = track['index1'] * RAW
+    later = tracks[position + 1] if position + 1 < len(tracks) else None
+    if later is None or later['path'] != track['path']:
+        return track['path'], start, os.path.getsize(track['path'])
+    first = later['index0'] if later['index0'] is not None else later['index1']
+    return track['path'], start, first * RAW
 
 
 class Image:
@@ -148,7 +156,7 @@ def open_data_track(cue_path):
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
     if data is None:
         fail('no data track in %s' % cue_path)
-    return Image(image_path, data), image_path, tracks
+    return Image(data['path'], data), image_path, tracks
 
 
 def records(image, lba, size):
