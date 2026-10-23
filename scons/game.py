@@ -491,6 +491,7 @@ elif os.path.exists(_outputs):
 
 GEN_MAIN = os.path.join(GEN_SRC_DIR, MODULE + '.llasm')
 RECOMP_ASM = os.path.join(RECOMP_DIR, MODULE + '.asm')
+SR_SEGMENTS = os.path.join(RECOMP_DIR, 'segments.sha256')
 
 if want('input'):
     # Stage 0: the original, checked against the hash the variant records.
@@ -558,6 +559,10 @@ if want('recomp'):
     sr_exe = os.path.join(HOST_SR, SR_EXE_NAME)
     sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
     sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
+    # Without a list scons does not know the seg*.llinc SR wrote, so a changed
+    # segment would leave stage gen "up to date": their hashes stand for them.
+    if not SR_EXTRAS:
+        sr_targets.append(SR_SEGMENTS)
     # SR.cfg is the game's own, with the defaults of its extender before it
     # (a DOS4GW program: what every such game needs, which the game's file
     # may still override)
@@ -590,6 +595,8 @@ if want('recomp'):
     else:
         sr_command = 'cd %s && %s %s %s > sr.out 2> sr.err' % (
             shell_quote(RECOMP_DIR), shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'))
+    if not SR_EXTRAS:
+        sr_command += ' && { sha256sum seg*.llinc || :; } > %s' % shell_quote(os.path.basename(SR_SEGMENTS))
     defaults += env.Command(sr_targets, sr_sources, sr_command)
 
 if want('gen'):
@@ -603,7 +610,7 @@ if want('gen'):
 
     gen_targets = [GEN_MAIN] + [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS]
     gen_sources = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] \
-        + [File(compact)]
+        + ([] if SR_EXTRAS else [SR_SEGMENTS]) + [File(compact)]
 
     # A game that lists its segments (compact / outputs) is built from that list.
     # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.
