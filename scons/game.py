@@ -577,10 +577,17 @@ if want('recomp'):
         copy_if_newer(_relocs, os.path.join(RECOMP_DIR, 'relocations.csv'))
         sr_sources.append(File(_relocs))
 
-    defaults += env.Command(sr_targets, sr_sources,
-                            'cd %s && %s %s %s > sr.out 2> sr.err'
-                            % (shell_quote(RECOMP_DIR), shell_quote(sr_exe),
-                               shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm')))
+    if PLATFORM == 'dos' and ARCH == 'llasm':
+        # SR finds the handlers the program gives to INT 21h AH=25h itself
+        # (tools/sr_run.py: a second run takes them as code)
+        game_fixup = os.path.join(RECOMP_SRC, 'llasm', 'fixup_interpret_as_code.sci')
+        sr_command = 'cd %s && python3 %s %s %s %s %s' % (
+            shell_quote(RECOMP_DIR), shell_quote(os.path.join(SDK_ROOT, 'tools', 'sr_run.py')),
+            shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'), shell_quote(game_fixup))
+    else:
+        sr_command = 'cd %s && %s %s %s > sr.out 2> sr.err' % (
+            shell_quote(RECOMP_DIR), shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'))
+    defaults += env.Command(sr_targets, sr_sources, sr_command)
 
 if want('gen'):
     # Stage 3: compact_source renames <module>.asm and compacts the data

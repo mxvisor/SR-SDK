@@ -49,6 +49,12 @@ launchers (`run-sdl.sh`, `run_sdl_wine.sh`, `run-orig-dosbox.sh` or
 `--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
 executable from the disc (`build/disc/`, unpacked by `tools/disc_tree.py`) instead of a
 file unpacked by hand; the launchers read the data from `build/disc`.
+For a DOS program `tools/sr_run.py` runs SR twice when it must: SR's `--list_handlers=FILE`
+lists the routines the program gives to INT 21h AH=25h (EDX loaded with an address, directly or
+through a wrapper routine that takes it from its stack argument), and the second run takes them as
+code, so the game's `fixup_interpret_as_code.sci` is for what this pattern misses. A DOS4GW program
+also gets `esp_dword_aligned`, `ebp_dword_aligned` and `code_writable` in its `SR.cfg` from
+`scons/game.py`.
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 `TODO` lines of the launchers name what to fill in.
 
@@ -194,7 +200,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_CONFIG()` | the port's configuration, read after the options |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
 | `GAME_DOS_ENV` | without `GAME_RUNTIME_INIT`: the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
-| `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code (a handler SR reaches only through a pointer goes into `fixup_interpret_as_code.sci`) |
+| `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
