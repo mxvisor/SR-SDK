@@ -11,5 +11,5 @@ paths of the game's files as arguments.
 | `pe_relocations.py` | PE base relocations rebuilt with Capstone for an executable that has none (`relocations.csv` of SRW); `--sci DIR` also writes the code, no-code and displaced-label lists SRW needs for tables in code |
 | `udump.c` | decodes a raw section with the udis86 build SR uses (build line in the header) |
 
-`tools/flagfix.py` (the Win32 ports, SRW) and `tools/gen_import_shim.py` (the import shim) are in `tools/`.
+`tools/gen_import_shim.py` (the import shim) is in `tools/`. SRW passes the flags between regions itself; a game's `instruction_flags.sci` keeps only what it cannot derive (jump-table targets, flags a callee leaves).
 Game-specific scripts (object tables of one executable and so on) stay in the game's `research/`.
