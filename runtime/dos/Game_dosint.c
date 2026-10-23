@@ -175,9 +175,25 @@ int Game_DosGuestInterruptsEnabled(void)
 /* Runs the guest code at target with `words` dwords pushed (frame[0] ends up
  * at [esp]) and eflags with IF set.  A hardware interrupt leaves no trace in
  * the code it interrupts, so all of the CPU state is restored afterwards. */
+static void warn_not_code(uint32_t target)
+{
+    static uint32_t reported[8];
+    static unsigned int count;
+
+    for (unsigned int index = 0; index < count; index++) if (reported[index] == target) return;
+    if (count < sizeof(reported) / sizeof(reported[0])) reported[count++] = target;
+    fprintf(stderr, GAME_NAME ": the handler at 0x%X is not translated code and will not run; "
+            "SR does not find a handler that the program only hands to the system "
+            "(INT 21h AH=25h, a timer): list it in fixup_interpret_as_code.sci\n", (unsigned int)target);
+}
+
 static int run_guest(uint32_t target, const uint32_t *frame, unsigned int words, uint32_t eax)
 {
-    if (!code_address_valid(target) || !Game_DosGuestInterruptsEnabled()) return 0;
+    if (!code_address_valid(target)) {
+        if (target != 0) warn_not_code(target);
+        return 0;
+    }
+    if (!Game_DosGuestInterruptsEnabled()) return 0;
 
     _cpu *cpu = x86_initialize_cpu();
     const _cpu saved = *cpu;

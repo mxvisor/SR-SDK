@@ -519,16 +519,33 @@ if want('input'):
             os.remove(INPUT_EXE)
         shutil.copy2(source, INPUT_EXE)
 
+# What SR.cfg of a DOS4GW program holds whatever the game: the extender keeps
+# its stack and its work tables dword-aligned, and its flat DS lets the game
+# store into its code object (without code_writable SR's output makes the
+# code sections "constant").  Found by the extender's name in the exe (its
+# stub carries it).
+DOS4GW_SR_CFG = (
+    '# SR-SDK: the defaults of a DOS4GW program (scons/game.py); the keys of the game follow\n'
+    'esp_dword_aligned=yes\n'
+    'ebp_dword_aligned=yes\n'
+    'code_writable=yes\n')
+
+def make_sr_cfg(target, source, env):
+    with open(str(source[0]), 'rb') as exe:
+        is_dos4gw = PLATFORM == 'dos' and re.search(rb'(?i)dos/?4g', exe.read()) is not None
+    with open(str(source[1])) as game_cfg:
+        text = game_cfg.read()
+    with open(str(target[0]), 'w') as out:
+        out.write((DOS4GW_SR_CFG if is_dos4gw else '') + text)
+
 if want('recomp'):
     # Stage 2: SR's working directory. SR.cfg, bssborder.csv and the .sci
     # files are read from the current directory, so the .sci files of
     # game/recomp/.../llasm/ land beside them here, the way build-llasm.sh
     # copies them in.
     # bssborder.csv is optional, SR goes on without it (SR_loader.c)
-    for name in ('SR.cfg', 'bssborder.csv'):
-        if name == 'bssborder.csv' and not os.path.exists(os.path.join(RECOMP_SRC, name)):
-            continue
-        copy_if_newer(os.path.join(RECOMP_SRC, name), os.path.join(RECOMP_DIR, name))
+    if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
+        copy_if_newer(os.path.join(RECOMP_SRC, 'bssborder.csv'), os.path.join(RECOMP_DIR, 'bssborder.csv'))
     for sci in sorted(glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci'))):
         copy_if_newer(sci, os.path.join(RECOMP_DIR, os.path.basename(sci)))
 
@@ -538,8 +555,13 @@ if want('recomp'):
     sr_exe = os.path.join(HOST_SR, SR_EXE_NAME)
     sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
     sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
-    sr_sources = [INPUT_EXE, File(sr_exe),
-                  File(os.path.join(RECOMP_SRC, 'SR.cfg'))]
+    # SR.cfg is the game's own, with the defaults of its extender before it
+    # (a DOS4GW program: what every such game needs, which the game's file
+    # may still override)
+    sr_cfg = os.path.join(RECOMP_DIR, 'SR.cfg')
+    defaults += env.Command(sr_cfg, [INPUT_EXE, File(os.path.join(RECOMP_SRC, 'SR.cfg'))],
+                            Action(make_sr_cfg, 'SR.cfg  $TARGET'))
+    sr_sources = [INPUT_EXE, File(sr_exe), File(sr_cfg)]
     if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
         sr_sources.append(File(os.path.join(RECOMP_SRC, 'bssborder.csv')))
     sr_sources += [File(path) for path in sorted(

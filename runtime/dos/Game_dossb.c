@@ -79,6 +79,15 @@ static uint32_t dsp_block_size;
 static uint8_t dsp_speaker;
 static uint8_t dsp_irq_pending;
 
+/* The mixer (SB Pro): the index at base+4, the data at base+5.  A game sets
+ * its volume there: the voice volume (04h) and the master volume (22h), the
+ * left channel in the high 3 bits of the nibble and the right in the low
+ * ones.  The stream is mono, so the louder channel counts. */
+static uint8_t mixer_index;
+static uint8_t mixer_regs[256];
+static int mixer_written;
+static int mixer_gain = 256;
+
 /* The IRQ the BLASTER string gives the game.  The game's own driver parses
  * it too and installs its handler at 0x08 + IRQ, so the card has to raise
  * the same one. */
@@ -101,6 +110,21 @@ static uint32_t current_rate(void)
     return 1000000u / (256u - dsp_time_constant);
 }
 
+/* A register's volume, 0..7, as a part of 256.  A step of the card's volume
+ * is about 4.5 dB, and zero is silence. */
+static int mixer_level(uint8_t value)
+{
+    static const int gain[8] = { 0, 11, 19, 32, 54, 91, 152, 256 };
+    const int left = (value >> 5) & 7;
+    const int right = (value >> 1) & 7;
+    return gain[left > right ? left : right];
+}
+
+static void mixer_update(void)
+{
+    mixer_gain = mixer_level(mixer_regs[0x04]) * mixer_level(mixer_regs[0x22]) / 256;
+}
+
 static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int length)
 {
     uint8_t *buffer;
@@ -114,7 +138,7 @@ static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int length)
         if (buffer != NULL && play_length != 0) play_position = (play_position + (uint32_t)length) % play_length;
     } else {
         for (index = 0; index < length; index++) {
-            stream[index] = buffer[play_position];
+            stream[index] = (uint8_t)(0x80 + ((buffer[play_position] - 0x80) * mixer_gain >> 8));
             if (++play_position >= play_length) play_position = 0;
         }
     }
@@ -296,6 +320,7 @@ int Game_DosSbIn(uint16_t port, uint32_t *value)
                 *value = dsp_out[0];
                 memmove(dsp_out, dsp_out + 1, --dsp_out_count);
                 return 1;
+            case 0x05: *value = mixer_regs[mixer_index]; return 1;
             case 0x0c: *value = 0x00; return 1;
             case 0x0e:
                 *value = (dsp_out_count != 0 || dsp_irq_pending) ? 0x80u : 0x00u;
@@ -335,6 +360,18 @@ int Game_DosSbOut(uint16_t port, uint32_t value)
             case 0x06:
                 if (value & 1u) dsp_reset_pending = 1;
                 else if (dsp_reset_pending) { dsp_reset_pending = 0; dsp_reset(); }
+                break;
+            case 0x04: mixer_index = (uint8_t)value; break;
+            case 0x05:
+                SDL_LockMutex(audio_lock != NULL ? audio_lock : (audio_lock = SDL_CreateMutex()));
+                if (!mixer_written) {
+                    /* full volume until the game sets it */
+                    mixer_regs[0x04] = mixer_regs[0x22] = 0xff;
+                    mixer_written = 1;
+                }
+                mixer_regs[mixer_index] = (uint8_t)value;
+                mixer_update();
+                SDL_UnlockMutex(audio_lock);
                 break;
             case 0x0c: dsp_write((uint8_t)value); break;
             default: break;
