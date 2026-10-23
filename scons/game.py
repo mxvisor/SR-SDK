@@ -310,9 +310,12 @@ else:
     # ASLR: dynamicbase + a .reloc section; high-entropy-va needs a 64-bit image.
     env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -Dmain=SDL_main',
                LINKFLAGS='-m64 -mwindows -Wl,--dynamicbase,--enable-reloc-section,'
-                         '--high-entropy-va,--nxcompat,--tsaware',
-               # winpthread is linked statically: no libwinpthread-1.dll beside the exe
-               LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm', ':libwinpthread.a'],
+                         '--high-entropy-va,--nxcompat,--tsaware,'
+                         # winpthread is linked statically: no libwinpthread-1.dll beside the exe.
+                         # Whole, since libgcc's emulated TLS asks for pthread_* after all the -l
+                         # of the line, and the implicit -lpthread would answer with the DLL.
+                         '--whole-archive,-l:libwinpthread.a,--no-whole-archive',
+               LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
                LLASMFLAGS='-m64 -inline-idiv -ptrofs',
                LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
 
