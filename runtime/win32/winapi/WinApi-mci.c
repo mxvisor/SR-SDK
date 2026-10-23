@@ -203,7 +203,9 @@ static uint32_t to_format(int32_t frames)
 {
     switch (time_format) {
     case MCI_FORMAT_MILLISECONDS:
-        return (uint32_t)((uint64_t)frames * 1000 / FRAMES_PER_SECOND);
+        /* rounded up: the game plays from a position it was given, and from_format() must
+         * come back to the same frame, not the one before it */
+        return (uint32_t)(((uint64_t)frames * 1000 + FRAMES_PER_SECOND - 1) / FRAMES_PER_SECOND);
     case MCI_FORMAT_TMSF: {
         int track = track_at(frames);
         return (uint32_t)track | (pack_msf(frames - track_start(track)) << 8);
@@ -308,6 +310,19 @@ static uint32_t cd_status(uint32_t flags, uint32_t *parms)
     return MCIERR_UNRECOGNIZED_COMMAND;
 }
 
+/* no image, or one without music, or music off: a drive with no audio CD in it */
+static uint32_t open_cd(void)
+{
+    if (disc_length() == 0 || !Game_MusicEnabled()) return MCIERR_DEVICE_NOT_READY;
+    if (!cd_open) {
+        time_format = MCI_FORMAT_MSF;
+        mode = MCI_MODE_STOP;
+        stopped_at = 0;
+    }
+    cd_open = 1;
+    return 0;
+}
+
 uint32_t CCALL mciSendCommandA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
     uint32_t *parms = (uint32_t *)GUEST_MEM(a3);
@@ -324,17 +339,9 @@ uint32_t CCALL mciSendCommandA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t
             cdaudio = (a2 & MCI_OPEN_TYPE) && parms[2] != 0 && strcasecmp((const char *)GUEST_MEM(parms[2]), "cdaudio") == 0;
         }
         if (!cdaudio) result = MCIERR_INVALID_DEVICE_NAME;
-        /* no image, or one without music, or music off: a drive with no audio CD in it */
-        else if (disc_length() == 0 || !Game_MusicEnabled()) result = MCIERR_DEVICE_NOT_READY;
         else {
-            if (!cd_open) {
-                time_format = MCI_FORMAT_MSF;
-                mode = MCI_MODE_STOP;
-                stopped_at = 0;
-            }
-            cd_open = 1;
-            parms[1] = CD_DEVICE_ID;
-            result = 0;
+            result = open_cd();
+            if (result == 0) parms[1] = CD_DEVICE_ID;
         }
         if (trace_mci()) fprintf(stderr, "[mci open flags %x -> %u, %d tracks]\n", a2, result, last_track());
         return result;
@@ -408,6 +415,166 @@ uint32_t CCALL mciSendCommandA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t
         if (!reported++) fprintf(stderr, "mciSendCommand: MCI_NOTIFY is not sent\n");
     }
     if (trace_mci() && a1 != MCI_STATUS) fprintf(stderr, "[mci %x flags %x -> %u]\n", a1, a2, result);
+    return result;
+}
+
+/* ---- the command strings: mciSendString("play cdaudio from 0 to 9000", ...) ---- */
+
+#define STRING_WORDS 8
+
+static const char *const mode_names[] = {"stopped", "playing", "paused"};
+
+/* `frames` as a position or length in the current time format, as the text
+ * mciSendString returns */
+static void format_text(char *out, size_t size, uint32_t value)
+{
+    switch (time_format) {
+    case MCI_FORMAT_MSF:
+        snprintf(out, size, "%02u:%02u:%02u", value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF);
+        break;
+    case MCI_FORMAT_TMSF:
+        snprintf(out, size, "%02u:%02u:%02u:%02u", value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF, value >> 24);
+        break;
+    default:
+        snprintf(out, size, "%u", value);
+        break;
+    }
+}
+
+/* `a position` of the string commands: a number in the current time format,
+ * or "mm:ss:ff" / "tt:mm:ss:ff" for the clock formats */
+static int32_t parse_position(const char *text)
+{
+    unsigned int part[4] = {0, 0, 0, 0};
+    int count = sscanf(text, "%u:%u:%u:%u", &part[0], &part[1], &part[2], &part[3]);
+
+    if (time_format == MCI_FORMAT_MILLISECONDS || count < 2) return from_format(part[0]);
+    if (time_format == MCI_FORMAT_TMSF) return from_format(part[0] | (part[1] << 8) | (part[2] << 16) | (part[3] << 24));
+    return from_format(part[0] | (part[1] << 8) | (part[2] << 16));
+}
+
+static uint32_t string_status(char **word, int count, char *answer, size_t size)
+{
+    int track = 0, at = 2;
+    char text[32] = "";
+
+    update_mode();
+    /* "status cdaudio position track 3": the item, then an optional track */
+    if (count < 3) return MCIERR_UNRECOGNIZED_COMMAND;
+    for (int i = 3; i + 1 < count; i++) {
+        if (strcmp(word[i], "track") == 0) {
+            track = atoi(word[i + 1]);
+            if (track < 1 || track > last_track()) return MCIERR_OUTOFRANGE;
+            count = i;
+            break;
+        }
+    }
+    if (strcmp(word[at], "mode") == 0) {
+        snprintf(text, sizeof(text), "%s", mode_names[mode == MCI_MODE_PLAY ? 1 : mode == MCI_MODE_PAUSE ? 2 : 0]);
+    } else if (strcmp(word[at], "length") == 0) {
+        format_text(text, sizeof(text), length_format(track ? Game_CdTrackSectors(track) : disc_length()));
+    } else if (strcmp(word[at], "position") == 0) {
+        format_text(text, sizeof(text), to_format(track ? track_start(track) : current_position()));
+    } else if (strcmp(word[at], "number") == 0) {
+        snprintf(text, sizeof(text), "%d", last_track());
+    } else if (strcmp(word[at], "current") == 0) {
+        snprintf(text, sizeof(text), "%d", track_at(current_position()));
+    } else if (strcmp(word[at], "type") == 0) {
+        if (!track) return MCIERR_OUTOFRANGE;
+        snprintf(text, sizeof(text), "%s", Game_CdTrackIsAudio(track) ? "audio" : "other");
+    } else if (strcmp(word[at], "media") == 0 || strcmp(word[at], "ready") == 0) {
+        snprintf(text, sizeof(text), "true");
+    } else if (strcmp(word[at], "time") == 0) {
+        snprintf(text, sizeof(text), "%s", time_format == MCI_FORMAT_MILLISECONDS ? "milliseconds" :
+                 time_format == MCI_FORMAT_TMSF ? "tmsf" : "msf");
+    } else {
+        return MCIERR_UNRECOGNIZED_COMMAND;
+    }
+    if (answer != NULL && size > 0) snprintf(answer, size, "%s", text);
+    return 0;
+}
+
+/* the words of the string, in lower case, separated by white space */
+static int split_words(char *line, char **word)
+{
+    int count = 0;
+
+    for (char *p = line; *p != '\0'; p++) *p = (char)((*p >= 'A' && *p <= 'Z') ? *p + 32 : *p);
+    for (char *token = strtok(line, " \t\r\n"); token != NULL && count < STRING_WORDS; token = strtok(NULL, " \t\r\n")) {
+        word[count++] = token;
+    }
+    return count;
+}
+
+uint32_t CCALL mciSendStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    /* command, buffer for the answer, its size, window to notify */
+    char line[256], *word[STRING_WORDS];
+    char *answer = (char *)GUEST_MEM(a1);
+    uint32_t result = 0;
+    int count;
+
+    (void)a3;
+    if (a0 == 0) return MCIERR_NULL_PARAMETER_BLOCK;
+    snprintf(line, sizeof(line), "%s", (const char *)GUEST_MEM(a0));
+    count = split_words(line, word);
+    if (answer != NULL && a2 > 0) answer[0] = '\0';
+    if (count < 2) return MCIERR_UNRECOGNIZED_COMMAND;
+    if (strcmp(word[1], "cdaudio") != 0) return MCIERR_INVALID_DEVICE_NAME;
+
+    if (strcmp(word[0], "open") == 0) {
+        result = open_cd();
+    } else if (!cd_open) {
+        result = MCIERR_INVALID_DEVICE_ID;
+    } else if (strcmp(word[0], "close") == 0) {
+        stop_play(0);
+        cd_open = 0;
+    } else if (strcmp(word[0], "stop") == 0) {
+        stop_play(0);
+    } else if (strcmp(word[0], "pause") == 0) {
+        update_mode();
+        stop_play(1);
+    } else if (strcmp(word[0], "resume") == 0) {
+        if (mode == MCI_MODE_PAUSE) {
+            Game_MusicResume();
+            play_from = stopped_at;
+            play_ticks = SDL_GetTicks();
+            mode = MCI_MODE_PLAY;
+        }
+    } else if (strcmp(word[0], "status") == 0) {
+        result = string_status(word, count, answer, a2);
+    } else if (strcmp(word[0], "set") == 0) {
+        /* "set cdaudio time format milliseconds" */
+        if (count >= 5 && strcmp(word[2], "time") == 0 && strcmp(word[3], "format") == 0) {
+            if (strcmp(word[4], "milliseconds") == 0) time_format = MCI_FORMAT_MILLISECONDS;
+            else if (strcmp(word[4], "msf") == 0) time_format = MCI_FORMAT_MSF;
+            else if (strcmp(word[4], "tmsf") == 0) time_format = MCI_FORMAT_TMSF;
+            else result = MCIERR_BAD_TIME_FORMAT;
+        }
+        /* door, audio channels: nothing to do */
+    } else if (strcmp(word[0], "setaudio") == 0) {
+        /* "setaudio cdaudio volume to 0..1000" */
+        if (count >= 5 && strcmp(word[2], "volume") == 0) {
+            int volume = atoi(word[4]);
+            if (volume < 0) volume = 0;
+            if (volume > 1000) volume = 1000;
+            Game_MusicVolume(volume * 128 / 1000);
+            if (trace_mci()) fprintf(stderr, "[mci volume %d]\n", volume);
+        }
+    } else if (strcmp(word[0], "play") == 0) {
+        int32_t from, to;
+        update_mode();
+        from = current_position();
+        to = disc_length();
+        for (int i = 2; i + 1 < count; i++) {
+            if (strcmp(word[i], "from") == 0) from = parse_position(word[i + 1]);
+            else if (strcmp(word[i], "to") == 0) to = parse_position(word[i + 1]);
+        }
+        result = start_play(from, to);
+    } else {
+        result = MCIERR_UNRECOGNIZED_COMMAND;
+    }
+    if (trace_mci() && strcmp(word[0], "status") != 0) fprintf(stderr, "[mci \"%s %s\" -> %u]\n", word[0], count > 2 ? word[2] : "", result);
     return result;
 }
 

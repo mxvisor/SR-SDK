@@ -83,7 +83,8 @@ int Game_CdTocRange(int *first, int *last, int32_t *leadout);
 
 /* The highest track number of the disc (0: none), whether a track is audio,
  * and its length in sectors (up to the next track of the same file, or the
- * end of the file; 0 when that is not known, for a compressed track). */
+ * end of the file; for a compressed track, its length by the decoder, 0 when
+ * that is not known). */
 int Game_CdLastTrack(void);
 int Game_CdTrackIsAudio(int track);
 int32_t Game_CdTrackSectors(int track);

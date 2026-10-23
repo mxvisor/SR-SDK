@@ -331,6 +331,22 @@ int Game_MusicEnabled(void)
     return music_enabled;
 }
 
+int32_t Game_MusicFileFrames(const char *path)
+{
+#if SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+    Mix_Music *file = music_enabled ? Mix_LoadMUS(path) : NULL;
+    double seconds;
+
+    if (file == NULL) return 0;
+    seconds = Mix_MusicDuration(file);
+    Mix_FreeMusic(file);
+    return (seconds > 0) ? (int32_t)(seconds * 75) : 0;
+#else
+    (void)path;
+    return 0;
+#endif
+}
+
 void Game_MusicHalt(void)
 {
     end_music();

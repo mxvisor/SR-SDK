@@ -55,6 +55,7 @@
 #include "Game_hooks.h"
 #include "Game_cdrom.h"
 #include "Game_file.h"
+#include "Game_music.h"
 
 extern "C" {
 
@@ -637,8 +638,14 @@ int Game_CdTrackIsAudio(int track)
 
 int32_t Game_CdTrackSectors(int track)
 {
-    if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present || tracks[track].compressed) return 0;
+    if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present) return 0;
     const cd_track *source = &tracks[track];
+    if (source->compressed) {
+        /* a file of its own: as long as the decoder says, from INDEX 01 */
+        static int32_t frames[GAME_CD_MAX_TRACKS + 1];
+        if (frames[track] == 0) frames[track] = Game_MusicFileFrames(source->path) - source->start_frames;
+        return frames[track] > 0 ? frames[track] : 0;
+    }
     int64_t end = file_size(source->path);
     for (int next = track + 1; next <= GAME_CD_MAX_TRACKS; next++) {
         if (tracks[next].present && strcmp(tracks[next].path, source->path) == 0 &&

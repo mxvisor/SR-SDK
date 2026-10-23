@@ -54,6 +54,8 @@ void Game_MusicHalt(void);
 void Game_MusicPause(void);
 int Game_MusicPlaying(void);
 void Game_MusicVolume(int volume);
+/* The length of an audio file in CD frames (1/75 s); 0 when it is not known. */
+int32_t Game_MusicFileFrames(const char *path);
 
 #ifdef __cplusplus
 }
