@@ -30,8 +30,8 @@
  * only for a symbol that is still undefined: a game that defines the real
  * <name>_c in its own source (game/WinApi-game-impl.c) wins.  (Weak symbols do
  * not do: the mingw linker leaves a reference to a weak COFF symbol
- * unresolved.)  A stub only returns 0; one that needs another result gets
- * implemented.  GAME_DEBUG_STUBS=1 reports the first calls of every function
+ * unresolved.)  A stub returns 0, or the success result the games expect
+ * (1, CSTR_EQUAL, ...); one that needs real behavior gets implemented.  GAME_DEBUG_STUBS=1 reports the first calls of every function
  * that is still a stub.  tools/gen_import_shim.py writes a game's own stubs
  * only for the imports missing here.
  */
@@ -39,7 +39,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "platform.h"
+
+#if defined(PTROFS_64BIT)
+extern uint64_t pointer_offset;
+#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
+#else
+#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
+#endif
 
 static void StubLog(const char *name, int *calls)
 {
@@ -160,7 +168,7 @@ uint32_t CCALL ClientToScreen_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("ClientToScreen");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -178,7 +186,7 @@ uint32_t CCALL CompareStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t 
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
     GAME_STUBLOG("CompareStringA");
-    return 0;
+    return 2; /* CSTR_EQUAL */
 }
 #endif
 
@@ -187,7 +195,7 @@ uint32_t CCALL CompareStringW_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t 
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
     GAME_STUBLOG("CompareStringW");
-    return 0;
+    return 2; /* CSTR_EQUAL */
 }
 #endif
 
@@ -376,7 +384,7 @@ uint32_t CCALL EndPaint_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("EndPaint");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -421,7 +429,7 @@ uint32_t CCALL FillRect_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("FillRect");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -616,9 +624,10 @@ uint32_t CCALL GetExitCodeProcess_c(uint32_t a0, uint32_t a1)
 #ifdef STUB_GetFileInformationByHandle
 uint32_t CCALL GetFileInformationByHandle_c(uint32_t a0, uint32_t a1)
 {
-    (void)a0; (void)a1;
+    (void)a0;
+    if (a1 != 0) memset(GUEST_MEM(a1), 0, 52); /* BY_HANDLE_FILE_INFORMATION */
     GAME_STUBLOG("GetFileInformationByHandle");
-    return 0;
+    return 1;
 }
 #endif
 
@@ -824,7 +833,7 @@ uint32_t CCALL KillTimer_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("KillTimer");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1013,7 +1022,7 @@ uint32_t CCALL ReleaseDC_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("ReleaseDC");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1067,7 +1076,7 @@ uint32_t CCALL SetConsoleCtrlHandler_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("SetConsoleCtrlHandler");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1076,7 +1085,7 @@ uint32_t CCALL SetConsoleTitleA_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("SetConsoleTitleA");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1103,7 +1112,7 @@ uint32_t CCALL SetEnvironmentVariableA_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("SetEnvironmentVariableA");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1121,7 +1130,7 @@ uint32_t CCALL SetForegroundWindow_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("SetForegroundWindow");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1139,7 +1148,7 @@ uint32_t CCALL SetRect_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uin
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
     GAME_STUBLOG("SetRect");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1157,7 +1166,7 @@ uint32_t CCALL SetTimer_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
     (void)a0; (void)a1; (void)a2; (void)a3;
     GAME_STUBLOG("SetTimer");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1175,7 +1184,7 @@ uint32_t CCALL SetWindowPos_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     GAME_STUBLOG("SetWindowPos");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1184,7 +1193,7 @@ uint32_t CCALL SetWindowTextA_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("SetWindowTextA");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1229,7 +1238,7 @@ uint32_t CCALL TerminateProcess_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("TerminateProcess");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1256,7 +1265,7 @@ uint32_t CCALL UnmapViewOfFile_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("UnmapViewOfFile");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1290,9 +1299,10 @@ uint32_t CCALL WaitForInputIdle_c(uint32_t a0, uint32_t a1)
 #ifdef STUB_WinExec
 uint32_t CCALL WinExec_c(uint32_t a0, uint32_t a1)
 {
-    (void)a0; (void)a1;
+    (void)a1;
+    fprintf(stderr, "WinExec: not started: %s\n", (a0 != 0) ? (const char *)GUEST_MEM(a0) : "");
     GAME_STUBLOG("WinExec");
-    return 0;
+    return 2; /* ERROR_FILE_NOT_FOUND */
 }
 #endif
 
@@ -1301,7 +1311,7 @@ uint32_t CCALL WriteConsoleA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
     GAME_STUBLOG("WriteConsoleA");
-    return 0;
+    return 1; /* success */
 }
 #endif
 
@@ -1424,9 +1434,10 @@ uint32_t CCALL midiStreamClose_c(uint32_t a0)
 #ifdef STUB_midiStreamOpen
 uint32_t CCALL midiStreamOpen_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
 {
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    if (a0 != 0) *(uint32_t *)GUEST_MEM(a0) = 0;
     GAME_STUBLOG("midiStreamOpen");
-    return 0;
+    return 6; /* MMSYSERR_NODRIVER: no MIDI output, the game turns MIDI music off */
 }
 #endif
 
