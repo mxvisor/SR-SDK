@@ -86,8 +86,14 @@ EXTERNAL_VARIABLE uint32_t Game_VideoAspectX;		/* X aspect ratio */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectY;		/* Y aspect ratio */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectXR;		/* 1 / (X aspect ratio) */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectYR;		/* 1 / (Y aspect ratio) */
+#if defined(GAME_WINAPI)
+/* the winapi layer owns them, as ints (WinApi-config.h) */
+extern uint32_t Display_Width;						/* physical display width */
+extern uint32_t Display_Height;						/* physical display height */
+#else
 EXTERNAL_VARIABLE uint32_t Display_Width;			/* physical display width */
 EXTERNAL_VARIABLE uint32_t Display_Height;			/* physical display height */
+#endif
 EXTERNAL_VARIABLE uint32_t Display_Bitsperpixel;	/* display bits per pixel */
 EXTERNAL_VARIABLE uint32_t Display_Fullscreen;		/* display - fulscreen ? */
 EXTERNAL_VARIABLE uint32_t Display_FSType;			/* fulscreen type */

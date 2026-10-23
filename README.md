@@ -201,12 +201,20 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DOS_VIDEO_WINDOW(address, size)` | the host copy of a guest access to the VGA window at A0000h, NULL if it is not in it |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
 
-`Game_dosmain.c` is the `main` of a DOS game's port, `Game_dosdisplay.c` its window (mode-13h
-palette, whole-pixel scaling, 4:3), `Game_dosaudio.c` the SDL_mixer device, `Game_dostimer.c`
+`Game_dosmain.c` is the `main` of a DOS game's port, `Game_dosaudio.c` the SDL_mixer device, `Game_dostimer.c`
 `SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the
 functions the file's head names.
 
-The Win32 API layer (`runtime/win32/winapi/`) also takes, all optional:
+`runtime/core/display/pc.c` is the window of every port (mode-13h palette, whole-pixel scaling,
+4:3; on Win32 the window stays hidden, the game draws in its own), `Game_state.c` the variables
+of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows program without
+a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
+
+A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and its settings file in
+`Game_config.c` (`--config-file=` or `GAME_CONFIG_FILENAME` in the game directory; `Sound`,
+`Music` and the keys of the display, audio and input). It says in `Game_hooks.h`:
+`GAME_CONFIG_FILENAME` (required), `GAME_LOG_FILE` and the optional `GAME_WIN_START()`, called
+once the winapi layer is up (a registry the game reads). The layer also takes, all optional:
 `GAME_WINAPI_KEY_MESSAGES` (0: the message pump does not deliver key events; default 1),
 `GAME_WINAPI_START_DIRECTORY` (the directory the game starts in, `"D:\\"` for the disc;
 default the process's own), `GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption)` (a button to

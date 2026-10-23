@@ -1,6 +1,5 @@
 /**
  *
- *  Copyright (C) 2016-2026 Roman Pauer
  *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -23,15 +22,27 @@
  *
  */
 
-#ifndef _GAME_DOSMAIN_H_INCLUDED_
-#define _GAME_DOSMAIN_H_INCLUDED_
+#ifndef _GAME_LOG_H_INCLUDED_
+#define _GAME_LOG_H_INCLUDED_
 
-/* The window of a DOS game's port and the picture it shows
- * (Game_dosdisplay.c, or the game's own).  Game_Display_Flip is in main.h. */
+/* A Windows program starts without a console.  Game_LogOpen gives its stdout
+ * and stderr a file (GAME_LOG_FILE of Game_hooks.h, "game.log" by default) in
+ * the write root, unless the caller gave it somewhere to write.  Game_LogShow
+ * shows the last lines of that file in a message box, for a program that
+ * stopped on an error.  Game_CrashHandlerInstall makes an exception nobody
+ * handles write what is known of it (address, registers, stack) to stderr.
+ * Elsewhere all of them do nothing. */
 
-/* The window, its renderer and Game_TextureData, after display/pc.c's
- * Init_Display2 has set Display_Width, Render_Width and the rest.  0 on success. */
-int Game_Display_Create(void);
-void Game_Display_Destroy(void);
+#if defined(_WIN32)
+void Game_LogOpen(void);
+int Game_LogHasStdout(void);    /* the log file is where stdout goes */
+void Game_LogShow(void);
+void Game_CrashHandlerInstall(void);
+#else
+static inline void Game_LogOpen(void) {}
+static inline int Game_LogHasStdout(void) { return 0; }
+static inline void Game_LogShow(void) {}
+static inline void Game_CrashHandlerInstall(void) {}
+#endif
 
-#endif /* _GAME_DOSMAIN_H_INCLUDED_ */
+#endif /* _GAME_LOG_H_INCLUDED_ */

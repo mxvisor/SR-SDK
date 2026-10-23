@@ -23,19 +23,23 @@
  *
  */
 
-/* The default display of a DOS game: a resizable window, 4:3 in shape,
+/* The default display of a port: a resizable window, 4:3 in shape,
  * showing the game's video mode.
  *
  * The flip thread expands the frame (Render_Width x Render_Height, 8 bits) through
  * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
  * scales that up by whole pixels and keeps the picture 4:3 inside the window.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
- * Set_Palette_Value (Game_dosvga.c).
+ * Set_Palette_Value (Game_dosvga.c) or by the Win32 palette calls.
+ *
+ * A Win32 game draws in a window of its own (WinApi-ddraw.c); the one made here
+ * stays hidden, because shown it would be a second, black window that covers
+ * the game and takes the mouse.
  *
  * A game with a display of its own (another renderer, labels over the picture)
- * lists Game_dosdisplay.c in runtime_skip and brings Init_Display,
- * Init_Display2, Config_Display, Cleanup_Display, Set_Palette_Value,
- * Game_Display_Create, Game_Display_Destroy and Game_Display_Flip. */
+ * has its own game/display/pc.c with Init_Display, Init_Display2,
+ * Config_Display, Cleanup_Display, Set_Palette_Value, Game_Display_Create,
+ * Game_Display_Destroy and Game_Display_Flip. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +53,9 @@
 #include "main.h"
 #include "touchgamepad.h"
 #include "palette32bgra.h"
-#include "Game_dosmain.h"
+#if defined(GAME_WINAPI)
+#include "WinApi-ddraw.h"
+#endif
 #include "Game_hooks.h"
 
 static void Set_Palette_Value2(uint32_t index, uint32_t r, uint32_t g, uint32_t b)
@@ -127,7 +133,16 @@ int Config_Display(char *str, char *param)
 
 void Cleanup_Display(void)
 {
+#if defined(GAME_WINAPI)
+    Winapi_DestroyDirectDrawWindow();
+#endif
 }
+#if defined(GAME_WINAPI)
+#define WINDOW_SHOWN_FLAG SDL_WINDOW_HIDDEN
+#else
+#define WINDOW_SHOWN_FLAG 0
+#endif
+
 /* Game_Texture[0] scaled up by whole pixels; see Game_Display_Flip. */
 static int ScaledWidth, ScaledHeight;
 
@@ -136,7 +151,7 @@ static int ScaledWidth, ScaledHeight;
 int Game_Display_Create(void)
 {
     Game_Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE);
+                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG);
     if (Game_Window == NULL) return -1;
     /* resizable; the picture keeps 4:3 inside whatever size the window gets */
     SDL_SetWindowMinimumSize(Game_Window, 320, 240);

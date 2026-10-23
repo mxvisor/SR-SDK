@@ -28,7 +28,7 @@
  * driver counts the position in a virtual screen, 640 wide in the modes up to
  * 320 pixels (the game halves X) and as wide as the picture otherwise; the
  * game sets the range with functions 7 and 8.  The position is the host
- * mouse's in the picture of the game (Game_dosdisplay.c), so a function that
+ * mouse's in the picture of the game (display/pc.c), so a function that
  * moves the cursor (4) and the ones that count the motion since the last call
  * only follow it.
  */
@@ -57,7 +57,7 @@ static int trace_mouse(void)
 
 /* The host mouse in the picture of the game, width x height pixels: the
  * picture is the largest 4:3 rectangle centred in the window (the same as
- * Game_dosdisplay.c shows it). */
+ * display/pc.c shows it). */
 static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
 {
     int window_x = 0, window_y = 0, window_width = 0, window_height = 0;
