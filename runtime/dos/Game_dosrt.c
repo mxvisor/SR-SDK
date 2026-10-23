@@ -41,6 +41,9 @@
 #include "Game_dospit.h"
 #include "Game_dosvga.h"
 #include "Game_hooks.h"
+#ifdef GAME_DOS_SOUNDBLASTER
+#include "Game_dossb.h"
+#endif
 
 /* SR turns a segment-override access into a call with the offset alone, the
  * segment dropped.  A DOS4GW game addresses two segments this way, one after
@@ -66,6 +69,9 @@ static uint32_t port_in(uint16_t port)
     uint32_t value;
 #ifdef GAME_DOS_PORT_IN
     if (GAME_DOS_PORT_IN(port, &value)) return value;
+#endif
+#ifdef GAME_DOS_SOUNDBLASTER
+    if (Game_DosSbIn(port, &value)) return value;
 #endif
     if (port == 0x40) return Game_DosPitIn(port);
     if (port == 0x60 || port == 0x64) return Game_DosKbdPort(port);
@@ -108,6 +114,9 @@ extern "C" void CCALL X86_OutPortProcedure(uint16_t port, uint32_t size, uint32_
     if (trace_enabled(TRACE_PORTS)) fprintf(stderr, "out %04x, %02x\n", port, value);
 #ifdef GAME_DOS_PORT_OUT
     if (GAME_DOS_PORT_OUT(port, value)) return;
+#endif
+#ifdef GAME_DOS_SOUNDBLASTER
+    if (Game_DosSbOut(port, value)) return;
 #endif
     if (port == 0x40 || port == 0x43) Game_DosPitOut(port, (uint8_t)value);
     else Game_DosVgaOut(port, (uint8_t)value);
@@ -198,6 +207,9 @@ int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t fir
 
 void Game_DosRuntimeDeinit(void)
 {
+#ifdef GAME_DOS_SOUNDBLASTER
+    Game_DosSbShutdown();
+#endif
     Game_DosProgramDeinit();
     Game_AudioDeinit();
     Game_DosFileDeinit();

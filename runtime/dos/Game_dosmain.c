@@ -32,6 +32,8 @@
  *   GAME_CONFIG()            reads the port's configuration, after the options
  *   GAME_RUNTIME_INIT()      the game's runtime, after the guest allocator; nonzero: failed
  *   GAME_RUNTIME_DEINIT()    its end
+ *   GAME_DOS_ENV             without GAME_RUNTIME_INIT: the variables of the environment, "NAME=VALUE" strings
+ *                            separated by commas (the BLASTER of GAME_DOS_SOUNDBLASTER comes first)
  *   GAME_LOG_FILE            the name of the Windows log file (default "game.log")
  * The window is Game_dosdisplay.c's, unless the game brings its own. */
 
@@ -59,6 +61,9 @@
 #include "Game_cdrom.h"
 #include "Game_dosmem.h"
 #include "Game_dosrt.h"
+#ifdef GAME_DOS_SOUNDBLASTER
+#include "Game_dossb.h"
+#endif
 #include "Game_music.h"
 #include "Game_vfs.h"
 
@@ -248,11 +253,27 @@ static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
 #define DOS_ENV_OFFSET 0x100u
 #define DOS_ENV_SIZE 0x100u
 
+/* The environment as the C library of a DOS4GW program reads it (the guest's
+ * getenv of the extender reads a copy the extender's server built, which the
+ * port has not got): the array of the addresses of the variables, a zero at
+ * its end, and the guest address of the array. */
+static uint32_t Game_DosEnvironArray[16];
+extern "C" { uint32_t Game_DosEnviron; }
+
 static int Game_DefaultRuntimeInit(int argc, char *argv[])
 {
     uint8_t *psp, *env;
     const char *name = GAME_MAIN_FILENAME;
-    size_t length, pos = 0;
+    const char *const variables[] = {
+#ifdef GAME_DOS_SOUNDBLASTER
+        Game_DosBlaster(),
+#endif
+#ifdef GAME_DOS_ENV
+        GAME_DOS_ENV,
+#endif
+        NULL
+    };
+    size_t length, pos = 0, used = 0, count = 0;
     int index;
 
     if (Game_DosRuntimeInit(0, DOS_LOW_SIZE, DOS_ENV_OFFSET + DOS_ENV_SIZE) != 0) return -1;
@@ -273,12 +294,22 @@ static int Game_DefaultRuntimeInit(int argc, char *argv[])
     psp[3] = (uint8_t)(DOS_LOW_SIZE >> 20);
     psp[0x2c] = (uint8_t)(DOS_ENV_OFFSET >> 4);
     psp[0x2d] = (uint8_t)(DOS_ENV_OFFSET >> 12);
-    /* the environment: no variables, then the program's name */
+    /* the environment: the variables, an empty string, the count of the
+     * strings that follow (1) and the program's name */
     env = psp + DOS_ENV_OFFSET;
-    env[2] = 1;
+    for (index = 0; index < (int)(sizeof(variables) / sizeof(variables[0])) && variables[index] != NULL; index++) {
+        length = strlen(variables[index]);
+        if (used + length + 1 > DOS_ENV_SIZE - 6 - strlen(name) || count >= sizeof(Game_DosEnvironArray) / sizeof(Game_DosEnvironArray[0]) - 1) break;
+        memcpy(env + used, variables[index], length + 1);
+        Game_DosEnvironArray[count++] = GAME_PTR_TO_GUEST32(env + used);
+        used += length + 1;
+    }
+    Game_DosEnvironArray[count] = 0;
+    Game_DosEnviron = GAME_PTR_TO_GUEST32(Game_DosEnvironArray);
+    if (used == 0) used = 1;    /* an empty environment is two zero bytes */
+    env[used + 1] = 1;
     length = strlen(name);
-    if (length > DOS_ENV_SIZE - 5) length = DOS_ENV_SIZE - 5;
-    memcpy(env + 4, name, length);
+    memcpy(env + used + 3, name, length);
     for (index = 1; index < argc && pos < 126; index++) {
         const char *arg = argv[index];
         if (pos != 0) psp[0x81 + pos++] = ' ';

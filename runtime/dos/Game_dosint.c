@@ -43,6 +43,7 @@
 #include "Game_vfs.h"
 #include "Game_dosint.h"
 #include "Game_dosrt.h"
+#include "Game_dosmouse.h"
 #include "Game_dosmem.h"
 #include "Game_dosfile.h"
 #include "Game_doskbd.h"
@@ -505,6 +506,9 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
         return;
     case 0x16:
         if (Game_DosKbdInt16(regs)) return;
+        break;
+    case 0x33:
+        if (Game_DosMouseCall(regs)) return;
         break;
     case 0x10:
         /* The video BIOS: the mode is the port's picture, the text functions

@@ -32,12 +32,17 @@
 #include "Game_doskbd.h"
 #include "Game_dospit.h"
 #include "Game_dosrt.h"
+#include "Game_hooks.h"
+#ifdef GAME_DOS_SOUNDBLASTER
+#include "Game_dossb.h"
+#endif
 
 /* The default SR_CheckTimer of a DOS game: the translated code calls it from
  * every ACTION_* macro (at backward jumps and calls), so it is where the host
  * gets a turn: the window may have been closed, the keyboard is drained and its
  * interrupt delivered, the PIT's channel 0 interrupt (INT 8) is due, and the
- * screen is presented about 30 times a second.  A game that has to do more
+ * screen is presented about 30 times a second, and the IRQ of the Sound
+ * Blaster is due (GAME_DOS_SOUNDBLASTER).  A game that has to do more
  * at INT 8 (a sound driver's timer) defines its own SR_CheckTimer and lists
  * Game_dostimer.c in runtime_skip. */
 
@@ -60,6 +65,10 @@ extern "C" void SR_CheckTimer(void)
     Game_DosPitRun(pit_irq);
 
     Game_DosKbdDeliverIrq();
+
+#ifdef GAME_DOS_SOUNDBLASTER
+    Game_DosSbDeliverIrq();
+#endif
 
     if (now - last_present >= 33)
     {

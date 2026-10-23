@@ -193,6 +193,8 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` |
 | `GAME_CONFIG()` | the port's configuration, read after the options |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
+| `GAME_DOS_ENV` | without `GAME_RUNTIME_INIT`: the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
+| `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code (a handler SR reaches only through a pointer goes into `fixup_interpret_as_code.sci`) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
@@ -227,7 +229,8 @@ the game's handlers run as hardware interrupts, INT 08h, 16h, 1Ah, 21h, 2Fh and 
 `X86_InPortProcedure`/`X86_OutPortProcedure` and `X86_ReadMemProcedure`/`X86_WriteMemProcedure`
 (`Game_dosrt.c`: the PIT, the keyboard, the VGA DAC and retrace, the segment-override accesses).
 Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Game_doskbd.c`),
-MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`) and the VGA ports (`Game_dosvga.c`).
+MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`), the VGA ports (`Game_dosvga.c`) and the
+Microsoft mouse driver of INT 33h with AH = 0 (`Game_dosmouse.c`: the host mouse in the 4:3 picture).
 The game's own services (INT, the A0000h window, a memory dump) and ports come through hooks
 (`GAME_DOS_INTERRUPT`, `GAME_DOS_VIDEO_WINDOW`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
 in `Game_hooks.h`). It brings its sound, its llasm glue (with the handler every vector starts
