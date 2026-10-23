@@ -1885,6 +1885,7 @@ void Winapi_PostActivateApp(int active)
 
 static void translate_key(lpmsg lpMsg, int released, int vkey, int scancode, int repeat)
 {
+    if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, "[message key %s vkey=%d]\n", released ? "up" : "down", vkey);
     lpMsg->message = (released)?WM_KEYUP:WM_KEYDOWN;
     lpMsg->wParam = vkey;
     lpMsg->lParam = scancode << 16;

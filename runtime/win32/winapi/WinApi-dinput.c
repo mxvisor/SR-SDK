@@ -166,11 +166,41 @@ static int input_debug(void)
     return value;
 }
 
+/* with <GAME>_DEBUG_INPUT every SDL event that can mean a key press is listed:
+   the DirectInput queue is not the only way the host can reach the game */
+static int SDLCALL debug_event_watch(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    switch (event->type)
+    {
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            fprintf(stderr, "[sdl key %s scancode=%d repeat=%d t=%u]\n", (event->type == SDL_KEYDOWN) ? "down" : "up",
+                    (int)event->key.keysym.scancode, event->key.repeat, Winapi_GetTicks());
+            break;
+        case SDL_TEXTINPUT:
+            fprintf(stderr, "[sdl text input '%s']\n", event->text.text);
+            break;
+        case SDL_JOYAXISMOTION: case SDL_JOYHATMOTION: case SDL_JOYBUTTONDOWN: case SDL_JOYBUTTONUP:
+        case SDL_CONTROLLERAXISMOTION: case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP:
+        case SDL_JOYDEVICEADDED: case SDL_CONTROLLERDEVICEADDED:
+            fprintf(stderr, "[sdl joystick/controller event type=0x%x]\n", event->type);
+            break;
+        case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
+            fprintf(stderr, "[sdl mouse button %d %s]\n", event->button.button, (event->type == SDL_MOUSEBUTTONDOWN) ? "down" : "up");
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
+
 static void key_queue_init(void)
 {
     if (key_mutex != NULL) return;
     key_mutex = SDL_CreateMutex();
     SDL_AddEventWatch(key_event_watch, NULL);
+    if (input_debug()) SDL_AddEventWatch(debug_event_watch, NULL);
     Game_AutoKeysStart();
 }
 
