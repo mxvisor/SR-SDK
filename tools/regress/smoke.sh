@@ -16,7 +16,9 @@
 # request without being killed, with exit status 0, no process left, and the screen was not blank (at the end of RUN_SECS, or within 12 s after it).
 # rc is the game's exit status; a close by the user is a normal exit, so rc has to be 0.
 #
-# Environment: SMOKE_OUT (default $REGRESS_OUT/smoke) takes the log and the
+# Environment: SMOKE_EXTRA ("VAR=value ..." given to the game besides its own) and
+# SMOKE_LABEL (a name for that variant: the subject becomes GAME:MODE/LABEL and the
+# files <game>-<mode>-<label>); SMOKE_OUT (default $REGRESS_OUT/smoke) takes the log and the
 # screenshot of the run: <game>-<mode>.log and .png.
 . "$(dirname "$0")/lib.sh"
 GAME=$1; MODE=$2; RUN_SECS=${3:-15}; CLOSE_WAIT=${4:-10}
@@ -25,9 +27,11 @@ GAME=$1; MODE=$2; RUN_SECS=${3:-15}; CLOSE_WAIT=${4:-10}
 REPO=$(game_repo "$GAME"); PROG=$(game_field "$GAME" 3); P=$(game_field "$GAME" 4)
 DATA="$ROOT/$(game_field "$GAME" 5)"; CUE=$(game_glob "$(game_field "$GAME" 6)"); PFX=$(game_field "$GAME" 7)
 SMOKE_OUT=${SMOKE_OUT:-$OUT/smoke}; mkdir -p "$SMOKE_OUT"
-LOG=$SMOKE_OUT/$GAME-$MODE.log; SHOT=$SMOKE_OUT/$GAME-$MODE.png
+SUBJ=$GAME:$MODE; FN=$GAME-$MODE
+[ -n "$SMOKE_LABEL" ] && { SUBJ=$SUBJ/$SMOKE_LABEL; FN=$FN-$SMOKE_LABEL; }
+LOG=$SMOKE_OUT/$FN.log; SHOT=$SMOKE_OUT/$FN.png
 report() {   # STATUS DETAIL
-    printf 'smoke\t%s:%s\t%s\t%s\n' "$GAME" "$MODE" "$1" "$2"
+    printf '%s\t%s\t%s\t%s\n' "${SMOKE_KIND:-smoke}" "$SUBJ" "$1" "$2"
 }
 case $MODE in
     linux) BIN=$REPO/build/bin/pc64-linux/$PROG ;;
@@ -51,6 +55,7 @@ export SDL_AUDIODRIVER=dummy
 # SMOKE_TAG is only in the game's environment, to find what it leaves behind
 ENVV=("SMOKE_TAG=$TAG" "${P}_DATA_DIR=$DATA" "${P}_WRITE_ROOT=$WR")
 [ -n "$CUE" ] && ENVV+=("${P}_CD_IMAGE=$CUE")
+[ -n "$SMOKE_EXTRA" ] && ENVV+=($SMOKE_EXTRA)
 cd "$WR"
 if [ $MODE = linux ]; then
     env SDL_VIDEODRIVER=x11 "${ENVV[@]}" "$BIN" > "$LOG" 2>&1 &

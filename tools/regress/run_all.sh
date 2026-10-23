@@ -7,7 +7,7 @@
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke aslr llasm image prefixes
+#   --only LIST      run only these checks, a comma list of: sr build smoke d3d aslr llasm image prefixes
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -22,11 +22,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, aslr, llasm-gen, llasm-llvm, image or prefixes; STATUS is ok, fail or
+# CHECK is sr, build, smoke, d3d, aslr, llasm-gen, llasm-llvm, image or prefixes; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm image prefixes"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
+ONLY="sr build smoke aslr llasm image prefixes d3d"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -109,6 +109,23 @@ aslr_args() { if [ "$2" = wine ]; then echo "1 $(( $(game_secs "$1") / 2 + 1))";
 if want smoke; then
     echo "## smoke: ${GAMES[*]}" >&2
     par_checks smoke smoke.sh
+fi
+
+# the renderer variants of a game (column 9 of games.tsv: label:VAR=value,VAR=value ...),
+# a smoke test of each, one after another
+if want d3d; then
+    echo "## d3d: ${GAMES[*]}" >&2
+    for id in "${GAMES[@]}"; do
+        for v in $(game_field "$id" 9); do
+            for mode in linux wine; do
+                [ "$mode" = wine ] && [ "$WINE" = 0 ] && continue
+                target=$([ $mode = wine ] && echo windows || echo linux)
+                [ "${BUILT[$id:$target]}" = fail ] && continue
+                add "$(SMOKE_KIND=d3d SMOKE_LABEL=${v%%:*} SMOKE_EXTRA="$(echo "${v#*:}" | tr ',' ' ')" \
+                    "$REGRESS_DIR/smoke.sh" "$id" $mode $(smoke_args "$id"))"
+            done
+        done
+    done
 fi
 
 if want aslr; then

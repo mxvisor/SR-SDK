@@ -7,6 +7,7 @@ SR, to `llasm.py` or to the SDK. It compares six things with a saved reference r
 |---|---|---|
 | `sr` | SR's and SRW's output (hashes) for SR's reference games (`SR/SR-games/`: backends llasm/x86/arm/x64; `SR/SRW-games/`: llasm/x86/x64) | `sr-regression.sh` |
 | `build` | `make linux` and `make windows` of every game | `build_all.sh` |
+| `d3d` | `smoke` again for a game's renderer variants (column 9 of `games.tsv`, e.g. a DirectDraw and a software Direct3D renderer; the default is `smoke`); the screenshots are in `smoke/` | `smoke.sh` (`SMOKE_EXTRA`, `SMOKE_LABEL`) |
 | `smoke` | the port starts under Xvfb, runs, closes by `WM_DELETE_WINDOW`, exits by itself and leaves no process; Linux and Wine | `smoke.sh`, `xclose.py` |
 | `image` | the disc images of `images.tsv` through `tools/image/image.py`: the hash of the cue sheet, the bin, the ISO and of every file of the data track must not change | `image_check.py` |
 | `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
