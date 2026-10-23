@@ -81,16 +81,38 @@ static int d3d_logging(void)
 }
 #define d3d_log(...) do { if (d3d_logging()) eprintf(__VA_ARGS__); } while (0)
 
-/* <GAME>_D3D=0/1 overrides the game's choice (GAME_DIRECT3D) */
+/* The renderer: the game's setting (3D= of the config file, Winapi_Direct3DSetMode)
+ * or the default (GAME_DIRECT3D, OpenGL in a d3d_gl build); <GAME>_D3D=0/1 and
+ * <GAME>_D3D_GL=0/1 override both. */
+static int d3d_cfg_enabled = -1;    /* -1: not set */
+static int d3d_cfg_gl = -1;
+static int d3d_gl_failed;
+
+/* 3D=direct3d | software | off: Direct3D on OpenGL, Direct3D with the software
+ * rasteriser, the game's own software rendering (DirectDraw).  Returns 0 for
+ * an unknown value. */
+int Winapi_Direct3DSetMode(const char *mode)
+{
+    if (strcasecmp(mode, "direct3d") == 0) { d3d_cfg_enabled = 1; d3d_cfg_gl = 1; }
+    else if (strcasecmp(mode, "software") == 0) { d3d_cfg_enabled = 1; d3d_cfg_gl = 0; }
+    else if (strcasecmp(mode, "off") == 0) { d3d_cfg_enabled = 0; }
+    else return 0;
+    return 1;
+}
+
+/* the OpenGL window could not be made: Direct3D goes on with the software rasteriser */
+void Winapi_Direct3DNoGL(void)
+{
+    d3d_gl_failed = 1;
+    fprintf(stderr, "Direct3D: no OpenGL, the software rasteriser is used\n");
+}
+
 int Winapi_Direct3DEnabled(void)
 {
-    static int v = -1;
-    if (v < 0)
-    {
-        const char *e = getenv(GAME_ENV("D3D"));
-        v = (e != NULL) ? (atoi(e) != 0) : (GAME_DIRECT3D != 0);
-    }
-    return v;
+    const char *e = getenv(GAME_ENV("D3D"));
+    if (e != NULL) return atoi(e) != 0;
+    if (d3d_cfg_enabled >= 0) return d3d_cfg_enabled;
+    return GAME_DIRECT3D != 0;
 }
 
 /* ---- the objects: guest-visible, a vtable pointer first ---- */
@@ -1524,14 +1546,11 @@ uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
 int Winapi_Direct3DGL(void)
 {
 #ifdef GAME_D3D_GL
-    static int use_gl = -1;
-    if (use_gl < 0)
-    {
-        const char *e = getenv(GAME_ENV("D3D_GL"));
-        /* the OpenGL backend is the normal one in a d3d_gl build */
-        use_gl = (e != NULL) ? (atoi(e) != 0) : 1;
-    }
-    return Winapi_Direct3DEnabled() && use_gl;
+    const char *e = getenv(GAME_ENV("D3D_GL"));
+    if (!Winapi_Direct3DEnabled() || d3d_gl_failed) return 0;
+    if (e != NULL) return atoi(e) != 0;
+    /* the OpenGL backend is the normal one in a d3d_gl build */
+    return (d3d_cfg_gl != 0);
 #else
     return 0;
 #endif

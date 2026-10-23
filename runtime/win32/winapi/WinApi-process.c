@@ -41,6 +41,7 @@
 #include "Game_memory.h"
 #include "CLIB.h"
 #include "Game_hooks.h"
+#include "WinApi-d3d.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -152,6 +153,9 @@ uint32_t CCALL GetCommandLineA_c(void)
         char *text;
 
         for (index = 1; index < winapi_argc; index++) length += strlen(winapi_argv[index]) + 3;
+#ifdef GAME_DIRECT3D_ARG
+        length += sizeof(GAME_DIRECT3D_ARG) + 1;
+#endif
         winapi_command_line = (char *)x86_malloc((unsigned int)length);
         if (winapi_command_line == NULL) return 0;
 
@@ -164,6 +168,10 @@ uint32_t CCALL GetCommandLineA_c(void)
             text += strlen(text);
             sprintf(text, quote ? " \"%s\"" : " %s", winapi_argv[index]);
         }
+#ifdef GAME_DIRECT3D_ARG
+        /* the switch with which the game takes its Direct3D device */
+        if (Winapi_Direct3DEnabled()) strcat(text, " " GAME_DIRECT3D_ARG);
+#endif
     }
     return GUEST_ADDR(winapi_command_line);
 }

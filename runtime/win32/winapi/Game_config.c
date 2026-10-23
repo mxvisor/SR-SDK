@@ -34,6 +34,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_config.h"
+#include "WinApi-d3d.h"
 #include "main.h"
 #include "display.h"
 #include "audio.h"
@@ -142,6 +143,12 @@ void Game_ReadConfig(void)
         {
             // digital sound
             read_on_off(param, &Game_Sound);
+        }
+        else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
+        {
+            // direct3d (OpenGL), software (Direct3D, the software rasteriser) or off;
+            // <GAME>_D3D and <GAME>_D3D_GL win (WinApi-d3d.c)
+            if (!Winapi_Direct3DSetMode(param)) fprintf(stderr, GAME_NAME ": unknown 3D mode: %s\n", param);
         }
         else if ( strcasecmp(str, "Music") == 0 ) // str equals "Music"
         {

@@ -1111,18 +1111,17 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
         return DDERR_UNSUPPORTEDMODE;
     }
 
+    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL() && (lpThis->Window == NULL))
+    {
+        lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
+        /* no OpenGL: Direct3D goes on with the software rasteriser */
+        if (lpThis->Window == NULL) Winapi_Direct3DNoGL();
+    }
+
     if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
     {
         /* the device is drawn with OpenGL: an OpenGL window without an SDL
          * renderer, Present shows the primary through WinApi-d3d.c */
-        if (lpThis->Window == NULL)
-        {
-            lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
-            if (lpThis->Window == NULL)
-            {
-                return DDERR_UNSUPPORTEDMODE;
-            }
-        }
         SDL_ShowWindow(lpThis->Window);
         winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
 

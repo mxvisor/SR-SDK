@@ -41,6 +41,12 @@ extern "C" {
 /* does the port offer Direct3D to the game? */
 int Winapi_Direct3DEnabled(void);
 
+/* the config file's 3D=direct3d|software|off; 0 if the value is unknown */
+int Winapi_Direct3DSetMode(const char *mode);
+
+/* the OpenGL window failed: go on with the software rasteriser */
+void Winapi_Direct3DNoGL(void);
+
 struct SDL_Window;
 
 /* Direct3D on OpenGL (a d3d_gl=yes build): the window is an OpenGL one
