@@ -417,12 +417,36 @@ void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int 
 }
 
 
+/* <GAME>_FPS=1 prints the number of presented frames per second to stderr */
+static void CountFrame(void)
+{
+    static int enabled = -1;
+    static uint32_t t0, frames;
+    uint32_t now;
+
+    if (enabled < 0)
+    {
+        const char *e = getenv(GAME_ENV("FPS"));
+        enabled = (e != NULL) && (e[0] == '1');
+    }
+    if (!enabled) return;
+    now = SDL_GetTicks();
+    if (frames == 0) t0 = now;
+    frames++;
+    if (now - t0 >= 2000)
+    {
+        fprintf(stderr, "FPS: %.1f\n", frames * 1000.0 / (now - t0));
+        frames = 0;
+    }
+}
+
 static void Present(struct IDirectDraw_c *dd)
 {
     struct IDirectDrawSurface_c *prim;
     uint8_t *dst;
     int dstpitch;
 
+    CountFrame();
     prim = dd->Primary;
 #ifdef GAME_D3D_GL
     if (Winapi_Direct3DGL())
