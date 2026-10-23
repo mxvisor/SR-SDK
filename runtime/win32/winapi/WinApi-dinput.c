@@ -17,6 +17,15 @@
 #include "Game_keys.h"
 #include "Game_memory.h"
 
+/* the clock of the guest (timeGetTime, GetTickCount): the time of a data record is read
+   against it, not against SDL's */
+#ifdef _WIN32
+extern "C" __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
+#define Winapi_GetTicks() ((unsigned int)GetTickCount())
+#else
+extern "C" unsigned int CCALL Winapi_GetTicks(void);
+#endif
+
 #if defined(PTROFS_64BIT)
 extern uint64_t pointer_offset;
 #define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
@@ -71,7 +80,7 @@ static int SDLCALL key_event_watch(void *userdata, SDL_Event *event)
     {
         key_queue[key_head].dik = dik;
         key_queue[key_head].down = (event->type == SDL_KEYDOWN);
-        key_queue[key_head].time = event->key.timestamp;
+        key_queue[key_head].time = Winapi_GetTicks();
         key_head = (key_head + 1) % KEY_QUEUE_SIZE;
     }
     SDL_UnlockMutex(key_mutex);
@@ -111,15 +120,15 @@ static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
             SDL_LockMutex(mouse_mutex);
             mouse_dx += event->motion.xrel;
             mouse_dy += event->motion.yrel;
-            if (event->motion.xrel) mouse_queue_put(0, (uint32_t)event->motion.xrel, event->motion.timestamp); /* DIMOFS_X */
-            if (event->motion.yrel) mouse_queue_put(4, (uint32_t)event->motion.yrel, event->motion.timestamp); /* DIMOFS_Y */
+            if (event->motion.xrel) mouse_queue_put(0, (uint32_t)event->motion.xrel, Winapi_GetTicks()); /* DIMOFS_X */
+            if (event->motion.yrel) mouse_queue_put(4, (uint32_t)event->motion.yrel, Winapi_GetTicks()); /* DIMOFS_Y */
             SDL_UnlockMutex(mouse_mutex);
             break;
         case SDL_MOUSEWHEEL:
             if (event->wheel.which == SDL_TOUCH_MOUSEID || event->wheel.y == 0) return 0;
             SDL_LockMutex(mouse_mutex);
             mouse_dz += event->wheel.y * 120; /* WHEEL_DELTA per notch */
-            mouse_queue_put(8, (uint32_t)(event->wheel.y * 120), event->wheel.timestamp); /* DIMOFS_Z */
+            mouse_queue_put(8, (uint32_t)(event->wheel.y * 120), Winapi_GetTicks()); /* DIMOFS_Z */
             SDL_UnlockMutex(mouse_mutex);
             break;
         case SDL_MOUSEBUTTONDOWN:
@@ -134,7 +143,7 @@ static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
             else return 0;
             SDL_LockMutex(mouse_mutex);
             mouse_buttons_down[button] = (event->type == SDL_MOUSEBUTTONDOWN) ? 0x80 : 0;
-            mouse_queue_put((uint8_t)(12 + button), mouse_buttons_down[button], event->button.timestamp); /* DIMOFS_BUTTONn */
+            mouse_queue_put((uint8_t)(12 + button), mouse_buttons_down[button], Winapi_GetTicks()); /* DIMOFS_BUTTONn */
             SDL_UnlockMutex(mouse_mutex);
             break;
         }
