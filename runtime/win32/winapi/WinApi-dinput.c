@@ -320,6 +320,7 @@ uint32_t CCALL IDirectInputDevice_GetDeviceData_c(uint32_t a0, uint32_t a1, uint
             out[1] = key_queue[tail].down ? 0x80u : 0u;
             out[2] = key_queue[tail].time;
             out[3] = ++key_sequence;
+            if (input_debug()) fprintf(stderr, "[dinput key data dik=%02x %s]\n", out[0], out[1] ? "down" : "up");
             tail = (tail + 1) % KEY_QUEUE_SIZE;
             n++;
         }
