@@ -252,7 +252,9 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
 
     glEnable(GL_DEPTH_TEST);
     glClearDepth(1.0);
+    glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
+    glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
 
     scene_target = target;
@@ -351,7 +353,9 @@ void Winapi_D3dGLClear(struct IDirectDrawSurface_c *target,
     if (do_z && scene_has_z)
     {
         glClearDepth(1.0);
+        glDepthMask(GL_TRUE);
         glClear(GL_DEPTH_BUFFER_BIT);
+        glDepthMask(GL_FALSE);
     }
     glDisable(GL_SCISSOR_TEST);
 }
