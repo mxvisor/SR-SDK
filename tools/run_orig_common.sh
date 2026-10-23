@@ -13,7 +13,7 @@
 #   DOS_CWD, DOS_CMD       DOSBox: the directory (in DOS form) and the command to start
 #   DOS_CONF               DOSBox: optional lines for [dosbox]/[cpu] sections (a full text)
 #   WIN_EXE        Wine: the exe, relative to the data directory
-#   WINE_NAME      Wine: the name of the prefix under ~/.cache
+#   WINE_NAME      Wine, optional: the prefix under ~/.cache (default dos-recomp-wine)
 #
 # The game's files are never written: DOSBox mounts them with an overlay, Wine runs on
 # a fuse-overlayfs mount (when it is missing, on a copy), so what the original writes
@@ -144,7 +144,7 @@ run_orig_wine() {
   _orig_init DIR; _orig_parse "$@"
   _orig_need wine
   local pv="${ENVP}_WINEPREFIX" prefix
-  prefix="${!pv:-$HOME/.cache/${WINE_NAME}}"
+  prefix="${!pv:-$HOME/.cache/${WINE_NAME:-dos-recomp-wine}}"
   [ "$prefix" != "$HOME/.wine" ] || { echo "$pv must not be ~/.wine" >&2; exit 1; }
   [ -d "$DATA_DIR" ] || { echo "No game directory: $DATA_DIR" >&2; exit 1; }
   [ -f "$DATA_DIR/$WIN_EXE" ] || { echo "No $WIN_EXE in $DATA_DIR" >&2; exit 1; }

@@ -9,8 +9,8 @@
 #   DATA_DEFAULT   the data directory when $<ENVP>_DATA_DIR is not set
 #   DATA_MARKER    a file that the data directory must hold
 #   CD_DEFAULT     optional: the disc's cue sheet when $<ENVP>_CD_IMAGE is not set
-#   WINE_NAME      Wine only: the name of the prefix under ~/.cache (shared by the
-#                  ports of one game)
+#   WINE_NAME      Wine only, optional: the name of the prefix under ~/.cache; the
+#                  default, dos-recomp-wine, is one prefix for all ports
 #   CONFIG_NAME, CONFIG_TEMPLATE
 #                  optional: the port's config file, copied from the template into
 #                  the write root when missing, and passed as --config-file
@@ -186,7 +186,7 @@ run_wine() {
   BIN="$build_dir/$PROG.exe"
   SHOTS="$GAME_REPO/build/shots/wine"
   local mingw="$(_envp MINGW_BIN)"; : "${mingw:=/usr/x86_64-w64-mingw32/sys-root/mingw/bin}"
-  export WINEPREFIX="$(_envp WINEPREFIX)"; : "${WINEPREFIX:=$HOME/.cache/$WINE_NAME}"; export WINEPREFIX
+  export WINEPREFIX="$(_envp WINEPREFIX)"; : "${WINEPREFIX:=$HOME/.cache/${WINE_NAME:-dos-recomp-wine}}"; export WINEPREFIX
   export WINEDEBUG="${WINEDEBUG:--all}"
   [ "$WINEPREFIX" != "$HOME/.wine" ] || { echo "${ENVP}_WINEPREFIX must not be ~/.wine" >&2; exit 1; }
   command -v wine >/dev/null 2>&1 || { echo "wine is not installed" >&2; exit 1; }

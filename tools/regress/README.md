@@ -78,6 +78,6 @@ Under Wine a fixed base is not an error, only a run that dies is.
 1. Run `run_all.sh`; look at every `CHANGED` and `REGRESSION`.
 2. When all of them are explained, `run_all.sh --save-ref` and commit `ref/`.
 
-`smoke` and `aslr` run `--jobs` games at a time; games that share a Wine prefix run one after another.
+`smoke` and `aslr` run `--jobs` games at a time; games share one Wine prefix (dos-recomp-wine), so the Wine runs go one after another.
 A run waits for the game only until it exits, and under Wine `aslr` starts the game once (the image base is fixed there). A full run takes a few minutes, most of it the slowest game's start.
 A close by the user has to end with exit status 0 (`rc=0`).

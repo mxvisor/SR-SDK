@@ -225,7 +225,6 @@ launcher run-sdl.sh "Run the native port ($TITLE)." run_common.sh "$COMMON
 
 run_native \"\$@\""
 launcher run_sdl_wine.sh "Run the Windows build of the port ($TITLE) under Wine." run_common.sh "$COMMON
-WINE_NAME=$NAME-wine
 
 run_wine \"\$@\""
 if [ "$PLATFORM" = dos ]; then
@@ -240,7 +239,6 @@ else
 $DATA_LINE
 $CD_LINE
 WIN_EXE=$ORIG_NAME$([ -n "$IMAGE" ] || echo '                                  # TODO')
-WINE_NAME=$NAME-wine
 
 run_orig_wine \"\$@\""
 fi
