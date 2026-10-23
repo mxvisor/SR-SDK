@@ -435,7 +435,9 @@ static int dpmi_call(Game_DosRegs *regs)
          * structure of DPMI 0.9 (EDI 00, ESI 04, EBP 08, EBX 10, EDX 14, ECX
          * 18, EAX 1C, flags 20, ES 22).  The call runs on a copy.  MSCDEX
          * (INT 2Fh AH=15h) takes its request header from ES:BX; a vector
-         * nobody serves fails, with CF set in the flags. */
+         * nobody serves fails, with CF set in the flags.  The game's
+         * GAME_DOS_REALMODE_INTERRUPT(vector, regs, es) comes after MSCDEX
+         * (es: the structure's ES, the segment of a driver's buffer). */
         uint8_t *structure = (uint8_t *)Game_DosGuestPointer(regs->edi);
         const uint8_t vector = (uint8_t)regs->ebx;
         Game_DosRegs nested;
@@ -459,7 +461,11 @@ static int dpmi_call(Game_DosRegs *regs)
         if (trace_int()) fprintf(stderr, "  real-mode int %02x ax=%04x bx=%04x es=%04x\n", vector, Game_DosAX(&nested), Game_DosBX(&nested), es);
         if (vector == 0x2f && Game_DosCdCall(&nested, es)) {
             /* served */
-        } else if (vector == 0x10 || vector == 0x1a || vector == 0x2f) {
+#ifdef GAME_DOS_REALMODE_INTERRUPT
+        } else if (GAME_DOS_REALMODE_INTERRUPT(vector, &nested, es)) {
+            /* the game's */
+#endif
+        } else if (vector == 0x10 || vector == 0x1a || vector == 0x21 || vector == 0x2f) {
             Game_DosDispatch(vector, &nested);
         } else {
             Game_DosSetCarry(&nested, 1);

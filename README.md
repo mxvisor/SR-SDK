@@ -198,6 +198,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
+| `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
 | `GAME_DOS_VIDEO_WINDOW(address, size)` | the host copy of a guest access to the VGA window at A0000h, NULL if it is not in it |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
 
