@@ -220,8 +220,17 @@ int Game_CallGuestInterrupt(uint8_t vector)
 
 int Game_DosTimerTick(void)
 {
-    /* the BIOS handler of INT 8 ends with INT 1Ch, the user timer tick */
-    return Game_CallGuestInterrupt(vectors[0x08] != default_isr ? 0x08 : 0x1c);
+    /* The BIOS handler of INT 8 ends with INT 1Ch, the user timer tick.
+     *
+     * A program that has its own INT 8 handler (the DOS/4GW extender has
+     * one) chains it to the old one -- the runtime's null ISR, which does
+     * not do the INT 1Ch itself.  So the tick goes to the user's INT 1Ch
+     * handler here as well.  A program without its own INT 8 handler gets
+     * the tick at its INT 1Ch handler alone. */
+    int called = 0;
+    if (vectors[0x08] != default_isr) called |= Game_CallGuestInterrupt(0x08);
+    if (vectors[0x1c] != default_isr) called |= Game_CallGuestInterrupt(0x1c);
+    return called;
 }
 
 int Game_GuestIsrRunning(void)
