@@ -935,14 +935,14 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_DuplicateSurface_c(struct IDirectDraw_c *lpThis, struct IDirectDrawSurface_c * param1, PTR32(struct IDirectDrawSurface_c)* param2)
+uint32_t CCALL IDirectDraw_DuplicateSurface_c(struct IDirectDraw_c *lpThis, struct IDirectDrawSurface_c * /*param1*/, PTR32(struct IDirectDrawSurface_c)* /*param2*/)
 {
     lpThis = DDBase(lpThis);
     eprintf("Unsupported method: %s\n", "IDirectDraw_DuplicateSurface");
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDraw_EnumDisplayModes_c(struct IDirectDraw_c *lpThis, uint32_t dwFlags, void * lpDDSurfaceDesc, void * lpContext, void * lpEnumModesCallback)
+uint32_t CCALL IDirectDraw_EnumDisplayModes_c(struct IDirectDraw_c *lpThis, uint32_t /*dwFlags*/, void * /*lpDDSurfaceDesc*/, void * lpContext, void * lpEnumModesCallback)
 {
     lpThis = DDBase(lpThis);
     struct _ddsurfacedesc *desc;
@@ -984,7 +984,7 @@ uint32_t CCALL IDirectDraw_EnumDisplayModes_c(struct IDirectDraw_c *lpThis, uint
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_EnumSurfaces_c(struct IDirectDraw_c *lpThis, uint32_t param1, void * param2, void * param3, void * param4)
+uint32_t CCALL IDirectDraw_EnumSurfaces_c(struct IDirectDraw_c *lpThis, uint32_t /*param1*/, void * /*param2*/, void * /*param3*/, void * /*param4*/)
 {
     lpThis = DDBase(lpThis);
     eprintf("Unsupported method: %s\n", "IDirectDraw_EnumSurfaces");
@@ -1050,7 +1050,7 @@ uint32_t CCALL IDirectDraw_GetDisplayMode_c(struct IDirectDraw_c *lpThis, void *
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_GetFourCCCodes_c(struct IDirectDraw_c *lpThis, uint32_t * param1, uint32_t * param2)
+uint32_t CCALL IDirectDraw_GetFourCCCodes_c(struct IDirectDraw_c *lpThis, uint32_t * param1, uint32_t * /*param2*/)
 {
     lpThis = DDBase(lpThis);
     if (param1 == NULL) return DDERR_INVALIDPARAMS;
@@ -1058,7 +1058,7 @@ uint32_t CCALL IDirectDraw_GetFourCCCodes_c(struct IDirectDraw_c *lpThis, uint32
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_GetGDISurface_c(struct IDirectDraw_c *lpThis, PTR32(struct IDirectDrawSurface_c)* param1)
+uint32_t CCALL IDirectDraw_GetGDISurface_c(struct IDirectDraw_c *lpThis, PTR32(struct IDirectDrawSurface_c)* /*param1*/)
 {
     lpThis = DDBase(lpThis);
     eprintf("Unsupported method: %s\n", "IDirectDraw_GetGDISurface");
@@ -1089,7 +1089,7 @@ uint32_t CCALL IDirectDraw_GetVerticalBlankStatus_c(struct IDirectDraw_c *lpThis
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_Initialize_c(struct IDirectDraw_c *lpThis, void * param1)
+uint32_t CCALL IDirectDraw_Initialize_c(struct IDirectDraw_c *lpThis, void * /*param1*/)
 {
     lpThis = DDBase(lpThis);
     return DD_OK;
@@ -1101,7 +1101,7 @@ uint32_t CCALL IDirectDraw_RestoreDisplayMode_c(struct IDirectDraw_c *lpThis)
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_SetCooperativeLevel_c(struct IDirectDraw_c *lpThis, void * hWnd, uint32_t dwFlags)
+uint32_t CCALL IDirectDraw_SetCooperativeLevel_c(struct IDirectDraw_c *lpThis, void * /*hWnd*/, uint32_t /*dwFlags*/)
 {
     lpThis = DDBase(lpThis);
 #if DEBUG_DDRAW
@@ -1246,7 +1246,7 @@ uint32_t CCALL IDirectDraw_GetAvailableVidMem_c(struct IDirectDraw_c *lpThis, vo
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, uint32_t param1, void * param2)
+uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, uint32_t /*param1*/, void * /*param2*/)
 {
     lpThis = DDBase(lpThis);
     return DD_OK;
@@ -1323,7 +1323,7 @@ uint32_t CCALL IDirectDrawSurface_AddAttachedSurface_c(struct IDirectDrawSurface
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_AddOverlayDirtyRect_c(struct IDirectDrawSurface_c *lpThis, void * param1)
+uint32_t CCALL IDirectDrawSurface_AddOverlayDirtyRect_c(struct IDirectDrawSurface_c */*lpThis*/, void * /*param1*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1401,7 +1401,7 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
     return result;
 }
 
-uint32_t CCALL IDirectDrawSurface_BltBatch_c(struct IDirectDrawSurface_c *lpThis, void * param1, uint32_t param2, uint32_t param3)
+uint32_t CCALL IDirectDrawSurface_BltBatch_c(struct IDirectDrawSurface_c */*lpThis*/, void * /*param1*/, uint32_t /*param2*/, uint32_t /*param3*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1442,22 +1442,22 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
     return result;
 }
 
-uint32_t CCALL IDirectDrawSurface_DeleteAttachedSurface_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, struct IDirectDrawSurface_c * param2)
+uint32_t CCALL IDirectDrawSurface_DeleteAttachedSurface_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*param1*/, struct IDirectDrawSurface_c * /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_EnumAttachedSurfaces_c(struct IDirectDrawSurface_c *lpThis, void * param1, void * param2)
+uint32_t CCALL IDirectDrawSurface_EnumAttachedSurfaces_c(struct IDirectDrawSurface_c */*lpThis*/, void * /*param1*/, void * /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_EnumOverlayZOrders_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, void * param2, void * param3)
+uint32_t CCALL IDirectDrawSurface_EnumOverlayZOrders_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*param1*/, void * /*param2*/, void * /*param3*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDrawSurface_c * lpDDSurfaceTargetOverride, uint32_t dwFlags)
+uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDrawSurface_c * lpDDSurfaceTargetOverride, uint32_t /*dwFlags*/)
 {
     struct IDirectDrawSurface_c *src;
 
@@ -1497,7 +1497,7 @@ uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(struct IDirectDrawSurface
     return DDERR_NOTFOUND;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetBltStatus_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1)
+uint32_t CCALL IDirectDrawSurface_GetBltStatus_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*param1*/)
 {
     return DD_OK;
 }
@@ -1525,7 +1525,7 @@ uint32_t CCALL IDirectDrawSurface_GetClipper_c(struct IDirectDrawSurface_c *lpTh
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetColorKey_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags, void * lpDDColorKey)
+uint32_t CCALL IDirectDrawSurface_GetColorKey_c(struct IDirectDrawSurface_c *lpThis, uint32_t /*dwFlags*/, void * lpDDColorKey)
 {
     struct _ddcolorkey *key = (struct _ddcolorkey *)lpDDColorKey;
 
@@ -1537,18 +1537,18 @@ uint32_t CCALL IDirectDrawSurface_GetColorKey_c(struct IDirectDrawSurface_c *lpT
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetDC_c(struct IDirectDrawSurface_c *lpThis, PTR32(void)* lphDC)
+uint32_t CCALL IDirectDrawSurface_GetDC_c(struct IDirectDrawSurface_c */*lpThis*/, PTR32(void)* /*lphDC*/)
 {
     /* no GDI device contexts */
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetFlipStatus_c(struct IDirectDrawSurface_c *lpThis, uint32_t dwFlags)
+uint32_t CCALL IDirectDrawSurface_GetFlipStatus_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*dwFlags*/)
 {
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetOverlayPosition_c(struct IDirectDrawSurface_c *lpThis, int32_t * param1, int32_t * param2)
+uint32_t CCALL IDirectDrawSurface_GetOverlayPosition_c(struct IDirectDrawSurface_c */*lpThis*/, int32_t * /*param1*/, int32_t * /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1629,7 +1629,7 @@ uint32_t CCALL IDirectDrawSurface_GetSurfaceDesc_c(struct IDirectDrawSurface_c *
     return GetSurfaceDesc(lpThis, lpDDSurfaceDesc);
 }
 
-uint32_t CCALL IDirectDrawSurface_Initialize_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDraw_c * param1, void * param2)
+uint32_t CCALL IDirectDrawSurface_Initialize_c(struct IDirectDrawSurface_c */*lpThis*/, struct IDirectDraw_c * /*param1*/, void * /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1640,7 +1640,7 @@ uint32_t CCALL IDirectDrawSurface_IsLost_c(struct IDirectDrawSurface_c *lpThis)
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_Lock_c(struct IDirectDrawSurface_c *lpThis, void * lpDestRect, struct _ddsurfacedesc *lpDDSurfaceDesc, uint32_t dwFlags, void * hEvent)
+uint32_t CCALL IDirectDrawSurface_Lock_c(struct IDirectDrawSurface_c *lpThis, void * lpDestRect, struct _ddsurfacedesc *lpDDSurfaceDesc, uint32_t /*dwFlags*/, void * /*hEvent*/)
 {
     const struct _rect *r = (const struct _rect *)lpDestRect;
     uint8_t *p;
@@ -1673,12 +1673,12 @@ uint32_t CCALL IDirectDrawSurface_Lock_c(struct IDirectDrawSurface_c *lpThis, vo
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_ReleaseDC_c(struct IDirectDrawSurface_c *lpThis, void * param1)
+uint32_t CCALL IDirectDrawSurface_ReleaseDC_c(struct IDirectDrawSurface_c */*lpThis*/, void * /*param1*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_Restore_c(struct IDirectDrawSurface_c *lpThis)
+uint32_t CCALL IDirectDrawSurface_Restore_c(struct IDirectDrawSurface_c */*lpThis*/)
 {
     return DD_OK;
 }
@@ -1719,7 +1719,7 @@ uint32_t CCALL IDirectDrawSurface_SetColorKey_c(struct IDirectDrawSurface_c *lpT
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_SetOverlayPosition_c(struct IDirectDrawSurface_c *lpThis, int32_t param1, int32_t param2)
+uint32_t CCALL IDirectDrawSurface_SetOverlayPosition_c(struct IDirectDrawSurface_c */*lpThis*/, int32_t /*param1*/, int32_t /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1738,7 +1738,7 @@ uint32_t CCALL IDirectDrawSurface_SetPalette_c(struct IDirectDrawSurface_c *lpTh
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, void * lpRect)
+uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, void * /*lpRect*/)
 {
     if (lpThis == NULL) return DDERR_INVALIDPARAMS;
 
@@ -1760,17 +1760,17 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_UpdateOverlay_c(struct IDirectDrawSurface_c *lpThis, void * param1, struct IDirectDrawSurface_c * param2, void * param3, uint32_t param4, void * param5)
+uint32_t CCALL IDirectDrawSurface_UpdateOverlay_c(struct IDirectDrawSurface_c */*lpThis*/, void * /*param1*/, struct IDirectDrawSurface_c * /*param2*/, void * /*param3*/, uint32_t /*param4*/, void * /*param5*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_UpdateOverlayDisplay_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1)
+uint32_t CCALL IDirectDrawSurface_UpdateOverlayDisplay_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*param1*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurface_c *lpThis, uint32_t param1, struct IDirectDrawSurface_c * param2)
+uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(struct IDirectDrawSurface_c */*lpThis*/, uint32_t /*param1*/, struct IDirectDrawSurface_c * /*param2*/)
 {
     return DDERR_UNSUPPORTED;
 }
@@ -1871,7 +1871,7 @@ uint32_t CCALL IDirectDrawClipper_SetHWnd_c(struct IDirectDrawClipper_c *lpThis,
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawPalette_QueryInterface_c(struct IDirectDrawPalette_c *lpThis, void * riid, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectDrawPalette_QueryInterface_c(struct IDirectDrawPalette_c */*lpThis*/, void * /*riid*/, PTR32(void)* ppvObj)
 {
     if (ppvObj == NULL) return E_POINTER;
     return E_NOINTERFACE;
@@ -1904,7 +1904,7 @@ uint32_t CCALL IDirectDrawPalette_GetCaps_c(struct IDirectDrawPalette_c *lpThis,
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawPalette_GetEntries_c(struct IDirectDrawPalette_c *lpThis, uint32_t dwFlags, uint32_t dwBase, uint32_t dwNumEntries, void * lpEntries)
+uint32_t CCALL IDirectDrawPalette_GetEntries_c(struct IDirectDrawPalette_c *lpThis, uint32_t /*dwFlags*/, uint32_t dwBase, uint32_t dwNumEntries, void * lpEntries)
 {
     uint8_t *out = (uint8_t *)lpEntries;
     uint32_t i;
@@ -1922,12 +1922,12 @@ uint32_t CCALL IDirectDrawPalette_GetEntries_c(struct IDirectDrawPalette_c *lpTh
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawPalette_Initialize_c(struct IDirectDrawPalette_c *lpThis, void * param1, uint32_t param2, void * param3)
+uint32_t CCALL IDirectDrawPalette_Initialize_c(struct IDirectDrawPalette_c */*lpThis*/, void * /*param1*/, uint32_t /*param2*/, void * /*param3*/)
 {
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpThis, uint32_t dwFlags, uint32_t dwStartingEntry, uint32_t dwCount, void * lpEntries)
+uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpThis, uint32_t /*dwFlags*/, uint32_t dwStartingEntry, uint32_t dwCount, void * lpEntries)
 {
     const uint8_t *in = (const uint8_t *)lpEntries;
     uint32_t i;
@@ -1944,11 +1944,6 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpTh
     return DD_OK;
 }
 
-
-/* The screen of a renderer that is not DirectDraw (Glide): the window, renderer
- * and ARGB8888 texture of a DirectDraw display mode, held by an object the
- * program never sees. */
-static struct IDirectDraw_c *dd_own_screen = NULL;
 
 SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
 {

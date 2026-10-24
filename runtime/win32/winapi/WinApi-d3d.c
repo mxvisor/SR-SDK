@@ -307,7 +307,7 @@ uint32_t CCALL IDirect3D2_Release_c(void *lpThis)
 /* The devices, to the callback of the game:
  *   BOOL cb(GUID *guid, char *description, char *name, D3DDEVICEDESC *hw, D3DDEVICEDESC *hel, void *context);
  * the HAL (the hardware part of the description is filled) and the RGB device (the emulation) */
-uint32_t CCALL IDirect3D2_EnumDevices_c(void *lpThis, uint32_t callback, uint32_t context)
+uint32_t CCALL IDirect3D2_EnumDevices_c(void */*lpThis*/, uint32_t callback, uint32_t context)
 {
     static const struct { const uint8_t *guid; const char *description; const char *name; int hw; } devices[2] = {
         { IID_HALDevice, "Direct3D HAL", "Direct3D Hardware", 1 },
@@ -343,13 +343,13 @@ uint32_t CCALL IDirect3D2_EnumDevices_c(void *lpThis, uint32_t callback, uint32_
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3D2_CreateLight_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3D2_CreateLight_c(void */*lpThis*/, void */*a1*/, void */*a2*/)
 {
     d3d_log("D3D: CreateLight (not supported)\n");
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3D2_CreateMaterial_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3D2_CreateMaterial_c(void */*lpThis*/, void *a1, void */*a2*/)
 {
     d3d_material *m;
 
@@ -360,7 +360,7 @@ uint32_t CCALL IDirect3D2_CreateMaterial_c(void *lpThis, void *a1, void *a2)
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3D2_CreateViewport_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3D2_CreateViewport_c(void */*lpThis*/, void *a1, void */*a2*/)
 {
     d3d_viewport *v;
 
@@ -372,7 +372,7 @@ uint32_t CCALL IDirect3D2_CreateViewport_c(void *lpThis, void *a1, void *a2)
 }
 
 /* D3DFINDDEVICERESULT: dwSize, guid, the descriptions of the hardware and the emulation */
-uint32_t CCALL IDirect3D2_FindDevice_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3D2_FindDevice_c(void */*lpThis*/, void */*a1*/, void *a2)
 {
     uint8_t *r = (uint8_t *)a2;
 
@@ -447,7 +447,7 @@ uint32_t CCALL IDirect3DDevice2_Release_c(void *lpThis)
 }
 
 /* the hardware and the emulated description; the part that does not belong to the device stays empty */
-uint32_t CCALL IDirect3DDevice2_GetCaps_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_GetCaps_c(void */*lpThis*/, void *a1, void *a2)
 {
     uint32_t *hw = (uint32_t *)a1, *hel = (uint32_t *)a2;
 
@@ -457,13 +457,13 @@ uint32_t CCALL IDirect3DDevice2_GetCaps_c(void *lpThis, void *a1, void *a2)
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_SwapTextureHandles_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_SwapTextureHandles_c(void */*lpThis*/, void */*a1*/, void */*a2*/)
 {
     d3d_log("D3D: SwapTextureHandles (not supported)\n");
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_GetStats_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DDevice2_GetStats_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -508,7 +508,7 @@ uint32_t CCALL IDirect3DDevice2_DeleteViewport_c(void *lpThis, void *a1)
     return D3DERR_INVALIDARG;
 }
 
-uint32_t CCALL IDirect3DDevice2_NextViewport_c(void *lpThis, void *a1, void *a2, uint32_t a3)
+uint32_t CCALL IDirect3DDevice2_NextViewport_c(void */*lpThis*/, void */*a1*/, void */*a2*/, uint32_t /*a3*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -516,7 +516,7 @@ uint32_t CCALL IDirect3DDevice2_NextViewport_c(void *lpThis, void *a1, void *a2,
 /* The pixel formats of the textures, to the callback of the game:
  *   HRESULT cb(DDSURFACEDESC *desc, void *context)
  * 8 bit with a palette, then 16 bit with 5-6-5, 1-5-5-5 and 4-4-4-4 */
-uint32_t CCALL IDirect3DDevice2_EnumTextureFormats_c(void *lpThis, uint32_t callback, uint32_t context)
+uint32_t CCALL IDirect3DDevice2_EnumTextureFormats_c(void */*lpThis*/, uint32_t callback, uint32_t context)
 {
     static const struct { uint32_t flags, bits, r, g, b, a; } formats[4] = {
         { 0x40 | 0x20, 8, 0, 0, 0, 0 },
@@ -618,7 +618,7 @@ uint32_t CCALL IDirect3DDevice2_GetCurrentViewport_c(void *lpThis, void *a1)
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_SetRenderTarget_c(void *lpThis, void *a1, uint32_t a2)
+uint32_t CCALL IDirect3DDevice2_SetRenderTarget_c(void *lpThis, void *a1, uint32_t /*a2*/)
 {
     d3d_device *dev = (d3d_device *)lpThis;
     struct IDirectDrawSurface_c *surface = (struct IDirectDrawSurface_c *)a1;
@@ -653,29 +653,29 @@ uint32_t CCALL IDirect3DDevice2_GetRenderTarget_c(void *lpThis, void *a1)
 }
 
 /* the primitives of the execute-less interface of DirectX 3 */
-uint32_t CCALL IDirect3DDevice2_Begin_c(void *lpThis, uint32_t a1, uint32_t a2, uint32_t a3)
+uint32_t CCALL IDirect3DDevice2_Begin_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/, uint32_t /*a3*/)
 {
     d3d_log("D3D: Begin (not supported)\n");
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_BeginIndexed_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+uint32_t CCALL IDirect3DDevice2_BeginIndexed_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/, void */*a3*/, uint32_t /*a4*/, uint32_t /*a5*/)
 {
     d3d_log("D3D: BeginIndexed (not supported)\n");
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_Vertex_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DDevice2_Vertex_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_Index_c(void *lpThis, uint32_t a1)
+uint32_t CCALL IDirect3DDevice2_Index_c(void */*lpThis*/, uint32_t /*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_End_c(void *lpThis, uint32_t a1)
+uint32_t CCALL IDirect3DDevice2_End_c(void */*lpThis*/, uint32_t /*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -702,29 +702,29 @@ uint32_t CCALL IDirect3DDevice2_SetRenderState_c(void *lpThis, uint32_t a1, uint
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_GetLightState_c(void *lpThis, uint32_t a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_GetLightState_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_SetLightState_c(void *lpThis, uint32_t a1, uint32_t a2)
+uint32_t CCALL IDirect3DDevice2_SetLightState_c(void */*lpThis*/, uint32_t a1, uint32_t a2)
 {
     d3d_log("D3D: SetLightState %u = 0x%x\n", a1, a2);
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_SetTransform_c(void *lpThis, uint32_t a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_SetTransform_c(void */*lpThis*/, uint32_t a1, void */*a2*/)
 {
     d3d_log("D3D: SetTransform %u (ignored: the game sends transformed vertices)\n", a1);
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_GetTransform_c(void *lpThis, uint32_t a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_GetTransform_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void *lpThis, uint32_t a1, void *a2)
+uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/)
 {
     return D3D_OK;
 }
@@ -1157,23 +1157,23 @@ static uint32_t draw_primitive(d3d_device *dev, uint32_t type, uint32_t vtype, c
 }
 
 /* type, vertex type (D3DVT_TLVERTEX), vertices, count, flags */
-uint32_t CCALL IDirect3DDevice2_DrawPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+uint32_t CCALL IDirect3DDevice2_DrawPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t /*a5*/)
 {
     return draw_primitive((d3d_device *)lpThis, a1, a2, (const float *)a3, a4, NULL, a4);
 }
 
 /* type, vertex type, vertices, vertex count, indices (WORD), index count, flags */
-uint32_t CCALL IDirect3DDevice2_DrawIndexedPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, void *a5, uint32_t a6, uint32_t a7)
+uint32_t CCALL IDirect3DDevice2_DrawIndexedPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, void *a5, uint32_t a6, uint32_t /*a7*/)
 {
     return draw_primitive((d3d_device *)lpThis, a1, a2, (const float *)a3, a4, (const uint16_t *)a5, a6);
 }
 
-uint32_t CCALL IDirect3DDevice2_SetClipStatus_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DDevice2_SetClipStatus_c(void */*lpThis*/, void */*a1*/)
 {
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DDevice2_GetClipStatus_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DDevice2_GetClipStatus_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -1200,7 +1200,7 @@ uint32_t CCALL IDirect3DViewport2_Release_c(void *lpThis)
     return 0;
 }
 
-uint32_t CCALL IDirect3DViewport2_Initialize_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DViewport2_Initialize_c(void */*lpThis*/, void */*a1*/)
 {
     return D3D_OK;
 }
@@ -1228,12 +1228,12 @@ uint32_t CCALL IDirect3DViewport2_SetViewport_c(void *lpThis, void *a1)
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DViewport2_TransformVertices_c(void *lpThis, uint32_t a1, void *a2, uint32_t a3, void *a4)
+uint32_t CCALL IDirect3DViewport2_TransformVertices_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/, uint32_t /*a3*/, void */*a4*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DViewport2_LightElements_c(void *lpThis, uint32_t a1, void *a2)
+uint32_t CCALL IDirect3DViewport2_LightElements_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -1254,12 +1254,12 @@ uint32_t CCALL IDirect3DViewport2_GetBackground_c(void *lpThis, void *a1, void *
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DViewport2_SetBackgroundDepth_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DViewport2_SetBackgroundDepth_c(void */*lpThis*/, void */*a1*/)
 {
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DViewport2_GetBackgroundDepth_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3DViewport2_GetBackgroundDepth_c(void */*lpThis*/, void */*a1*/, void */*a2*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -1354,17 +1354,17 @@ uint32_t CCALL IDirect3DViewport2_Clear_c(void *lpThis, uint32_t a1, void *a2, u
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DViewport2_AddLight_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DViewport2_AddLight_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DViewport2_DeleteLight_c(void *lpThis, void *a1)
+uint32_t CCALL IDirect3DViewport2_DeleteLight_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
 }
 
-uint32_t CCALL IDirect3DViewport2_NextLight_c(void *lpThis, void *a1, void *a2, uint32_t a3)
+uint32_t CCALL IDirect3DViewport2_NextLight_c(void */*lpThis*/, void */*a1*/, void */*a2*/, uint32_t /*a3*/)
 {
     return D3DERR_NOTIMPL;
 }
@@ -1421,7 +1421,7 @@ uint32_t CCALL IDirect3DMaterial2_GetMaterial_c(void *lpThis, void *a1)
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DMaterial2_GetHandle_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3DMaterial2_GetHandle_c(void *lpThis, void */*a1*/, void *a2)
 {
     d3d_material *m = (d3d_material *)lpThis;
     int i;
@@ -1491,7 +1491,7 @@ uint32_t CCALL IDirect3DTexture2_Release_c(void *lpThis)
     return IDirectDrawSurface_Release_c(((d3d_texture *)lpThis)->surface);
 }
 
-uint32_t CCALL IDirect3DTexture2_GetHandle_c(void *lpThis, void *a1, void *a2)
+uint32_t CCALL IDirect3DTexture2_GetHandle_c(void *lpThis, void */*a1*/, void *a2)
 {
     d3d_texture *t = (d3d_texture *)lpThis;
     int i;
@@ -1515,7 +1515,7 @@ uint32_t CCALL IDirect3DTexture2_GetHandle_c(void *lpThis, void *a1, void *a2)
 }
 
 /* the palette of the surface is read when the texture is used */
-uint32_t CCALL IDirect3DTexture2_PaletteChanged_c(void *lpThis, uint32_t a1, uint32_t a2)
+uint32_t CCALL IDirect3DTexture2_PaletteChanged_c(void *lpThis, uint32_t /*a1*/, uint32_t /*a2*/)
 {
     ((d3d_texture *)lpThis)->surface->texture_gen++;
     return D3D_OK;

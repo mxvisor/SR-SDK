@@ -390,9 +390,9 @@ void init_sleepmode(void)
         ntdll_handle = GetModuleHandleA("ntdll.dll");
         if (ntdll_handle != NULL)
         {
-            NtDelayExecution = (LONG(__stdcall*)(BOOL, PLARGE_INTEGER)) GetProcAddress(ntdll_handle, "NtDelayExecution");
-            NtSetTimerResolution = (LONG(__stdcall*)(ULONG, BOOLEAN, PULONG)) GetProcAddress(ntdll_handle, "NtSetTimerResolution");
-            NtQueryTimerResolution = (LONG(__stdcall*)(PULONG, PULONG, PULONG)) GetProcAddress(ntdll_handle, "NtQueryTimerResolution");
+            NtDelayExecution = (LONG(__stdcall*)(BOOL, PLARGE_INTEGER)) (void *)GetProcAddress(ntdll_handle, "NtDelayExecution");
+            NtSetTimerResolution = (LONG(__stdcall*)(ULONG, BOOLEAN, PULONG)) (void *)GetProcAddress(ntdll_handle, "NtSetTimerResolution");
+            NtQueryTimerResolution = (LONG(__stdcall*)(PULONG, PULONG, PULONG)) (void *)GetProcAddress(ntdll_handle, "NtQueryTimerResolution");
 
             if ((NtDelayExecution != NULL) && (NtSetTimerResolution != NULL) && (NtQueryTimerResolution != NULL))
             {
@@ -2726,20 +2726,20 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
 }
 
 
-uint32_t CCALL AdjustWindowRectEx_c(void *lpRect, uint32_t dwStyle, uint32_t bMenu, uint32_t dwExStyle)
+uint32_t CCALL AdjustWindowRectEx_c(void */*lpRect*/, uint32_t /*dwStyle*/, uint32_t /*bMenu*/, uint32_t /*dwExStyle*/)
 {
     eprintf("Unimplemented: %s\n", "AdjustWindowRectEx");
     exit(1);
 //    return AdjustWindowRectEx((LPRECT)lpRect, dwStyle, bMenu, dwExStyle);
 }
 
-uint32_t CCALL ClipCursor_c(const void *lpRect)
+uint32_t CCALL ClipCursor_c(const void */*lpRect*/)
 {
     return 1;
 //    return ClipCursor((const RECT *)lpRect);
 }
 
-void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, const char *lpWindowName, uint32_t dwStyle, int32_t x, int32_t y, int32_t nWidth, int32_t nHeight, void *hWndParent, void *hMenu, void *hInstance, void *lpParam)
+void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName*/, const char */*lpWindowName*/, uint32_t /*dwStyle*/, int32_t /*x*/, int32_t /*y*/, int32_t /*nWidth*/, int32_t /*nHeight*/, void */*hWndParent*/, void */*hMenu*/, void */*hInstance*/, void */*lpParam*/)
 {
 #ifdef DEBUG_USER32
     eprintf("CreateWindowExA: 0x%x, %s, %s, 0x%x, %i, %i, %i, %i\n", dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight);
@@ -2783,7 +2783,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
     return PSEUDO_HANDLE_MAIN_WINDOW;
 }
 
-uint32_t CCALL DefWindowProcA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
+uint32_t CCALL DefWindowProcA_c(void */*hWnd*/, uint32_t /*Msg*/, uint32_t /*wParam*/, uint32_t /*lParam*/)
 {
 #ifdef DEBUG_USER32
     eprintf("DefWindowProcA: 0x%" PRIxPTR ", 0x%x, 0x%x, 0x%x\n", (uintptr_t)hWnd, Msg, wParam, lParam);
@@ -3034,7 +3034,7 @@ void * CCALL LoadCursorA_c(void *hInstance, PTR32(const char) lpCursorName)
     return NULL;
 }
 
-void * CCALL LoadIconA_c(void *hInstance, PTR32(const char) lpIconName)
+void * CCALL LoadIconA_c(void */*hInstance*/, PTR32(const char) /*lpIconName*/)
 {
 #ifdef DEBUG_USER32
     if ( (GET_PTR32_VALUE(lpIconName) & ~(uint32_t)0xffff) == 0 )
@@ -3052,7 +3052,7 @@ void * CCALL LoadIconA_c(void *hInstance, PTR32(const char) lpIconName)
     return NULL;
 }
 
-void * CCALL LoadImageA_c(void *hinst, const char *lpszName, uint32_t uType, int32_t cxDesired, int32_t cyDesired, uint32_t fuLoad)
+void * CCALL LoadImageA_c(void */*hinst*/, const char *lpszName, uint32_t uType, int32_t /*cxDesired*/, int32_t /*cyDesired*/, uint32_t fuLoad)
 {
 #ifndef _WIN32
     char buf[8192];
@@ -3283,7 +3283,7 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
     exit(1);
 }
 
-uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
+uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t /*wParam*/, uint32_t /*lParam*/)
 {
 #ifdef DEBUG_USER32
     eprintf("PostMessageA: 0x%" PRIxPTR ", %i, %i, %i\n", (uintptr_t)hWnd, Msg, wParam, lParam);
@@ -3394,7 +3394,7 @@ int32_t CCALL ShowCursor_c(uint32_t bShow)
     return cursor_visibility;
 }
 
-uint32_t CCALL ShowWindow_c(void *hWnd, int32_t nCmdShow)
+uint32_t CCALL ShowWindow_c(void */*hWnd*/, int32_t /*nCmdShow*/)
 {
 #ifdef DEBUG_USER32
     eprintf("ShowWindow: 0x%" PRIxPTR ", %i\n", (uintptr_t)hWnd, nCmdShow);
@@ -3403,7 +3403,7 @@ uint32_t CCALL ShowWindow_c(void *hWnd, int32_t nCmdShow)
     return 0;
 }
 
-uint32_t CCALL TranslateMessage_c(void *pMsg)
+uint32_t CCALL TranslateMessage_c(void */*pMsg*/)
 {
 #ifdef DEBUG_USER32
     eprintf("TranslateMessage\n");
@@ -3416,7 +3416,7 @@ uint32_t CCALL TranslateMessage_c(void *pMsg)
     return 1;
 }
 
-uint32_t CCALL UpdateWindow_c(void *hWnd)
+uint32_t CCALL UpdateWindow_c(void */*hWnd*/)
 {
 #ifdef DEBUG_USER32
     eprintf("UpdateWindow: 0x%" PRIxPTR "\n", (uintptr_t)hWnd);
@@ -3425,7 +3425,7 @@ uint32_t CCALL UpdateWindow_c(void *hWnd)
     return 1;
 }
 
-uint32_t CCALL ValidateRect_c(void *hWnd, const void *lpRect)
+uint32_t CCALL ValidateRect_c(void */*hWnd*/, const void */*lpRect*/)
 {
     eprintf("Unimplemented: %s\n", "ValidateRect");
     exit(1);

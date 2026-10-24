@@ -255,7 +255,7 @@ int32_t CCALL sscanf2_c(const char *str, const char *format, uint32_t *ap)
 }
 
 
-int32_t CCALL system_c(const char *command)
+int32_t CCALL system_c(const char */*command*/)
 {
 #ifdef DEBUG_CLIB
     eprintf("system: 0x%" PRIxPTR " (%s)\n", (uintptr_t) command, command);
@@ -290,7 +290,7 @@ void CCALL __report_gsfailure_c(void)
     exit(0x409);
 }
 
-int32_t CCALL _except_handler4_c(int32_t _1, void *TargetFrame, int32_t _3)
+int32_t CCALL _except_handler4_c(int32_t /*_1*/, void */*TargetFrame*/, int32_t /*_3*/)
 {
     fprintf(stderr, "exception handler: %i\n", 4);
     exit(0);

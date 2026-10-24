@@ -20,6 +20,7 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  *
+ */
 
 /* The kernel32 functions that a Win32 program's startup (the CRT, the first
  * checks) and its memory, locale and time calls need, as the layer answers them:
@@ -529,7 +530,7 @@ uint32_t CCALL IsValidLocale_c(uint32_t a0, uint32_t a1)
 
 uint32_t CCALL GetUserDefaultLCID_c(void) { return 0x0409; } /* en-US */
 
-uint32_t CCALL GetCPInfo_c(uint32_t a0, uint32_t a1)
+uint32_t CCALL GetCPInfo_c(uint32_t /*a0*/, uint32_t a1)
 {
     if (a1 == 0) return 0;
     memset(GUEST_MEM(a1), 0, 20);

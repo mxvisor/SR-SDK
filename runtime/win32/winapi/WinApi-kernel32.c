@@ -123,7 +123,9 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 #define THREAD_PRIORITY_TIME_CRITICAL 15
 
 
+#ifndef MAX_PATH
 #define MAX_PATH 260
+#endif
 
 #define FILE_ATTRIBUTE_READONLY             0x00000001
 #define FILE_ATTRIBUTE_HIDDEN               0x00000002
@@ -537,6 +539,7 @@ uint32_t CCALL Beep_c(uint32_t dwFreq, uint32_t dwDuration)
     struct timespec _tp, rem;
     int ret;
 
+    (void)dwFreq;
     _tp.tv_sec = dwDuration / 1000;
     _tp.tv_nsec = (dwDuration % 1000) * 1000000;
 
@@ -622,7 +625,7 @@ uint32_t CCALL CloseHandle_c(void *hObject)
 //    return CloseHandle((HANDLE)hObject);
 }
 
-uint32_t CCALL CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
+uint32_t CCALL CreateDirectoryA_c(const char *lpPathName, void */*lpSecurityAttributes*/)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("CreateDirectoryA: %s, 0x%" PRIxPTR "\n", lpPathName, (uintptr_t)lpSecurityAttributes);
@@ -720,7 +723,7 @@ uint32_t CCALL GetCurrentDirectoryA_c(uint32_t nBufferLength, char *lpBuffer)
     return (uint32_t)(length + 1);
 }
 
-void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t dwShareMode, void *lpSecurityAttributes, uint32_t dwCreationDistribution, uint32_t dwFlagsAndAttributes, void *hTemplateFile)
+void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t /*dwShareMode*/, void */*lpSecurityAttributes*/, uint32_t dwCreationDistribution, uint32_t /*dwFlagsAndAttributes*/, void *hTemplateFile)
 {
     int file_exists;
     char mode[4];
@@ -944,7 +947,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
     return ret;
 }
 
-void * CCALL CreateMutexA_c(void *lpMutexAttributes, uint32_t bInitialOwner, const char *lpName)
+void * CCALL CreateMutexA_c(void */*lpMutexAttributes*/, uint32_t /*bInitialOwner*/, const char */*lpName*/)
 {
     // the original does not use the mutex - it only checks last error for ERROR_ALREADY_EXISTS, to prevent two instances of the application to run
     Winapi_SetLastError(ERROR_ACCESS_DENIED);
@@ -2181,7 +2184,7 @@ uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesTo
     exit(1);
 }
 
-uint32_t CCALL SetErrorMode_c(uint32_t uMode)
+uint32_t CCALL SetErrorMode_c(uint32_t /*uMode*/)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("SetErrorMode: 0x%x\n", uMode);

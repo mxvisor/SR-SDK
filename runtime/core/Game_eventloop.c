@@ -167,6 +167,8 @@ void Game_Event_Loop(void)
     AppMouseFocus = 1;
     AppInputFocus = 1;
     AppActive = 1;
+    /* read only where the core consumes input (GAME_CORE_CONSUMES_INPUT) */
+    (void)AppMouseFocus; (void)AppInputFocus; (void)AppActive;
     FlipActive = 0;
     PumpEvents = 1;
 

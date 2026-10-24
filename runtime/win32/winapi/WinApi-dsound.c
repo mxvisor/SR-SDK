@@ -1092,7 +1092,7 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *p
 }
 
 
-uint32_t CCALL IDirectSound_QueryInterface_c(struct IDirectSound_c *lpThis, void * riid, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectSound_QueryInterface_c(struct IDirectSound_c */*lpThis*/, void * /*riid*/, PTR32(void)* ppvObj)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSound_QueryInterface: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)riid, (uintptr_t)ppvObj);
@@ -1533,32 +1533,32 @@ uint32_t CCALL IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis,
     return DS_OK;
 }
 
-uint32_t CCALL IDirectSound_Compact_c(struct IDirectSound_c *lpThis)
+uint32_t CCALL IDirectSound_Compact_c(struct IDirectSound_c */*lpThis*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_Compact");
     exit(1);
 }
 
-uint32_t CCALL IDirectSound_GetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t * pdwSpeakerConfig)
+uint32_t CCALL IDirectSound_GetSpeakerConfig_c(struct IDirectSound_c */*lpThis*/, uint32_t * /*pdwSpeakerConfig*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_GetSpeakerConfig");
     exit(1);
 }
 
-uint32_t CCALL IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t dwSpeakerConfig)
+uint32_t CCALL IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c */*lpThis*/, uint32_t /*dwSpeakerConfig*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_SetSpeakerConfig");
     exit(1);
 }
 
-uint32_t CCALL IDirectSound_Initialize_c(struct IDirectSound_c *lpThis, const void * pcGuidDevice)
+uint32_t CCALL IDirectSound_Initialize_c(struct IDirectSound_c */*lpThis*/, const void * /*pcGuidDevice*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_Initialize");
     exit(1);
 }
 
 
-uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c *lpThis, void * riid, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c */*lpThis*/, void * /*riid*/, PTR32(void)* ppvObj)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_QueryInterface: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)riid, (uintptr_t)ppvObj);
@@ -1747,7 +1747,7 @@ uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer
     return DS_OK;
 }
 
-uint32_t CCALL IDirectSoundBuffer_GetFormat_c(struct IDirectSoundBuffer_c *lpThis, void * pwfxFormat, uint32_t dwSizeAllocated, uint32_t * pdwSizeWritten)
+uint32_t CCALL IDirectSoundBuffer_GetFormat_c(struct IDirectSoundBuffer_c */*lpThis*/, void * /*pwfxFormat*/, uint32_t /*dwSizeAllocated*/, uint32_t * /*pdwSizeWritten*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetFormat");
     exit(1);
@@ -1790,7 +1790,7 @@ uint32_t CCALL IDirectSoundBuffer_GetStatus_c(struct IDirectSoundBuffer_c *lpThi
     return DS_OK;
 }
 
-uint32_t CCALL IDirectSoundBuffer_Initialize_c(struct IDirectSoundBuffer_c *lpThis, struct IDirectSound_c * pDirectSound, const void * pcDSBufferDesc)
+uint32_t CCALL IDirectSoundBuffer_Initialize_c(struct IDirectSoundBuffer_c */*lpThis*/, struct IDirectSound_c * /*pDirectSound*/, const void * /*pcDSBufferDesc*/)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_Initialize");
     exit(1);
