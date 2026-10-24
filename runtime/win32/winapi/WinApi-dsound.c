@@ -402,11 +402,11 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
             }
         }
 
-        if ((conv_method == 4)
+        int resample = (conv_method == 4);
 #ifdef USE_SPEEXDSP_RESAMPLER
-            || (conv_method == 5)
+        resample = resample || (conv_method == 5);
 #endif
-           )
+        if (resample)
         {
             if (current->resample_freq != PrimaryBuffer->freq)
             {
