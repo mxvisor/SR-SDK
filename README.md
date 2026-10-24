@@ -113,7 +113,7 @@ scons input_exe=/path/to/GAME.EXE
 The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets are scons's
 (`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.
 `make linux`, `make windows` (the MinGW build with the SDL DLLs beside the exe),
-`make portable-data` (`build/dist/portable`: the disc's files and music, from `game/portable.cfg`),
+`make portable-data` (`build/dist/portable`: the game directory of the fullest install with the music, from `game/portable.cfg`),
 `make portable` (both builds, the data, and `build/dist/<name>-{linux,windows}-x64.{tar.gz,zip}`:
 the program, `game/release/<os>/` and its `x64/`, and the data), `make apk`, `make disc`
 (`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean`, `make test`.
@@ -138,11 +138,12 @@ assets: the port reads its files with `fopen`.
 
 `tools/portable_cd.py OUT_DIR`, from the game repository's root, makes the
 game's data directory the port runs from, the directory the game's fullest
-install makes: the files of the disc's data track without its installer (with
-what that install leaves on the disc), the files the installer would have
-written, and the audio tracks as flac, wav or ogg files with a cue sheet. What to
-skip and what to add is in `game/portable.cfg`; the script's header lists its
-keys. Its `image=`, the disc image, is the one path outside the repository; its
+install makes: the files of the disc's data track that installer copies, where
+it puts them, with what that install leaves on the disc and the game still reads
+there at their disc paths (the game directory is the disc as well), the files
+the installer would have written, and the audio tracks as flac, wav or ogg files
+with a cue sheet. What to skip, move and add is in `game/portable.cfg`; the
+script's header lists its keys. Its `image=`, the disc image, is the one path outside the repository; its
 cue sheet is made in `build/cd/`. A portable copy has no launcher script: the
 program finds the game in its own directory.
 
@@ -201,9 +202,8 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_MAIN_FILENAME` | the original's file name, as `argv[0]` of its `main` |
 | `GAME_NAME` | the game's name in the port's messages |
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
-| `GAME_CD_MARKER` | a directory on the CD that tells a copy of the disc from an installed game (without it, only a disc image is found) |
+| `GAME_CD_MARKER` | a file or directory the game reads from the CD: a game directory holding it is also the disc (a portable copy); without it, only a disc image is found |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
-| `GAME_DATA_SUBDIR` | Win32 ports, optional: the directory of a copy of the disc that is the game directory (`"DATA"`), so `<PREFIX>_DATA_DIR` may name the disc |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
 A DOS game (`runtime/dos`) also takes, all optional:
@@ -252,7 +252,7 @@ and `GAME_ENV("WRITE_ROOT")` to the directories `GameActivity` made.
 
 The game directory, the write root, the disc and the DOS handle table are
 `runtime/core/Game_gamedir.c` (`Game_FilesInit`, declared in `Game_vfs.h`); the game
-names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_DATA_SUBDIR`,
+names its data in `Game_hooks.h` (`GAME_DATA_MARKERS`, `GAME_CD_MARKER`,
 `GAME_CD_CURRENT_DRIVE` for a game that runs from the disc). The runtime of a DOS game is
 `runtime/dos`: `Game_DosRuntimeInit`/`Deinit` (`Game_dosrt.c`) start and end it, and it owns the
 procedures the translated code calls -- `X86_InterruptProcedure` (`Game_dosint.c`: the vectors,

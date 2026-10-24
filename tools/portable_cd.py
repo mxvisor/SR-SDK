@@ -32,17 +32,23 @@
 # no disc (a game directory with the disc's files is taken as the disc). It is
 # made of:
 #
-# 1. the files of the disc's data track (ISO9660), as they are, except those
-#    game/portable.cfg names (the installer) and except a directory called
-#    like audio_dir: on a disc it holds entries whose extents are the audio
-#    tracks themselves, not files;
+# 1. the files of the disc's data track (ISO9660), at their disc paths, except
+#    those game/portable.cfg names (what the installer does not copy, and
+#    what it copies elsewhere: place=) and except a directory called like
+#    audio_dir: on a disc it holds entries whose extents are the audio tracks
+#    themselves, not files. What the install leaves on the disc and the game
+#    still reads there stays at its disc path, so the game directory is the
+#    disc as well;
 # 2. extra_files, the files the installer would have written (files of the
 #    repository, game/install/ by custom), as they are;
-# 3. place=<glob> <dest>..., the files the installer would have written to
-#    subdirectories, relocated from the disc tree to OUT_DIR: each <glob> is
-#    a disc-path glob (case-insensitive fnmatch against the ISO9660 name) and
-#    <dest> is either a directory (ending in "/") or a file name; placed files
-#    are copied from the disc and not also written in their disc location;
+# 3. place=<glob> <dest>..., the files the installer copies to another place
+#    than their disc path, relocated from the disc tree to OUT_DIR: <glob> is
+#    either a disc-path glob (case-insensitive fnmatch against the path from
+#    the disc's root) with <dest> a directory (ending in "/") or a file name,
+#    or a disc directory (ending in "/") with <dest> the directory its tree
+#    goes to ("./" is OUT_DIR itself). A file every rule of which it matches
+#    is written to each of their destinations and not at its disc path (a
+#    rule whose <dest> is the disc path keeps it there too);
 # 4. audio_dir/: the audio tracks, one file each, and a cue sheet listing
 #    them. flac decodes to the disc's samples bit for bit; wav is the same
 #    uncompressed; ogg is lossy, only smaller.
@@ -63,13 +69,17 @@
 #     extra_files=<paths>              copied into OUT_DIR as they are
 #     empty_dirs=<paths>               created in OUT_DIR, empty (a directory the
 #                                      game expects but the disc does not have)
-#     place=<glob1> <dest1> ...        disc-glob + destination, repeatable
+#     place=<glob> <dest>              disc-glob (or disc directory/) +
+#                                      destination, repeatable
 #     audio_dir=AUDIO                  where the tracks go
 #     audio_cue=<name>.cue             the tracks' cue sheet (required)
 #     audio=ogg                        flac, wav or ogg (default ogg)
 #     quality=6                        ogg only: -1..10
-# Patterns are fnmatch patterns, separated by spaces, matched against the
-# name in upper case.
+# Patterns are fnmatch patterns, separated by spaces, matched in upper case
+# against the name, or, when they hold a "/", against the path from the
+# disc's root, which begins with "/" (/SMALL.LFT is the root's, not
+# FONTS/SMALL.LFT). A file that a place= rule matches is copied even when a
+# skip pattern names it or its directory.
 #
 # Needs ffmpeg. Nothing is written outside OUT_DIR and build/ of the repository.
 
@@ -83,8 +93,7 @@ import sys
 from typing import NoReturn
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
-from cdimage import (RAW, Image, enumerate_tree, parse_cue, track_span,  # noqa: E402
-                     records)
+from cdimage import RAW, Image, parse_cue, records, track_span  # noqa: E402
 
 
 def fail(message) -> NoReturn:
@@ -147,108 +156,93 @@ def read_place_rules(path):
     return rules
 
 
-def matches(name, patterns):
-    upper = name.upper()
-    return any(fnmatch.fnmatchcase(upper, pattern.upper()) for pattern in patterns)
+def matches(name, rel, patterns):
+    """name (or, for a pattern with a "/", /rel) matches one of patterns."""
+    upper, path = name.upper(), '/' + rel.upper()
+    return any(fnmatch.fnmatchcase(path if '/' in pattern else upper, pattern.upper()) for pattern in patterns)
+
+
+class ImageTree:
+    """The data track's ISO9660 tree: a node is a directory's (extent, length)."""
+    def __init__(self, image, root):
+        self.image, self.root = image, root
+
+    def entries(self, node):
+        for name, extent, length, directory in records(self.image, *node):
+            yield name, directory, (extent, length), length
+
+    def read(self, node):
+        return self.image.read(*node)
+
+
+class DirTree:
+    """A directory with the disc's files (disc_tree.py's build/disc): a node is a path."""
+    def __init__(self, root):
+        self.root = root
+
+    def entries(self, node):
+        for name in sorted(os.listdir(node)):
+            path = os.path.join(node, name)
+            if node != self.root or name != '.disc_tree':
+                yield name, os.path.isdir(path), path, os.path.getsize(path)
+
+    def read(self, node):
+        with open(node, 'rb') as handle:
+            return handle.read()
 
 
 class Copy:
-    def __init__(self, image, skip_files, skip_dirs, audio_dir, place_rules=None, root=''):
-        self.image = image
-        self.root = root
+    def __init__(self, skip_files, skip_dirs, audio_dir, place_rules, out):
         self.skip_files, self.skip_dirs = skip_files, skip_dirs
         self.audio_dir = audio_dir.upper()
-        self.place_rules = place_rules or []
+        self.place_rules = place_rules
+        self.out = out
         self.placed = set()
         self.count = self.total = self.skipped = 0
 
-    def place_dest(self, rel):
+    def destinations(self, rel):
+        """Where place= puts the disc file rel (paths in OUT_DIR); [] when no
+        rule matches it."""
+        result = []
         for glob, dest in self.place_rules:
-            if fnmatch.fnmatchcase(rel.upper(), glob.upper()):
-                return dest
-        return None
+            if glob.endswith('/'):
+                if rel.upper().startswith(glob.upper()):
+                    result.append(os.path.normpath(os.path.join(dest, rel[len(glob):])))
+            elif fnmatch.fnmatchcase(rel.upper(), glob.upper()):
+                result.append(os.path.join(dest, os.path.basename(rel)) if dest.endswith('/') else dest)
+        return result
 
-    def tree(self, lba, size, out, prefix='', top=True):
-        for name, extent, length, directory in records(self.image, lba, size):
+    def tree(self, source, node, prefix='', skipped=False):
+        """The files under node, prefix their disc path; skipped: node is a
+        directory not to copy, whose place= files are still copied."""
+        for name, directory, child, length in source.entries(node):
+            rel = prefix + name
             if directory:
-                if top and name.upper() == self.audio_dir:
+                if not prefix and name.upper() == self.audio_dir:
                     continue
-                if matches(name, self.skip_dirs):
+                skip = skipped or matches(name, rel, self.skip_dirs)
+                if skip and not skipped:
                     self.skipped += 1
-                    continue
-                os.mkdir(os.path.join(out, name))
-                self.tree(extent, length, os.path.join(out, name), prefix + name + '/', False)
-            elif matches(name, self.skip_files):
-                self.skipped += 1
+                if not skip:
+                    os.makedirs(os.path.join(self.out, rel), exist_ok=True)
+                self.tree(source, child, rel + '/', skip)
+                continue
+            targets = self.destinations(rel)
+            if targets:
+                self.placed.add(rel)
+            elif skipped or matches(name, rel, self.skip_files):
+                self.skipped += not skipped
+                continue
             else:
-                rel = prefix + name
-                dest = self.place_dest(rel)
-                if dest is not None:
-                    self.placed.add(rel)
-                    target = os.path.join(self.root, dest)
-                    if dest.endswith('/'):
-                        target = os.path.join(self.root, dest, name)
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                    with open(target, 'wb') as handle:
-                        handle.write(self.image.read(extent, length))
-                    self.count += 1
-                    self.total += length
-                else:
-                    with open(os.path.join(out, name), 'wb') as target:
-                        target.write(self.image.read(extent, length))
-                    self.count += 1
-                    self.total += length
-
-    def fs_tree(self, src, out, prefix='', top=True):
-        """tree() over a directory (the disc with its patches, disc_tree.py)
-        instead of the image."""
-        for name in sorted(os.listdir(src)):
-            path = os.path.join(src, name)
-            if os.path.isdir(path):
-                if top and name.upper() == self.audio_dir:
-                    continue
-                if matches(name, self.skip_dirs):
-                    # what the installer put elsewhere is still wanted: place=
-                    self.skipped += 1
-                    self.fs_tree(path, None, prefix + name + '/', False)
-                    continue
-                if out:
-                    os.mkdir(os.path.join(out, name))
-                self.fs_tree(path, os.path.join(out, name) if out else None, prefix + name + '/', False)
-            elif name == '.disc_tree' or (matches(name, self.skip_files) and self.place_dest(prefix + name) is None):
-                self.skipped += 1
-            else:
-                rel = prefix + name
-                dest = self.place_dest(rel)
-                target = os.path.join(out, name) if out else None
-                if target is None and dest is None:
-                    continue
-                if dest is not None:
-                    self.placed.add(rel)
-                    target = os.path.join(self.root, dest, name) if dest.endswith('/') else os.path.join(self.root, dest)
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                shutil.copyfile(path, target)
+                targets = [rel]
+            data = source.read(child)
+            for target in targets:
+                target = os.path.join(self.out, target)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, 'wb') as handle:
+                    handle.write(data)
                 self.count += 1
-                self.total += os.path.getsize(path)
-
-    def write_placed(self, tree):
-        """Files whose disc location was not visited (their directory was
-        skipped) still need to be written to their place= destination."""
-        for rel, (extent, length, directory) in tree.items():
-            if directory or rel in self.placed:
-                continue
-            dest = self.place_dest(rel)
-            if dest is None:
-                continue
-            self.placed.add(rel)
-            target = os.path.join(self.root, dest)
-            if dest.endswith('/'):
-                target = os.path.join(self.root, dest, os.path.basename(rel))
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            with open(target, 'wb') as handle:
-                handle.write(self.image.read(extent, length))
-            self.count += 1
-            self.total += length
+                self.total += length
 
 
 def main():
@@ -288,19 +282,17 @@ def main():
     if pvd[1:6] != b'CD001':
         fail('no ISO9660 volume in the data track')
     root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
-    place_rules = read_place_rules(args.cfg)
-    copy = Copy(image, cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir, place_rules, args.out)
+    copy = Copy(cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir,
+                read_place_rules(args.cfg), args.out)
     if any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=')) for line in open(args.cfg)):
         # the disc with its patch= archives over it and its unpack= archives
         # unpacked, not the bare image
         disc = os.path.join(root, 'build', 'disc')
         subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
                         disc, '--cfg', args.cfg, '--cue', cue_path], check=True)
-        copy.fs_tree(disc, args.out)
+        copy.tree(DirTree(disc), disc)
     else:
-        tree = enumerate_tree(image, root_lba, root_size)
-        copy.tree(root_lba, root_size, args.out)
-        copy.write_placed(tree)
+        copy.tree(ImageTree(image, (root_lba, root_size)), (root_lba, root_size))
     # the directories whose files all went elsewhere (place=) are not part of the install
     for rel in copy.placed:
         directory = os.path.dirname(rel)

@@ -332,8 +332,7 @@ static const char *executable_directory(char *dir)
 }
 
 /* The game directory the runtime chdir()s into: one that holds one of
- * GAME_DATA_MARKERS (Game_hooks.h), or a copy of the disc whose
- * GAME_DATA_SUBDIR holds them: GAME_ENV("DATA_DIR"), else the current
+ * GAME_DATA_MARKERS (Game_hooks.h): GAME_ENV("DATA_DIR"), else the current
  * directory, else the executable's. Before the chdir into data_root, which
  * keeps a relative GAME_ENV("DATA_DIR") valid; once found, kept. */
 static int select_data_root(void)
@@ -348,11 +347,6 @@ static int select_data_root(void)
     for (unsigned int index = 0; index < sizeof(candidates) / sizeof(candidates[0]); index++) {
         if (candidates[index] == NULL) continue;
         snprintf(dir, sizeof(dir), "%s", candidates[index]);
-#ifdef GAME_DATA_SUBDIR
-        if (!game_dir_has_marker(dir)) {
-            snprintf(dir, sizeof(dir), "%s/%s", candidates[index], GAME_DATA_SUBDIR);
-        }
-#endif
         if (game_dir_has_marker(dir)) {
             if (host_full_path(dir, data_root) != 0) {
                 data_root[0] = 0;

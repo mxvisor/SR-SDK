@@ -26,7 +26,7 @@
 #     linux          the native binary
 #     windows        the MinGW cross build and the SDL DLLs beside the exe
 #     disc           build/disc: the disc image with game/portable.cfg over it
-#     portable-data  build/dist/portable: the disc's files and its music
+#     portable-data  build/dist/portable: the game directory of the fullest install, with the music
 #     portable       build/dist/<dist_name>-{linux,windows}-x64.{tar.gz,zip}
 #     check          the native binary is there
 #
@@ -115,7 +115,9 @@ if os.path.isfile(PORTABLE_CFG):
     # the stamp stands for the directory: when it is gone, so is the stamp
     if not os.path.isdir(PORTABLE_DIR) and os.path.exists(PORTABLE_STAMP):
         os.remove(PORTABLE_STAMP)
-    env.Alias('portable-data', env.Command(PORTABLE_STAMP, PORTABLE_CFG, make_portable))
+    # made again when the cfg or the tool that reads it changes
+    env.Alias('portable-data', env.Command(PORTABLE_STAMP, [PORTABLE_CFG, os.path.join(SDK_ROOT, 'tools', 'portable_cd.py')],
+                                           make_portable))
 
 # ----------------------------------------------------------------- portable --
 

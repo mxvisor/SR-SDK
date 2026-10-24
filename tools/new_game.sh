@@ -10,8 +10,8 @@
 #           disc:NAME is a file of the game's disc (needs --image): it is taken from
 #           build/disc/, made by tools/disc_tree.py, so the exe need not be unpacked by hand
 #   --image the disc image (.iso/.nrg/.mds/.bin/.cue; path relative to DIR, or absolute):
-#           game/portable.cfg gets image= and cue= (CD/NAME.cue beside the image, made on
-#           first use); the launchers take the data from build/disc and the disc from the cue
+#           game/portable.cfg gets image= (its cue sheet is made in build/cd/); the
+#           launchers take the game directory from build/dist/portable (make portable-data)
 #   --sdk   where SR-SDK comes from (default: the repository this script is in)
 #   --sr    where SR comes from (default: SR of the --sdk repository when that is a directory,
 #           else the URL in SR-SDK/.gitmodules)
@@ -71,7 +71,8 @@ cat > "$DIR/game/portable.cfg" <<EOF
 # the disc image, the one path outside the repository (its cue sheet goes to build/cd/)
 image=$REL_IMAGE
 
-# the files that belong to the installer, not to the game: add them here
+# the disc's files the game's installer does not copy (the installer itself; what
+# it copies elsewhere is moved with place=, see portable_cd.py): add them here
 skip_files=AUTORUN.* SETUP.* INSTALL.*
 
 # music: the audio tracks of the disc

@@ -72,16 +72,6 @@ static void read_on_off(const char *param, uint32_t *value)
     }
 }
 
-#ifdef GAME_DATA_SUBDIR
-static int file_exists(const char *name)
-{
-    FILE *f = fopen(name, "rb");
-    if (f == NULL) return 0;
-    fclose(f);
-    return 1;
-}
-#endif
-
 void Game_ReadConfig(void)
 {
     char filename[4096];
@@ -101,14 +91,6 @@ void Game_ReadConfig(void)
 
         if (game_directory == NULL) return;
         if (snprintf(filename, sizeof(filename), "%s/%s", game_directory, GAME_CONFIG_FILENAME) >= (int)sizeof(filename)) return;
-#ifdef GAME_DATA_SUBDIR
-        /* a game whose data root is a subdirectory (a disc's DATA) keeps its
-         * file beside that directory, where the port's executable is */
-        if (!file_exists(filename))
-        {
-            if (snprintf(filename, sizeof(filename), "%s/../%s", game_directory, GAME_CONFIG_FILENAME) >= (int)sizeof(filename)) return;
-        }
-#endif
     }
 
     f = fopen(filename, "rt");

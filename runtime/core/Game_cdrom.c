@@ -29,12 +29,13 @@
  *  1. an image: a cue sheet with the disc's data track, the way DOSBox's
  *     IMGMOUNT takes it, in the directory CD inside the game directory, or
  *     $<GAME>_CD_IMAGE (GAME_ENV in Game_hooks.h);
- *  2. without an image, the game directory itself, when it is a copy of the
- *     disc (portable, run without installing): the directory GAME_CD_MARKER
- *     (Game_hooks.h), which the installer leaves on the disc, tells it from
- *     an installed game.  The audio tracks are then files of their own,
- *     listed by a cue sheet in the directory AUDIO -- the disc's AUDIO\,
- *     when it has one; with no cue sheet there is no music.
+ *  2. without an image, the game directory itself, when it holds the disc's
+ *     files (a portable copy: the game's install with what the install
+ *     leaves on the disc): the file or directory GAME_CD_MARKER
+ *     (Game_hooks.h), one of those the game reads from the disc, tells it.
+ *     The audio tracks are then files of their own, listed by a cue sheet in
+ *     the directory AUDIO -- the disc's AUDIO\, when it has one; with no cue
+ *     sheet there is no music.
  *
  * An image's data track is an ISO9660 volume.  Its sectors are raw in the
  * image (MODE2/2352: 24 bytes of sync, header and subheader, then the 2048
@@ -515,16 +516,9 @@ int Game_CdInit(const char *game_dir)
     const char *configured = getenv(GAME_ENV("CD_IMAGE"));
     char dir[PATH_MAX];
     const char *data = NULL;
-    char parent[PATH_MAX] = "";
-#ifdef GAME_DATA_SUBDIR
-    /* the disc's files sit above the data directory (DATA/ of the disc) */
-    directory_of(game_dir, parent, sizeof(parent));
-    if (strcmp(parent, game_dir) == 0 || strcmp(parent, ".") == 0) parent[0] = 0;
-#endif
     if (configured != NULL && configured[0] != 0) {
         snprintf(cue_path, sizeof(cue_path), "%s", configured);
-    } else if (find_in_dir(game_dir, "CD", dir, sizeof(dir), 1) ||
-               (parent[0] != 0 && find_in_dir(parent, "CD", dir, sizeof(dir), 1))) {
+    } else if (find_in_dir(game_dir, "CD", dir, sizeof(dir), 1)) {
         find_cue(dir);
     }
     if (cue_path[0] != 0) {
@@ -536,9 +530,8 @@ int Game_CdInit(const char *game_dir)
             fprintf(stderr, GAME_NAME ": no readable data track in %s\n", cue_path);
         }
 #ifdef GAME_CD_MARKER
-    } else if (find_in_dir(game_dir, GAME_CD_MARKER, dir, sizeof(dir), 1) ||
-               (parent[0] != 0 && find_in_dir(parent, GAME_CD_MARKER, dir, sizeof(dir), 1))) {
-        /* directory_of(dir): the disc root, game_dir or its parent */
+    } else if (find_in_dir(game_dir, GAME_CD_MARKER, dir, sizeof(dir), -1)) {
+        /* the disc's root: game_dir, as found */
         directory_of(dir, disc_dir, sizeof(disc_dir));
         game_dir = disc_dir;
         data = "the disc's files";
