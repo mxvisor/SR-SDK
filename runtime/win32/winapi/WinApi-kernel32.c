@@ -123,9 +123,9 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 #define THREAD_PRIORITY_TIME_CRITICAL 15
 
 
-#ifndef MAX_PATH
+/* the guest's 260, not the host's PATH_MAX of <limits.h> (the sizes of the guest's structures) */
+#undef MAX_PATH
 #define MAX_PATH 260
-#endif
 
 #define FILE_ATTRIBUTE_READONLY             0x00000001
 #define FILE_ATTRIBUTE_HIDDEN               0x00000002
