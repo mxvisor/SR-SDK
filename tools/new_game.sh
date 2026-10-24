@@ -133,7 +133,7 @@ link=separate
 devices=pc64-linux,pc64-windows
 program=$NAME
 EOF
-  [ "$PLATFORM" = win32 ] && printf '# winapi=no leaves out the Win32 API layer; runtime_skip=File.c,... single runtime files\n'
+  [ "$PLATFORM" = win32 ] && printf '# key winapi (no = leave out the Win32 API layer) and runtime_skip (File.c,... = single runtime files): see README\n'
   true
 } > game/game.cfg
 
