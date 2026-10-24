@@ -33,7 +33,9 @@
 # `portable` packs binaries of two devices, so it does not build them: it is
 # run after `linux` and `windows`, as game.mk does.  What goes into an archive:
 # the program, every file of game/release/<os>/ and game/release/<os>/x64/
-# (launchers, configs, readmes), and build/dist/portable.
+# (configs, readmes), and build/dist/portable.  There is no launcher script: the
+# program is started as it is, and finds the game beside itself
+# (runtime/core/Game_gamedir.c).
 #
 # game.cfg keys: program (the binary), dist_name (the archives' name, default
 # program).  The data: game/portable.cfg (SR-SDK/tools/portable_cd.py).
@@ -129,10 +131,8 @@ def stage_directory(name, binary, dlls, release_os):
         shutil.copy2(source, directory)
     if os.path.isdir(PORTABLE_DIR):
         shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
-    for entry in os.listdir(directory):
-        if entry == os.path.basename(binary) or entry.endswith('.sh'):
-            path = os.path.join(directory, entry)
-            os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    path = os.path.join(directory, os.path.basename(binary))
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return directory
 
 

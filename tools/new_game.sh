@@ -51,37 +51,34 @@ mkdir -p "$DIR"
 DIR="$(cd "$DIR" && pwd)"
 MODULE="Game-main"
 SHA="0000000000000000000000000000000000000000000000000000000000000000"
-INPUT_EXE="../GAME.EXE"
+INPUT_EXE="disc:GAME.EXE"
 ORIG_NAME="GAME.EXE"
-DATA_LINE='DATA_DEFAULT="$GAME_REPO/../iso"        # TODO: the game'"'"'s files'
-CD_LINE='CD_DEFAULT="$GAME_REPO/../iso/CD/*.cue"     # TODO: the disc, if any'
+REL_IMAGE="../iso/GAME.iso                  # TODO: the disc image"
+CUE_BASE=GAME
 if [ -n "$IMAGE" ]; then
   SRC="$IMAGE"; case "$IMAGE" in /*) ;; *) SRC="$DIR/$IMAGE" ;; esac
   [ -f "$SRC" ] || { echo "No such file: $SRC" >&2; exit 1; }
   SRC="$(realpath "$SRC")"
   REL_IMAGE="$(realpath -m --relative-to="$DIR" "$SRC")"
   CUE_BASE="$(basename "${SRC%.*}")"
-  REL_CUE="$(dirname "$REL_IMAGE")/CD/$CUE_BASE.cue"
-  mkdir -p "$DIR/game"
-  cat > "$DIR/game/portable.cfg" <<EOF
-# The copy of the disc for SR-SDK/tools/disc_tree.py and portable_cd.py.
-# Paths are relative to the repository's root.
+fi
+mkdir -p "$DIR/game"
+cat > "$DIR/game/portable.cfg" <<EOF
+# The game directory of the portable copy (SR-SDK/tools/portable_cd.py) and the disc
+# (SR-SDK/tools/disc_tree.py): what the game's fullest install makes of the disc, with
+# what that install leaves on the disc. Paths are relative to the repository's root.
 
-# the disc: the cue sheet is made from the image (SR-SDK/tools/image/image.py) when it is missing
-cue=$REL_CUE
+# the disc image, the one path outside the repository (its cue sheet goes to build/cd/)
 image=$REL_IMAGE
 
 # the files that belong to the installer, not to the game: add them here
-skip_files=AUTORUN.* SETUP.* INSTALL.* 
+skip_files=AUTORUN.* SETUP.* INSTALL.*
 
 # music: the audio tracks of the disc
 audio_dir=AUDIO
 audio_cue=$CUE_BASE.cue
 audio=ogg
 EOF
-  DATA_LINE='DATA_DEFAULT="$GAME_REPO/build/disc"     # make disc: the image with game/portable.cfg over it'
-  CD_LINE="CD_DEFAULT=\"\$GAME_REPO/$REL_CUE\""
-fi
 case "$EXE" in
   disc:*)
     [ -n "$IMAGE" ] || { echo "--exe $EXE needs --image" >&2; exit 1; }
@@ -96,7 +93,6 @@ case "$EXE" in
     done
     SHA="$(sha256sum "$FOUND" | cut -d' ' -f1)"; INPUT_EXE="$EXE"
     ORIG_NAME="$(basename "$FOUND")"
-    DATA_LINE="DATA_DEFAULT=\"\$GAME_REPO/build/disc\"     # make disc: the image with game/portable.cfg over it"
     ;;
 esac
 if [ -n "$EXE" ] && [ -z "${DISC_NAME:-}" ]; then
@@ -119,10 +115,7 @@ EOF
 
 cat > .gitignore <<'EOF'
 /build/
-/run/
 .sconsign.dblite
-/*.EXE
-/*.exe
 EOF
 
 {
@@ -187,8 +180,7 @@ EOF
 }
 COMMON="PROG=$NAME
 ENVP=$ENVP
-$DATA_LINE
-DATA_MARKER=$ORIG_NAME                    # a file the data directory must hold$([ -z "$IMAGE" ] || printf '\nCD_DEFAULT=%s' "\"\$GAME_REPO/$REL_CUE\"")"
+DATA_MARKER=$ORIG_NAME                    # a file the game directory (build/dist/portable) must hold"
 launcher run-sdl.sh "Run the native port ($TITLE)." run_common.sh "$COMMON
 
 run_native \"\$@\""
@@ -197,15 +189,11 @@ launcher run_sdl_wine.sh "Run the Windows build of the port ($TITLE) under Wine.
 run_wine \"\$@\""
 if [ "$PLATFORM" = dos ]; then
   launcher run-orig-dosbox.sh "Run the ORIGINAL $TITLE under DOSBox (the reference for the port)." run_orig_common.sh "ENVP=$ENVP
-$DATA_LINE
-$CD_LINE
 DOS_CMD=$ORIG_NAME$([ -n "$IMAGE" ] || echo '                              # TODO')
 
 run_orig_dosbox \"\$@\""
 else
   launcher run-orig-wine.sh "Run the ORIGINAL $TITLE under Wine (the reference for the port)." run_orig_common.sh "ENVP=$ENVP
-$DATA_LINE
-$CD_LINE
 WIN_EXE=$ORIG_NAME$([ -n "$IMAGE" ] || echo '                                  # TODO')
 
 run_orig_wine \"\$@\""
@@ -225,5 +213,5 @@ echo "A new $PLATFORM port is in $DIR (SR-SDK at ${SDK_HEAD:0:7})."
 if [ -n "${DISC_NAME:-}" ]; then
   echo "Next: scons stage=input (takes $DISC_NAME from the disc, build/disc)"
 else
-  echo "Next: put the original at $INPUT_EXE$([ -n "$EXE" ] || echo ' and its sha256 into game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
+  echo "Next: $([ -n "$IMAGE" ] || echo 'image= of game/portable.cfg, ')input_exe= of game/game.cfg ($INPUT_EXE)$([ -n "$EXE" ] || echo ' and its sha256 in game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
 fi

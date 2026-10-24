@@ -1,14 +1,14 @@
 #!/bin/sh
-# make linux and make windows in every game's repository, sequentially (the two
-# must never run at once: they share build/).
+# make linux, make windows and make portable-data (the data of the smoke tests) in
+# every game's repository, sequentially (they must never run at once: they share build/).
 #
-#   build_all.sh [-t linux,windows] [GAME...]      (GAME: ids of games.tsv)
+#   build_all.sh [-t linux,windows,portable-data] [GAME...]      (GAME: ids of games.tsv)
 #
 # Prints one line per game and target, TAB-separated:
 #   build  GAME:TARGET  ok|fail  rc=N secs=N log=PATH
 # Logs go to $REGRESS_OUT/build-<game>-<target>.log. Exit status 1 if anything failed.
 . "$(dirname "$0")/lib.sh"
-targets="linux windows"
+targets="linux windows portable-data"
 if [ "$1" = -t ]; then targets=$(echo "$2" | tr ',' ' '); shift 2; fi
 failed=0
 for id in $(select_games "$@"); do

@@ -6,9 +6,7 @@
 #   GAME_REPO      the game repository (the directory of the script)
 #   PROG           the program name (game.cfg: program=)
 #   ENVP           the env prefix of the port: GAME_ENV("X") is $<ENVP>_X
-#   DATA_DEFAULT   the data directory when $<ENVP>_DATA_DIR is not set
 #   DATA_MARKER    a file that the data directory must hold
-#   CD_DEFAULT     optional: the disc's cue sheet when $<ENVP>_CD_IMAGE is not set
 #   WINE_NAME      Wine only, optional: the name of the prefix under ~/.cache; the
 #                  default, dos-recomp-wine, is one prefix for all ports
 #   CONFIG_NAME, CONFIG_TEMPLATE
@@ -18,6 +16,11 @@
 #                  it may change DATA_DIR, CD_IMAGE and WRITE_ROOT ($RUN_KIND is
 #                  native or wine)
 #
+# The game's data is build/dist/portable, the game directory as the portable
+# copy has it (make portable-data, from the disc image of game/portable.cfg;
+# made here when it is not there yet), and the port writes into build/run:
+# nothing outside the repository is written, and no disc is needed.
+#
 # then calls run_native "$@" or run_wine "$@".  Options (both):
 #   --build            build first (scons -Q device=...)
 #   --headless[=N]     no window: Xvfb of its own, N screenshots (default 4, every
@@ -26,18 +29,18 @@
 #                      (SR-SDK/runtime/core/Game_keys.c)
 #   -- ARG...          (native) everything after is given to the port
 #   --help
-# Environment: <ENVP>_DEVICE, _DATA_DIR, _WRITE_ROOT (default <outer dir>/run),
-# _CD_IMAGE, and for Wine _MINGW_BIN and _WINEPREFIX (default ~/.cache/$WINE_NAME;
-# ~/.wine is never used).
+# Environment: <ENVP>_DEVICE, _DATA_DIR (default <repo>/build/dist/portable),
+# _WRITE_ROOT (default <repo>/build/run), _CD_IMAGE (a cue sheet; by default none:
+# the portable copy is the disc, e.g. <repo>/build/cd/*.cue is the image), and for
+# Wine _MINGW_BIN and _WINEPREFIX (default ~/.cache/$WINE_NAME; ~/.wine is never used).
 
 _envp() { local v="${ENVP}_$1"; printf '%s' "${!v:-}"; }
 
 _common_init() {
-  OUTER="$(cd "$GAME_REPO/.." && pwd)"
-  DATA_DIR="$(_envp DATA_DIR)"; : "${DATA_DIR:=$DATA_DEFAULT}"
-  WRITE_ROOT="$(_envp WRITE_ROOT)"; : "${WRITE_ROOT:=$OUTER/run}"
+  PORTABLE_DIR="$(realpath -m "$GAME_REPO/build/dist/portable")"
+  DATA_DIR="$(_envp DATA_DIR)"; : "${DATA_DIR:=$PORTABLE_DIR}"
+  WRITE_ROOT="$(_envp WRITE_ROOT)"; : "${WRITE_ROOT:=$GAME_REPO/build/run}"
   CD_IMAGE="$(_envp CD_IMAGE)"
-  [ -n "$CD_IMAGE" ] || [ -z "${CD_DEFAULT:-}" ] || CD_IMAGE="$(compgen -G "$CD_DEFAULT" | head -n 1 || true)"
   DATA_DIR="$(realpath -m "$DATA_DIR")"
   [ -z "$CD_IMAGE" ] || CD_IMAGE="$(realpath -m "$CD_IMAGE")"
   HEADLESS=0; BUILD=0; N_SHOTS=4; AUTO_KEYS=""; PORT_ARGS=()
@@ -60,6 +63,9 @@ _parse_args() {
 
 _check_data() {
   [ -d "$GAME_REPO/game" ] || { echo "Not a game repository: $GAME_REPO" >&2; exit 1; }
+  if [ "$DATA_DIR" = "$PORTABLE_DIR" ] && [ ! -f "$DATA_DIR/$DATA_MARKER" ]; then
+    make -C "$GAME_REPO" portable-data || exit 1
+  fi
   [ -f "$DATA_DIR/$DATA_MARKER" ] || { echo "Game data not found: $DATA_DIR/$DATA_MARKER (set ${ENVP}_DATA_DIR)" >&2; exit 1; }
 }
 

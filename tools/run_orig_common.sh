@@ -4,20 +4,20 @@
 # run-orig-wine.sh (Windows games, under Wine), which only say what is game-specific:
 #
 #   GAME_REPO      the game repository (the directory of the script)
-#   DATA_DEFAULT   the game's files: C: of DOSBox, or the directory with the exe for Wine
-#   CD_DEFAULT     optional: the disc.  DOSBox: a glob of the cue sheet made by
-#                  SR-SDK/tools/image/image.py (disc), mounted on D: with IMGMOUNT.
-#                  Wine: the directory with the unpacked disc (image.py disc --extract),
-#                  linked as the D: drive of the prefix
 #   ENVP           the env prefix: $<ENVP>_DATA_DIR, _CD_IMAGE (_CD_DIR for Wine), _WRITE_ROOT
-#   DOS_CWD, DOS_CMD       DOSBox: the directory (in DOS form) and the command to start
+#   DOS_CWD, DOS_CMD       DOSBox: the directory (in DOS form, default \) and the command to start
 #   DOS_CONF               DOSBox: optional lines for [dosbox]/[cpu] sections (a full text)
 #   WIN_EXE        Wine: the exe, relative to the data directory
 #   WINE_NAME      Wine, optional: the prefix under ~/.cache (default dos-recomp-wine)
 #
+# The game's files are build/dist/portable, the game directory as the portable copy
+# has it (make portable-data, made here when it is not there yet): C: of DOSBox, the
+# directory with the exe for Wine.  The disc is the image of game/portable.cfg: its cue
+# sheet in build/cd/, mounted on D: with IMGMOUNT, or for Wine, which mounts no image,
+# build/disc (make disc), linked as the D: drive of the prefix.
 # The game's files are never written: DOSBox mounts them with an overlay, Wine runs on
 # a fuse-overlayfs mount (when it is missing, on a copy), so what the original writes
-# lands in <outer dir>/run/orig-{dosbox,wine}/.
+# lands in <repo>/build/run/orig-{dosbox,wine}/.
 #
 # Options:
 #   --headless[=N]   no window: Xvfb of its own, N screenshots (default 4, every 5 s)
@@ -28,12 +28,19 @@
 #   --help
 
 _orig_init() {
-  OUTER="$(cd "$GAME_REPO/.." && pwd)"
-  local v
-  v="${ENVP}_DATA_DIR"; DATA_DIR="${!v:-$DATA_DEFAULT}"
-  v="${ENVP}_WRITE_ROOT"; WRITE_ROOT="${!v:-$OUTER/run}"
+  local v portable="$GAME_REPO/build/dist/portable"
+  v="${ENVP}_DATA_DIR"; DATA_DIR="${!v:-$portable}"
+  v="${ENVP}_WRITE_ROOT"; WRITE_ROOT="${!v:-$GAME_REPO/build/run}"
+  if [ "$DATA_DIR" = "$portable" ] && [ ! -f "$portable.stamp" ]; then
+    make -C "$GAME_REPO" portable-data || exit 1
+  fi
   v="${ENVP}_CD_${1}"; CD="${!v:-}"
-  [ -n "$CD" ] || [ -z "${CD_DEFAULT:-}" ] || CD="$(compgen -G "$CD_DEFAULT" | head -n 1 || true)"
+  if [ -z "$CD" ] && [ "$1" = DIR ]; then
+    [ -f "$GAME_REPO/build/disc/.disc_tree" ] || make -C "$GAME_REPO" disc || exit 1
+    CD="$GAME_REPO/build/disc"
+  elif [ -z "$CD" ]; then
+    CD="$(compgen -G "$GAME_REPO/build/cd/*.cue" | head -n 1 || true)"
+  fi
   HEADLESS=0; N_SHOTS=4; KEYS=(); KEEP=0
 }
 
@@ -92,7 +99,7 @@ run_orig_dosbox() {
   _orig_need dosbox
   [ -d "$DATA_DIR" ] || { echo "No game directory: $DATA_DIR" >&2; exit 1; }
   if [ -n "$CD" ] && [ ! -f "$CD" ]; then
-    echo "No CD image: $CD (make it with SR-SDK/tools/image/image.py disc <image> -o <dir>, or pass --cd=none)" >&2
+    echo "No CD image: $CD (make portable-data makes build/cd/, or pass --cd=none)" >&2
     exit 1
   fi
   local overlay="$WRITE_ROOT/orig-dosbox" conf cd_line="REM no D:"
@@ -149,7 +156,7 @@ run_orig_wine() {
   [ -d "$DATA_DIR" ] || { echo "No game directory: $DATA_DIR" >&2; exit 1; }
   [ -f "$DATA_DIR/$WIN_EXE" ] || { echo "No $WIN_EXE in $DATA_DIR" >&2; exit 1; }
   if [ -n "$CD" ] && [ ! -d "$CD" ]; then
-    echo "No disc directory: $CD (unpack it with SR-SDK/tools/image/image.py disc <image> --extract <dir>, or pass --cd=none)" >&2
+    echo "No disc directory: $CD (make disc makes build/disc, or pass --cd=none)" >&2
     exit 1
   fi
   export WINEPREFIX="$prefix" WINEDEBUG="${WINEDEBUG:--all}"

@@ -48,7 +48,9 @@ launchers (`run-sdl.sh`, `run_sdl_wine.sh`, `run-orig-dosbox.sh` or
 `--exe` the original's sha256 is written, and `scons stage=input` then passes. With
 `--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
 executable from the disc (`build/disc/`, unpacked by `tools/disc_tree.py`) instead of a
-file unpacked by hand; the launchers read the data from `build/disc`.
+file unpacked by hand. The disc image is the one path outside the repository: the
+launchers run the game on `build/dist/portable` (`make portable-data`, made on the first
+run) and the port writes into `build/run`.
 For a DOS program `tools/sr_run.py` runs SR twice when it must: SR's `--list_handlers=FILE`
 lists the routines the program gives to INT 21h AH=25h (EDX loaded with an address, directly or
 through a wrapper routine that takes it from its stack argument), and the second run takes them as
@@ -61,11 +63,11 @@ Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 ## Running the original
 
 `run-orig-dosbox.sh` (DOS games) and `run-orig-wine.sh` (Windows games) of a game
-repository run the original as the reference for the port, on the layout of the
-disc: DOSBox mounts the game as `C:` with an overlay and the cue sheet made by
-`tools/image/image.py` as `D:`; Wine runs on a `fuse-overlayfs` mount of the game
-(a copy when it is missing), and `D:` is the unpacked disc. What the original
-writes lands in `<outer dir>/run/orig-*`. `--headless[=N]` takes screenshots under
+repository run the original as the reference for the port, on the game directory of
+the portable copy (`build/dist/portable`): DOSBox mounts it as `C:` with an overlay and
+the disc's cue sheet (`build/cd/`) as `D:`; Wine runs on a `fuse-overlayfs` mount of it
+(a copy when it is missing), and `D:` is the unpacked disc (`build/disc`). What the
+original writes lands in `build/run/orig-*`. `--headless[=N]` takes screenshots under
 Xvfb (`build/shots/orig-*`), `--keys=` sends keys. The common part is
 `tools/run_orig_common.sh`.
 
@@ -135,10 +137,14 @@ after each update of the APK, `GameActivity` unpacks the data from the APK's
 assets: the port reads its files with `fopen`.
 
 `tools/portable_cd.py OUT_DIR`, from the game repository's root, makes the
-game's data directory the port runs from: the files of the disc's data track
-without its installer, the files the installer would have written, and the
-audio tracks as flac, wav or ogg files with a cue sheet. What to skip and what
-to add is in `game/portable.cfg`; the script's header lists its keys.
+game's data directory the port runs from, the directory the game's fullest
+install makes: the files of the disc's data track without its installer (with
+what that install leaves on the disc), the files the installer would have
+written, and the audio tracks as flac, wav or ogg files with a cue sheet. What to
+skip and what to add is in `game/portable.cfg`; the script's header lists its
+keys. Its `image=`, the disc image, is the one path outside the repository; its
+cue sheet is made in `build/cd/`. A portable copy has no launcher script: the
+program finds the game in its own directory.
 
 `tools/image/image.py` turns a disc image into what the rest of the SDK takes as
 the disc, a cue sheet: `image.py disc IMAGE [-o DIR] [--iso] [--extract DIR]`

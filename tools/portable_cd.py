@@ -26,15 +26,18 @@
 #     portable_cd.py OUT_DIR [--cfg game/portable.cfg] [--cue CUE]
 #                    [--audio flac|wav|ogg] [--quality Q]
 #
-# The port runs the game from a copy of the disc, without installing it: a
-# game directory with the disc's files is taken as the disc. This makes such a
-# directory, OUT_DIR, which must not exist yet:
+# The game directory of a portable copy, OUT_DIR, which must not exist yet: the
+# directory the game's own installer makes in its fullest install, with the
+# files that install still leaves on the disc copied in too, so the port needs
+# no disc (a game directory with the disc's files is taken as the disc). It is
+# made of:
 #
 # 1. the files of the disc's data track (ISO9660), as they are, except those
 #    game/portable.cfg names (the installer) and except a directory called
 #    like audio_dir: on a disc it holds entries whose extents are the audio
 #    tracks themselves, not files;
-# 2. extra_files, the files the installer would have written, as they are;
+# 2. extra_files, the files the installer would have written (files of the
+#    repository, game/install/ by custom), as they are;
 # 3. place=<glob> <dest>..., the files the installer would have written to
 #    subdirectories, relocated from the disc tree to OUT_DIR: each <glob> is
 #    a disc-path glob (case-insensitive fnmatch against the ISO9660 name) and
@@ -45,16 +48,16 @@
 #    uncompressed; ogg is lossy, only smaller.
 #
 # game/portable.cfg (paths relative to the game repository's root):
-#     cue=<the disc's cue sheet>       BINARY file(s): one for the disc or one per
-#                                      track, as redump has them (required)
+#     image=<the disc image>           .nrg, .mds, .bin, .img or .iso (a .bin or
+#                                      .img with its cue sheet beside it), the
+#                                      one path outside the repository
+#                                      (required). Its cue sheet is made in
+#                                      build/cd/ with image/image.py, once
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
 #     unpack=<disc file>[ <dir>]       an InstallShield .z of the disc, unpacked
 #                                      into the copy (so is build/disc)
-#     image=<the disc image>           .nrg, .mds, .bin or .iso: when the cue
-#                                      sheet is not there yet it is made from
-#                                      this, with image/image.py
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
@@ -68,7 +71,7 @@
 # Patterns are fnmatch patterns, separated by spaces, matched against the
 # name in upper case.
 #
-# Needs ffmpeg. Nothing is written outside OUT_DIR.
+# Needs ffmpeg. Nothing is written outside OUT_DIR and build/ of the repository.
 
 import argparse
 import fnmatch
@@ -100,17 +103,27 @@ def read_cfg(path):
     return cfg
 
 
-def make_cue(image, cue):
-    """The cue sheet of a disc image, next to where the cfg wants it."""
+def disc_cue(root, cfg, cfg_name):
+    """The cue sheet of the cfg's image=, in build/cd/ of the repository. The
+    image is the one file outside the repository the SDK reads; its cue sheet,
+    and what that needs beside it (a link to the image, or the .bin of an
+    .nrg), are made there by image/image.py, once."""
+    if not cfg.get('image'):
+        fail('%s has no image=' % cfg_name)
+    image = os.path.join(root, cfg['image'])
     if not os.path.isfile(image):
         fail('no such disc image: %s' % image)
-    out_dir = os.path.dirname(os.path.abspath(cue))
-    name = os.path.splitext(os.path.basename(cue))[0]
+    out_dir = os.path.join(root, 'build', 'cd')
+    name = os.path.splitext(os.path.basename(image))[0]
+    cue = os.path.join(out_dir, name + '.cue')
+    if os.path.isfile(cue):
+        return cue
     command = [sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image', 'image.py'),
                'disc', image, '-o', out_dir, '--name', name]
     print('disc image: %s -> %s' % (image, cue))
     if subprocess.run(command).returncode or not os.path.isfile(cue):
         fail('cannot make %s from %s' % (cue, image))
+    return cue
 
 
 def read_place_rules(path):
@@ -242,14 +255,14 @@ def main():
     parser = argparse.ArgumentParser(description="Makes a portable copy of a game's disc.")
     parser.add_argument('out', help='the new game directory; it must not exist yet')
     parser.add_argument('--cfg', default=os.path.join('game', 'portable.cfg'))
-    parser.add_argument('--cue', help="the disc's cue sheet (default: cue= of the cfg)")
+    parser.add_argument('--cue', help="the disc's cue sheet (default: the one of image= of the cfg, build/cd/)")
     parser.add_argument('--audio', choices=('flac', 'wav', 'ogg'))
     parser.add_argument('--quality', help='ogg only: quality -1..10')
     args = parser.parse_args()
 
     root = os.getcwd()
     cfg = read_cfg(args.cfg)
-    cue_path = args.cue or (os.path.join(root, cfg['cue']) if cfg.get('cue') else fail(args.cfg + ' has no cue'))
+    cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
     audio_cue = cfg.get('audio_cue') or fail(args.cfg + ' has no audio_cue')
     audio_dir = cfg.get('audio_dir', 'AUDIO')
     audio_format = args.audio or cfg.get('audio', 'ogg')
@@ -261,10 +274,6 @@ def main():
         if not os.path.isfile(path):
             fail('no such file: %s' % path)
 
-    if not os.path.isfile(cue_path):
-        if not cfg.get('image'):
-            fail('%s not found (and %s has no image= to make it from)' % (cue_path, args.cfg))
-        make_cue(os.path.join(root, cfg['image']), cue_path)
     image_path, tracks = parse_cue(cue_path)
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
     if data is None:

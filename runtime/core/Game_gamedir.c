@@ -309,19 +309,42 @@ static int game_dir_has_marker(const char *dir)
     return 0;
 }
 
+/* The directory of the port's executable, into dir (PATH_MAX bytes); NULL
+ * when it is not known.  A portable copy has the program beside the game's
+ * files, so it is started from anywhere, without a launcher that cd's there. */
+static const char *executable_directory(char *dir)
+{
+    size_t length;
+#if defined(_WIN32)
+    DWORD written = GetModuleFileNameA(NULL, dir, PATH_MAX);
+    if (written == 0 || written >= PATH_MAX) return NULL;
+    length = written;
+    while (length > 0 && dir[length - 1] != '\\' && dir[length - 1] != '/') length--;
+#else
+    ssize_t written = readlink("/proc/self/exe", dir, PATH_MAX - 1);
+    if (written <= 0) return NULL;
+    length = (size_t)written;
+    while (length > 0 && dir[length - 1] != '/') length--;
+#endif
+    if (length == 0) return NULL;
+    dir[length - 1] = 0;
+    return dir[0] != 0 ? dir : "/";
+}
+
 /* The game directory the runtime chdir()s into: one that holds one of
  * GAME_DATA_MARKERS (Game_hooks.h), or a copy of the disc whose
- * GAME_DATA_SUBDIR holds them. Before the chdir into data_root, which
+ * GAME_DATA_SUBDIR holds them: GAME_ENV("DATA_DIR"), else the current
+ * directory, else the executable's. Before the chdir into data_root, which
  * keeps a relative GAME_ENV("DATA_DIR") valid; once found, kept. */
 static int select_data_root(void)
 {
-    const char *configured_root = getenv(GAME_ENV("DATA_DIR"));
-    const char *candidates[] = {
-        configured_root,
-        "."
-    };
+    char program_dir[PATH_MAX];
+    const char *candidates[3];
     char dir[PATH_MAX];
     if (data_root[0] != 0) return 0;
+    candidates[0] = getenv(GAME_ENV("DATA_DIR"));
+    candidates[1] = ".";
+    candidates[2] = executable_directory(program_dir);
     for (unsigned int index = 0; index < sizeof(candidates) / sizeof(candidates[0]); index++) {
         if (candidates[index] == NULL) continue;
         snprintf(dir, sizeof(dir), "%s", candidates[index]);

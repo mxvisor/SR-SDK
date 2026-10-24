@@ -41,7 +41,7 @@
 #    LZSS: SETUP.EX_ is SETUP.EXE) over the name it unpacks to.
 #
 # game/portable.cfg (read as portable_cd.py reads it, same keys):
-#     cue=, image=      the disc, as in portable_cd.py
+#     image=            the disc, as in portable_cd.py (its cue sheet: build/cd/)
 #     patch=<archive>[ <dir>]
 #                       .zip, .rar, .7z, .tar...: the archive of a patch; <dir>
 #                       is the directory inside it that holds the files, when
@@ -58,7 +58,7 @@
 #
 # OUT_DIR is rebuilt when the cfg, the image or a patch changed (a stamp file
 # in it says), otherwise left as it is. Needs unrar, bsdtar or 7z for non-zip
-# archives. Nothing is written outside OUT_DIR.
+# archives. Nothing is written outside OUT_DIR and build/cd/.
 
 import argparse
 import fnmatch
@@ -72,7 +72,7 @@ import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from portable_cd import Copy, fail, make_cue, read_cfg  # noqa: E402
+from portable_cd import Copy, disc_cue, fail, read_cfg  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
 from cdimage import Image, parse_cue  # noqa: E402
 import szdd  # noqa: E402
@@ -242,12 +242,12 @@ def main():
     parser = argparse.ArgumentParser(description="Unpacks a game's disc image and puts its patches over it.")
     parser.add_argument('out', help='the directory to make; rebuilt when its inputs changed')
     parser.add_argument('--cfg', default=os.path.join('game', 'portable.cfg'))
-    parser.add_argument('--cue', help="the disc's cue sheet (default: cue= of the cfg)")
+    parser.add_argument('--cue', help="the disc's cue sheet (default: the one of image= of the cfg, build/cd/)")
     args = parser.parse_args()
 
     root = os.getcwd()
     cfg = read_cfg(args.cfg)
-    cue_path = args.cue or (os.path.join(root, cfg['cue']) if cfg.get('cue') else fail(args.cfg + ' has no cue'))
+    cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
     patches = [(os.path.join(root, archive), inner) for archive, inner in read_patches(args.cfg)]
     for archive, _ in patches:
         if not os.path.isfile(archive):
@@ -262,10 +262,6 @@ def main():
         print('disc: %s is up to date' % args.out)
         return
 
-    if not os.path.isfile(cue_path):
-        if not cfg.get('image'):
-            fail('%s not found (and %s has no image= to make it from)' % (cue_path, args.cfg))
-        make_cue(os.path.join(root, cfg['image']), cue_path)
     image_path, tracks = parse_cue(cue_path)
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
     if data is None:
