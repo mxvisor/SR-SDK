@@ -14,6 +14,8 @@ settings or comments; the settings are:
                                         (unless winapi=no) or another
                                         game/llasm/WinApi-*-asm.llasm already bridges
     # stubs: yes                        also write game/WinApi-game.c (see below)
+    # alias: wsprintfA sprintf_asm2c    (any number) extern.llinc also gets `define wsprintfA
+                                        sprintf_asm2c`, for an import that has an existing bridge
 
 Writes, under the game repository's game/:
   llasm/WinApi-game-asm.llasm  one wrapper proc per import, popping its stdcall
@@ -51,12 +53,15 @@ TSV = os.path.join(ROOT, 'tools', 'import_args.tsv')
 TODAY = datetime.date.today().isoformat()
 
 cfg = {}
+aliases = []
 rows = []
 for line in open(TSV, encoding='utf-8'):
     line = line.rstrip('\n')
     if line.startswith('#'):
         m = re.match(r'#\s*(\w+)\s*:\s*(.*)$', line)
-        if m:
+        if m and m.group(1) == 'alias':
+            aliases.append(m.group(2).split())
+        elif m:
             cfg[m.group(1)] = m.group(2).strip()
         continue
     if not line.strip():
@@ -142,6 +147,8 @@ if cfg.get('extern') == 'yes':
         e += keep + ['']
     for n, dll, argc, _ in sorted(rows, key=lambda r: cname(r[0])):
         e.append('define %s %s_asm2c' % (n, n))
+    for name, target in aliases:
+        e.append('define %s %s' % (name, target))
     write(ext, e)
 
 # --- header ---
