@@ -2832,6 +2832,17 @@ uint32_t CCALL DispatchMessageA_c(void *lpMsg)
     }
 }
 
+/* GetKeyState / GetAsyncKeyState of a key the cases above do not know: the table
+ * of GetKeyboardState (bit 15 = down; GetKeyState adds the toggle in bit 0) */
+static int16_t key_state_word(int32_t vk, int toggle)
+{
+    uint8_t state[256];
+
+    if (vk < 0 || vk > 255) return 0;
+    GetKeyboardState_c(state);
+    return (int16_t)(((state[vk] & 0x80) ? 0x8000 : 0) | (toggle ? (state[vk] & 1) : 0));
+}
+
 int16_t CCALL GetAsyncKeyState_c(int32_t vKey)
 {
 #ifdef DEBUG_USER32
@@ -2843,8 +2854,7 @@ int16_t CCALL GetAsyncKeyState_c(int32_t vKey)
         return (keyboard_mods & KMOD_SHIFT)?0x8000:0;
     }
 
-    eprintf("Unimplemented: %s\n", "GetAsyncKeyState");
-    exit(1);
+    return key_state_word(vKey, 0);
 }
 
 uint32_t CCALL GetCursorPos_c(void *lpPoint)
@@ -2881,8 +2891,7 @@ int16_t CCALL GetKeyState_c(int32_t nVirtKey)
         return (keyboard_mods & KMOD_CAPS)?1:0;
     }
 
-    eprintf("Unimplemented: %s\n", "GetKeyState");
-    exit(1);
+    return key_state_word(nVirtKey, 1);
 }
 
 /* 256 bytes: the high bit of the byte of a virtual key is set while the key is
