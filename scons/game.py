@@ -345,7 +345,8 @@ env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
                  if lib.strip()])
 if GL:
     # OpenGL: glad (runtime/core/gl/glad.c) loads it
-    env.Append(LIBS=['opengl32' if device.endswith('windows') else 'GL'])
+    env.Append(LIBS=['opengl32' if device.endswith('windows')
+                     else 'GLESv2' if device.endswith('android') else 'GL'])
 if D3D_GL:
     env.Append(CPPDEFINES=['GAME_D3D_GL'])
 
