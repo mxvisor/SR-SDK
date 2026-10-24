@@ -97,6 +97,27 @@ else:
     handwritten = set()
     generated = rows
 
+# The SDK's winapi layer has C functions that take host pointers (void *ptc) where the
+# bridges of the layer itself pass guest addresses: a bridge to such a function declares
+# these parameters `*aN`, which llasm turns into host pointers.
+SDK_C = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'runtime', 'win32', 'winapi')
+sdk_protos = {}
+if 'winapi=no' not in open(os.path.join(GAME, 'game.cfg')).read():
+    for path in glob.glob(os.path.join(SDK_C, 'WinApi-*.c')):
+        for m in re.finditer(r'^\w[\w \*]*?\bCCALL\s+(\w+_c)\s*\(([^)]*(?:\([^)]*\)[^)]*)*)\)\s*$',
+                            open(path, errors='replace').read(), re.M):
+            sdk_protos[m.group(1)] = m.group(2)
+
+
+def pointer_params(fn, argc):
+    """indexes of the parameters of the SDK's definition of fn that are host pointers"""
+    text = sdk_protos.get(fn)
+    if text is None or text.strip() in ('', 'void'):
+        return set()
+    params = re.split(r',(?![^(]*\))', text)
+    return {i for i, prm in enumerate(params[:argc]) if '*' in re.sub(r'PTR32\([^)]*\)', '', prm)}
+
+
 # --- llasm wrappers ---
 l = [';;',
      ';;  %s Win32 import bridges, generated from the import table of %s' % (title, exe),
@@ -119,7 +140,8 @@ for n in sorted({a for _, _, a, _ in generated} & {10, 11}):
 for n, dll, argc, cdecl in generated:
     fn = cname(n) + '_c'
     l.append('; (%s)' % dll)
-    l.append('func %s%s' % (fn, (' ' + ', '.join('a%d' % i for i in range(argc))) if argc else ''))
+    ptrs = pointer_params(fn, argc)
+    l.append('func %s%s' % (fn, (' ' + ', '.join(('*a%d' if i in ptrs else 'a%d') % i for i in range(argc))) if argc else ''))
     l.append('proc %s_asm2c public' % n)
     l.append('')
     l.append('        Call_Asm_Stack%d %s' % (argc, fn))
