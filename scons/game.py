@@ -299,46 +299,48 @@ if env['debug']:
 # the load-time pointer_offset (Game_memory.c initialize_pointer_offset, macro
 # PTROFS_64BIT), never absolute host addresses, so the program may be loaded
 # anywhere (ASLR). There is no fixed-address mode.
+#
+# The recompiled code is the same on every device: llasm -pic -ptrofs, and llc
+# --relocation-model=pic (the latter changes nothing for a COFF target, whose
+# code is position-independent anyway).  What differs below is the host
+# compiler and the executable format: a PIE for ELF, a .reloc section and
+# dynamicbase for PE (MinGW's gcc takes no -fpie: all its code is PIC).
+LLASM_PIC = '-m64 -inline-idiv -pic -ptrofs'
+LLC_PIC = '--relocation-model=pic'
+env.Append(LLASMFLAGS=LLASM_PIC)
 if device == 'pc64-linux':
-    # a PIE; the recompiled code is llasm -pic -ptrofs
-    env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -fpie',
-               CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
-               LINKFLAGS='-m64 -pie -Wl,-z,noexecstack',
-               LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
-               LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
-               LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu --relocation-model=pic')
-elif device == 'arm64-linux':
-    # native aarch64 Linux: a PIE, as pc64-linux.  No -m64 in CCFLAGS or
-    # LINKFLAGS -- the aarch64 compiler does not know it; the llasm -m64 is
-    # llasm's own flag (64-bit pointers) and stays, and llc gets the width
-    # from its triple.
     env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
                CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
                LINKFLAGS='-pie -Wl,-z,noexecstack',
                LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
-               LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
-               LLVMFLAGS='-mtriple=aarch64-unknown-linux-gnu --relocation-model=pic')
+               LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu ' + LLC_PIC)
+elif device == 'arm64-linux':
+    # native aarch64 Linux: a PIE, as pc64-linux.  The llasm -m64 is llasm's
+    # own flag (64-bit pointers); llc gets the width from its triple.
+    env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
+               CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
+               LINKFLAGS='-pie -Wl,-z,noexecstack',
+               LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
+               LLVMFLAGS='-mtriple=aarch64-unknown-linux-gnu ' + LLC_PIC)
 elif device == 'arm64-android':
     # the NDK linker loads the .so anywhere and forbids text relocations
     env.Append(CCFLAGS='-fPIC -DPTROFS_64BIT',
                LIBS=['SDL2_mixer', 'SDL2', 'android', 'log'],
-               LLASMFLAGS='-m64 -inline-idiv -pic -ptrofs',
-               LLVMFLAGS='-mtriple=aarch64-linux-android21 -relocation-model=pic')
+               LLVMFLAGS='-mtriple=aarch64-linux-android21 ' + LLC_PIC)
 else:
     # a GUI program, as the other games: without a console main.c sends
     # stdout and stderr to a log in the write root, and shows its end
     # when the game stops on an error (the CD check's among them).
     # ASLR: dynamicbase + a .reloc section; high-entropy-va needs a 64-bit image.
-    env.Append(CCFLAGS='-m64 -DPTROFS_64BIT -Dmain=SDL_main',
-               LINKFLAGS='-m64 -mwindows -Wl,--dynamicbase,--enable-reloc-section,'
+    env.Append(CCFLAGS='-DPTROFS_64BIT -Dmain=SDL_main',
+               LINKFLAGS='-mwindows -Wl,--dynamicbase,--enable-reloc-section,'
                          '--high-entropy-va,--nxcompat,--tsaware,'
                          # winpthread is linked statically: no libwinpthread-1.dll beside the exe.
                          # Whole, since libgcc's emulated TLS asks for pthread_* after all the -l
                          # of the line, and the implicit -lpthread would answer with the DLL.
                          '--whole-archive,-l:libwinpthread.a,--no-whole-archive',
                LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
-               LLASMFLAGS='-m64 -inline-idiv -ptrofs',
-               LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu')
+               LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu ' + LLC_PIC)
 
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
