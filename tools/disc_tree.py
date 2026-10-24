@@ -72,7 +72,7 @@ import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from portable_cd import Copy, disc_cue, fail, read_cfg  # noqa: E402
+from portable_cd import Copy, ImageTree, disc_cue, fail, read_cfg  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
 from cdimage import Image, parse_cue  # noqa: E402
 import szdd  # noqa: E402
@@ -275,8 +275,8 @@ def main():
     if os.path.exists(args.out):
         shutil.rmtree(args.out)
     os.makedirs(args.out)
-    copy = Copy(image, [], [], cfg.get('audio_dir', 'AUDIO'))
-    copy.tree(root_lba, root_size, args.out)
+    copy = Copy([], [], cfg.get('audio_dir', 'AUDIO'), [], args.out)
+    copy.tree(ImageTree(image, (root_lba, root_size)), (root_lba, root_size))
     print('disc: %d files, %.1f MB from %s' % (copy.count, copy.total / 1e6, os.path.basename(image_file)))
 
     for archive, inner in patches:
