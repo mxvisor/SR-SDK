@@ -33,6 +33,9 @@
  *                           directory and the file name of GetModuleFileNameA
  *   GAME_EXTRA_PROCS(X)     optional: X(name) for each export besides the layer's own
  *                           that GetProcAddress hands out (name_asm2c must exist)
+ *   GAME_PROC_LOOKUP(name)  optional: the guest address of an export whose name is no
+ *                           C identifier (a decorated one, "_Driver_init@0"), or 0;
+ *                           asked before the table
  *
  * The program's arguments come from Winapi_SetCommandLine (WinApi.h), which the
  * port's main() calls.  Guest pointers: the recompiled code stores 32-bit
@@ -228,6 +231,12 @@ uint32_t CCALL GetProcAddress_c(uint32_t a0, uint32_t a1)
     (void)a0;
     if (a1 == 0) return 0;
     name = (const char *)GUEST_MEM(a1);
+#ifdef GAME_PROC_LOOKUP
+    {
+        uint32_t found = GAME_PROC_LOOKUP(name);
+        if (found != 0) return found;
+    }
+#endif
     for (unsigned int i = 0; i < sizeof(winapi_proc_table) / sizeof(winapi_proc_table[0]); i++)
     {
         if (strcmp(name, winapi_proc_table[i].name) == 0)
