@@ -71,6 +71,16 @@ SDK_ROOT = os.path.dirname(Dir('.').srcnode().abspath)
 SR_ROOT = os.path.join(SDK_ROOT, 'SR')
 CFG = read_cfg(os.path.join(ROOT, 'game', 'game.cfg'))
 
+# `scons clean` (and distclean, the same) builds nothing: the build tree, the
+# run directory and SCons's own database go.
+if {'clean', 'distclean'} & set(COMMAND_LINE_TARGETS):
+    for path in ('build', 'run'):
+        shutil.rmtree(os.path.join(ROOT, path), ignore_errors=True)
+    for path in glob.glob(os.path.join(ROOT, '.sconsign.dblite*')):
+        os.remove(path)
+    print('scons: cleaned build/ run/')
+    Exit(0)
+
 ARCHS = _keys(CFG, 'archs')
 MODULES = _keys(CFG, 'modules')
 VARIANTS = _keys(CFG, 'variants')
@@ -197,6 +207,8 @@ vars.Add('toolprefix', 'Prefix of the MinGW-w64 tools for pc64-windows (cross bu
 env = Environment(variables=vars)
 
 device = env['device']
+if device == '' and 'windows' in COMMAND_LINE_TARGETS:
+    device = 'pc64-windows'
 if device == '':
     if env['PLATFORM'] == 'win32':
         device = 'pc64-windows'
@@ -217,6 +229,15 @@ Environment variables:
 
 Stages: host -> input -> recomp -> gen -> obj -> bin -> dist;
 scons stage=<name> stops at that one.
+
+Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`):
+  linux          the native binary: build/bin/pc64-linux|arm64-linux/<program>
+  windows        the MinGW cross build with the SDL DLLs beside the exe
+  disc           build/disc, the disc image with game/portable.cfg over it
+  portable-data  build/dist/portable, the disc's files and music (game/portable.cfg)
+  portable       the release archives in build/dist/ (linux and windows must be built)
+  check          the native binary is there
+  clean          remove build/, run/ and SCons's database (distclean: the same)
 """)
 
 if device not in ('pc64-linux', 'pc64-windows', 'arm64-linux', 'arm64-android'):
@@ -722,6 +743,7 @@ if want('obj'):
                                         'sdk_llasm_dirs sdk_root obj_runtime')
     defaults += game_objs
 
+program_nodes = None
 if want('bin'):
     # The link order: the runtime's .c, the game's own .c, the three SDL
     # frontends, llasm-support, the game's llasm .c glue, then the .llasm
@@ -732,6 +754,9 @@ if want('bin'):
         defaults += env.SharedLibrary(os.path.join(BUILD, 'bin', device, 'main'),
                                       game_objs)
     else:
-        defaults += env.Program(os.path.join(BUILD, 'bin', device, PROGRAM), game_objs)
+        program_nodes = env.Program(os.path.join(BUILD, 'bin', device, PROGRAM), game_objs)
+        defaults += program_nodes
 
+SConscript(os.path.join(SDK_ROOT, 'scons', 'release.SConscript'),
+           exports='env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes')
 Default(defaults)

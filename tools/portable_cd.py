@@ -58,6 +58,8 @@
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
+#     empty_dirs=<paths>               created in OUT_DIR, empty (a directory the
+#                                      game expects but the disc does not have)
 #     place=<glob1> <dest1> ...        disc-glob + destination, repeatable
 #     audio_dir=AUDIO                  where the tracks go
 #     audio_cue=<name>.cue             the tracks' cue sheet (required)
@@ -303,6 +305,8 @@ def main():
     for path in extra:
         shutil.copy(path, args.out)
         print('extra: %s' % os.path.basename(path))
+    for path in cfg.get('empty_dirs', '').split():
+        os.makedirs(os.path.join(args.out, path), exist_ok=True)
 
     # 3. the audio tracks and their cue sheet
     music = os.path.join(args.out, audio_dir)

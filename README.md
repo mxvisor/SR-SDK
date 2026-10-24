@@ -93,6 +93,7 @@ glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide (
 d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl (implies opengl)
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
 program=game
+dist_name=game                     # the name of the release archives (default program)
 android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
 ```
@@ -106,6 +107,15 @@ scons device=pc64-windows        # Windows, cross-built with MinGW-w64
 scons stage=gen                  # stop after SR's output
 scons input_exe=/path/to/GAME.EXE
 ```
+
+The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets are scons's
+(`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.
+`make linux`, `make windows` (the MinGW build with the SDL DLLs beside the exe),
+`make portable-data` (`build/dist/portable`: the disc's files and music, from `game/portable.cfg`),
+`make portable` (both builds, the data, and `build/dist/<name>-{linux,windows}-x64.{tar.gz,zip}`:
+the program, `game/release/<os>/` and its `x64/`, and the data), `make apk`, `make disc`
+(`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean`, `make test`.
+The same names work as `scons <name>`; `MINGW_BIN=` points at the DLLs.
 
 For Android, `tools/android_apk.py` makes the whole APK, from the game
 repository's root:
