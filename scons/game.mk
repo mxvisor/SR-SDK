@@ -11,6 +11,8 @@
 
 SCONS ?= scons
 JOBS ?= $(shell nproc)
+# the Android SDK of the workspace (<workspace>/ANDROID_SDK) unless ANDROID_HOME says otherwise
+export ANDROID_HOME ?= $(abspath $(CURDIR)/../../ANDROID_SDK)
 SDK := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 
 # The targets share build/ (the host tree, build/disc): never two at once, even
