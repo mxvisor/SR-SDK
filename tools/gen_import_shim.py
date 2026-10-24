@@ -141,7 +141,7 @@ if cfg.get('extern') == 'yes':
     if keep:
         e += keep + ['']
     for n, dll, argc, _ in sorted(rows, key=lambda r: cname(r[0])):
-        e.append('define %s %s_asm2c' % (n, cname(n)))
+        e.append('define %s %s_asm2c' % (n, n))
     write(ext, e)
 
 # --- header ---
