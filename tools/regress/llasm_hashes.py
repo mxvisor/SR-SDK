@@ -13,6 +13,9 @@ For a built game repository (its build/gen must exist: `scons stage=gen`):
                                                      two check lines for run_all (TAB-separated):
                                                        llasm-gen   ID  ok|changed  detail
                                                        llasm-llvm  ID  ok|changed  detail
+  llasm_hashes.py REPO [DEVICE ...] --ref FILE --id ID --renew
+                                                     the same lines go to stderr, the listing
+                                                     becomes FILE and the lines on stdout say ok
 Options: --llasm PATH  the llasm.py to run (default: REPO/SR-SDK/llasm/llasm.py).
 Devices default to pc64-linux and pc64-windows. Exit status 1 on a difference.
 """
@@ -77,7 +80,7 @@ def diff(kind, now, ref):
 
 
 def main(argv):
-    repo, devices, llasm, ref, ident = None, [], None, None, None
+    repo, devices, llasm, ref, ident, renew = None, [], None, None, None, False
     it = iter(argv)
     for arg in it:
         if arg == '--llasm':
@@ -86,6 +89,8 @@ def main(argv):
             ref = next(it)
         elif arg == '--id':
             ident = next(it)
+        elif arg == '--renew':
+            renew = True
         elif repo is None:
             repo = os.path.abspath(arg)
         else:
@@ -99,15 +104,26 @@ def main(argv):
         for h, k in now:
             print('%s  %s' % (h, k))
         return 0
-    with open(ref) as f:
-        want = parse(f)
+    want = []
+    if os.path.exists(ref) or not renew:
+        with open(ref) as f:
+            want = parse(f)
     status = 0
     for kind in ('gen', 'llvm'):
         n, total, first = diff(kind, now, want)
         if n:
             status = 1
-        print('llasm-%s\t%s\t%s\t%d of %d differ%s' % (kind, ident or repo, 'changed' if n else 'ok', n, total,
-                                                       ', first: ' + first if n else ''))
+        line = 'llasm-%s\t%s\t%s\t%d of %d differ%s' % (kind, ident or repo, 'changed' if n else 'ok', n, total,
+                                                       ', first: ' + first if n else '')
+        if renew:
+            # the old reference's verdict stays in the log; the new one is this listing
+            print('was: ' + line, file=sys.stderr)
+            line = 'llasm-%s\t%s\tok\t0 of %d differ' % (kind, ident or repo, len([k for _, k in now if k.startswith(kind + '/')]))
+        print(line)
+    if renew:
+        with open(ref, 'w') as f:
+            f.writelines('%s  %s\n' % (h, k) for h, k in now)
+        return 0
     return status
 
 

@@ -25,6 +25,8 @@ tools/regress/run_all.sh --save-ref         # the result becomes the reference
 
 Each row of the comparison is `same`, `REGRESSION` (ok → fail), `improved`
 (fail → ok), `CHANGED` (an SR output hash, or a llasm hash, differs) or `new`.
+A `llasm-gen`/`llasm-llvm` row that says `changed` is always a `CHANGED`, whatever the
+reference row says: it is compared with the listing `ref/llasm-<game>.txt`, not with the row.
 The exit status is 1 if there is a `REGRESSION` or a `CHANGED`.
 
 A `CHANGED` is not always a defect: a fix in SR changes its output on purpose.
@@ -76,7 +78,9 @@ Under Wine a fixed base is not an error, only a run that dies is.
 ## Clearing a reference after an intended change
 
 1. Run `run_all.sh`; look at every `CHANGED` and `REGRESSION`.
-2. When all of them are explained, `run_all.sh --save-ref` and commit `ref/`.
+2. When all of them are explained, `run_all.sh --save-ref` and commit `ref/`. It writes
+   `results.tsv`, `sr-hashes.txt` (with `sr`) and the `llasm-<game>.txt` of the games it ran
+   (with `llasm`); what the old listing said is left in the log as `was:` lines.
 
 `smoke` and `aslr` run `--jobs` games at a time; games share one Wine prefix (dos-recomp-wine), so the Wine runs go one after another.
 A run waits for the game only until it exits, and under Wine `aslr` starts the game once (the image base is fixed there). A full run takes a few minutes, most of it the slowest game's start.

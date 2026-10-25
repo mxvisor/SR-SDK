@@ -141,7 +141,9 @@ if want llasm; then
             add "$(printf 'llasm-gen\t%s\tfail\tno build/gen' "$id")"
             continue
         fi
-        "$REGRESS_DIR/llasm_hashes.py" "$repo" --ref "$REGRESS_DIR/ref/llasm-$id.txt" --id "$id" | while IFS= read -r line; do
+        # --save-ref renews the listing too: its old verdict is only in the log
+        renew=(); [ "$SAVE" = 1 ] && renew=(--renew)
+        "$REGRESS_DIR/llasm_hashes.py" "$repo" --ref "$REGRESS_DIR/ref/llasm-$id.txt" --id "$id" "${renew[@]}" | while IFS= read -r line; do
             add "$line"
         done
     done
@@ -201,6 +203,14 @@ def load(path):
     return rows
 
 ref, now = load(sys.argv[1]), load(sys.argv[2])
+
+def unchanged(key):
+    # sr and image rows carry the output hash: a different hash is a change; a llasm row
+    # says changed against the listing of ref/, which --save-ref renews: changed is a change
+    if key[0] in ('sr', 'image'):
+        return now[key][1] == ref[key][1]
+    return not (key[0].startswith('llasm-') and now[key][0] == 'changed')
+
 bad = 0
 for key in sorted(now):
     status, detail = now[key]
@@ -209,8 +219,9 @@ for key in sorted(now):
     else:
         rstatus, rdetail = ref[key]
         if status == rstatus:
-            # sr and image rows carry the output hash: a different hash is a change
-            verdict = 'CHANGED' if key[0] in ('sr', 'image') and detail != rdetail else 'same'
+            verdict = 'same' if unchanged(key) else 'CHANGED'
+        elif key[0].startswith('llasm-') and status == 'changed':
+            verdict = 'CHANGED'
         elif rstatus == 'ok':
             verdict = 'REGRESSION'
         elif status == 'ok':
@@ -222,7 +233,7 @@ for key in sorted(now):
     if verdict != 'same':
         print('%-10s %-10s %-45s %-8s %s' % (verdict, key[0], key[1], status, detail))
 total = len(now)
-same = sum(1 for k in now if k in ref and now[k][0] == ref[k][0] and (k[0] not in ('sr', 'image') or now[k][1] == ref[k][1]))
+same = sum(1 for k in now if k in ref and now[k][0] == ref[k][0] and unchanged(k))
 print('%d checks, %d same as the reference, %d need attention' % (total, same, bad))
 sys.exit(1 if bad else 0)
 PY
