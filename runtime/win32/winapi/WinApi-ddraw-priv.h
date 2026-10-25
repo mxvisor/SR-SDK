@@ -76,6 +76,7 @@ struct IDirectDrawSurface_c {
     uint8_t *mem;
     uint8_t *pixels;
     int primary, backbuffer, locked;
+    int flipped;                    /* primary: the game has flipped it, Flip shows its frames */
     int has_colorkey;
     uint32_t colorkey_low, colorkey_high;
     struct IDirectDrawPalette_c *palette;

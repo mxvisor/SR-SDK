@@ -1468,6 +1468,7 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, st
 
     /* the back buffer keeps its contents, the front buffer is a copy of it */
     memcpy(lpThis->pixels, src->pixels, lpThis->height * lpThis->pitch);
+    lpThis->flipped = 1;
     Present(lpThis->dd);
 
     SDL_Delay(Display_DelayAfterFlip);
@@ -1749,9 +1750,10 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
     if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
 #endif
     if (lpThis->primary) Present(lpThis->dd);
-    else if (lpThis->backbuffer && lpThis->dd->Primary != NULL)
+    else if (lpThis->backbuffer && lpThis->dd->Primary != NULL && !lpThis->dd->Primary->flipped)
     {
-        /* the game draws into the back buffer and never flips it */
+        /* the game draws into the back buffer and never flips it; one that flips
+         * (clears the back buffer, draws, flips) shows only whole frames */
         struct IDirectDrawSurface_c *prim = lpThis->dd->Primary;
         memcpy(prim->pixels, lpThis->pixels, prim->height * prim->pitch);
         Present(lpThis->dd);
