@@ -118,11 +118,39 @@ int32_t CCALL OffsetRgn_c(void */*hrgn*/, int32_t /*nXOffset*/, int32_t /*nYOffs
 //    return OffsetRgn((HRGN)hrgn, nXOffset, nYOffset);
 }
 
-void * CCALL SelectObject_c(void */*hdc*/, void */*hgdiobj*/)
+/* The objects a device context holds: the layer has no GDI, but a game that
+ * draws through WinG selects a bitmap into its device context and expects the
+ * selection to stick, so the object is remembered here. */
+#define MAX_SELECTED 16
+static struct {
+    void *hdc;
+    void *obj;
+} selected_objects[MAX_SELECTED];
+static int selected_objects_count = 0;
+
+void * CCALL SelectObject_c(void *hdc, void *hgdiobj)
 {
-    eprintf("Unimplemented: %s\n", "SelectObject");
-    exit(1);
-//    return SelectObject((HDC)hdc, (HGDIOBJ)hgdiobj);
+    void *old = NULL;
+    int i;
+
+    for (i = 0; i < selected_objects_count; i++)
+    {
+        if (selected_objects[i].hdc == hdc)
+        {
+            old = selected_objects[i].obj;
+            selected_objects[i].obj = hgdiobj;
+            return old;
+        }
+    }
+
+    if (selected_objects_count < MAX_SELECTED)
+    {
+        selected_objects[selected_objects_count].hdc = hdc;
+        selected_objects[selected_objects_count].obj = hgdiobj;
+        selected_objects_count++;
+    }
+
+    return old;
 }
 
 int32_t CCALL SetBkMode_c(void */*hdc*/, int32_t /*iBkMode*/)

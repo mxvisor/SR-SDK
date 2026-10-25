@@ -50,6 +50,34 @@
 #ifndef GAME_WINAPI_MESSAGEBOX_ANSWER
 #define GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption) 0
 #endif
+/* GAME_WINAPI_PAINT_WHEN_IDLE: the game draws its picture in its window
+ * procedure and waits for the repaint request; the port has no window of its
+ * own and makes the request itself when the program has no other message
+ * (default 0: no request, the program draws on its own) */
+#ifndef GAME_WINAPI_PAINT_WHEN_IDLE
+#define GAME_WINAPI_PAINT_WHEN_IDLE 0
+#endif
+/* GAME_WINAPI_ACTIVATE_APP_ON_IDLE: the program expects to be told that it
+ * is not active (WM_ACTIVATEAPP with wParam 0) and then that it is active
+ * again (wParam 1); it makes its picture buffer on the first message and
+ * draws the scene on the second (default 0: no such messages) */
+#ifndef GAME_WINAPI_ACTIVATE_APP_ON_IDLE
+#define GAME_WINAPI_ACTIVATE_APP_ON_IDLE 0
+#endif
+/* GAME_WINAPI_COMMAND_ON_IDLE: the command id the program gets when the user
+ * picks the first item of its menu (the game asks "start a new game?" and
+ * then starts the level); 0 = no such command */
+#ifndef GAME_WINAPI_COMMAND_ON_IDLE
+#define GAME_WINAPI_COMMAND_ON_IDLE 0
+#endif
+/* GAME_WINAPI_COMMAND_READY(): true when the program is ready for that command
+ * (default 1: at once); until then the command waits */
+#ifndef GAME_WINAPI_COMMAND_READY
+#define GAME_WINAPI_COMMAND_READY() 1
+#endif
+
+static int paint_pending = 0;
+static int post_command_redraw = 0;
 
 #if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
 #define _WIN32
@@ -116,6 +144,10 @@
 #define WM_SETFOCUS 0x0007
 #define WM_KILLFOCUS 0x0008
 #define WM_ACTIVATEAPP 0x001C
+#define WM_PAINT 0x000F
+#define WM_COMMAND 0x0111
+#define PM_NOREMOVE 0
+#define PM_REMOVE 1
 #define WM_QUIT 0x0012
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
@@ -339,6 +371,22 @@ static const uint8_t virtual_keyboard_layout[2][4][VK_LAYOUT_WIDTH] = { {
 static uint8_t virtual_keyboard_buffer[2 * VK_LAYOUT_WIDTH];
 static int virtual_keyboard_buflen;
 
+/* how many of the messages of GAME_WINAPI_ACTIVATE_APP_ON_IDLE are sent */
+static int activate_app_state = 0;
+
+/* The messages the program posts to itself (PostMessageA): they wait here
+ * until the program asks for them with PeekMessageA or GetMessageA. */
+#define GAME_MSGQUEUE_SIZE 64
+typedef struct
+{
+    void *hwnd;
+    uint32_t message;
+    uint32_t wParam;
+    uint32_t lParam;
+} game_queued_msg;
+static game_queued_msg game_msgqueue[GAME_MSGQUEUE_SIZE];
+static int game_msgqueue_count = 0;
+
 #ifdef PYRA
 static SDL_Joystick *pyra_stick = NULL;
 static int pyra_key_l2 = 0;
@@ -349,6 +397,31 @@ static int pyra_key_l2 = 0;
 extern "C" {
 #endif
 extern uint32_t CCALL RunWndProc_asm(void *hwnd, uint32_t uMsg, uint32_t wParam, uint32_t lParam, uint32_t (*WndProc)(void *, uint32_t, uint32_t, uint32_t));
+
+/* A game that draws its picture itself (a WinG game) can show the frame it
+ * has drawn; the game of the port does it in Game_Wing_Tick. */
+#if defined(__GNUC__)
+#define WINAPI_WEAK __attribute__((weak))
+#else
+#define WINAPI_WEAK
+#endif
+extern void Game_Wing_Tick(void) WINAPI_WEAK;
+
+/* Calls the window procedure the guest registered, for the games that draw
+ * their picture in a WM_PAINT handler and wait for the message (a game that
+ * uses WinG does). The guest's own message loop is not the one that delivers
+ * it: the port does. */
+uint32_t CCALL Winapi_CallWndProc(uint32_t hwnd, uint32_t uMsg, uint32_t wParam, uint32_t lParam)
+{
+    if (lpfnWndProc == NULL)
+    {
+        return 0;
+    }
+
+
+    return RunWndProc_asm((void *)(uintptr_t)hwnd, uMsg, wParam, lParam,
+                          (uint32_t (*)(void *, uint32_t, uint32_t, uint32_t))lpfnWndProc);
+}
 #ifdef __cplusplus
 }
 #endif
@@ -2715,6 +2788,14 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
             lpMsg->wParam = 0;
             lpMsg->lParam = 0;
             break;
+        case SDL_WINDOWEVENT_EXPOSED:
+            /* the window was uncovered: Windows asks the program to repaint
+             * it, and a program that draws its picture in the window
+             * procedure waits for that message */
+            lpMsg->message = WM_PAINT;
+            lpMsg->wParam = 0;
+            lpMsg->lParam = 0;
+            break;
         default:
             break;
         }
@@ -3101,6 +3182,8 @@ uint32_t CCALL MessageBoxA_c(void *hWnd, const char *lpText, const char *lpCapti
     SDL_MessageBoxButtonData buttons[3];
     int answer = GAME_WINAPI_MESSAGEBOX_ANSWER(lpText, lpCaption);
 
+    eprintf("MessageBoxA: \"%s\" / \"%s\" (0x%x)\n", lpText ? lpText : "", lpCaption ? lpCaption : "", uType);
+
     if (answer) return (uint32_t)answer;
 
     data.window = NULL;
@@ -3278,7 +3361,90 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
     {
         SDL_Event event;
 
-        if (!find_event(&event, wRemoveMsg, 0)) return 0;
+        if (!find_event(&event, wRemoveMsg, 0))
+        {
+            /* a message the program posted to itself comes first */
+            if (game_msgqueue_count > 0 && lpMsg != NULL)
+            {
+                game_queued_msg *m = &game_msgqueue[0];
+                ((lpmsg)lpMsg)->hwnd = m->hwnd;
+                ((lpmsg)lpMsg)->message = m->message;
+                ((lpmsg)lpMsg)->wParam = m->wParam;
+                ((lpmsg)lpMsg)->lParam = m->lParam;
+                if (wRemoveMsg != PM_NOREMOVE)
+                {
+                    int i;
+                    if (m->message == WM_PAINT && m->hwnd == (void *)PSEUDO_HANDLE_MAIN_WINDOW)
+                    {
+                        paint_pending = 0;
+                    }
+                    game_msgqueue_count--;
+                    for (i = 0; i < game_msgqueue_count; i++)
+                    {
+                        game_msgqueue[i] = game_msgqueue[i + 1];
+                    }
+                }
+                return 1;
+            }
+
+            /* No message: the program gets on with its work, usually
+             * drawing the next frame.  The port has no window of its own,
+             * so it must not invent a WM_PAINT here: a program that draws
+             * when it has no message (and waits for a message to redraw)
+             * would never draw at all.  A game that asks for it gets the
+             * repaint request the window of Windows would send it. */
+#if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
+            if (activate_app_state < 2 && lpfnWndProc != NULL && lpMsg != NULL)
+            {
+                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+                ((lpmsg)lpMsg)->message = WM_ACTIVATEAPP;
+                ((lpmsg)lpMsg)->wParam = (activate_app_state == 0) ? 0 : 1;
+                ((lpmsg)lpMsg)->lParam = 0;
+                activate_app_state++;
+                return 1;
+            }
+#endif
+#if GAME_WINAPI_COMMAND_ON_IDLE
+            if (activate_app_state == 2 && lpfnWndProc != NULL && lpMsg != NULL && GAME_WINAPI_COMMAND_READY())
+            {
+                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+                ((lpmsg)lpMsg)->message = WM_COMMAND;
+                ((lpmsg)lpMsg)->wParam = GAME_WINAPI_COMMAND_ON_IDLE;
+                ((lpmsg)lpMsg)->lParam = 0;
+                activate_app_state++;
+                /* After New Game, schedule a WM_PAINT on the next idle cycle */
+                post_command_redraw = 1;
+                return 1;
+            }
+#endif
+#if GAME_WINAPI_PAINT_WHEN_IDLE
+            if (lpfnWndProc != NULL && lpMsg != NULL)
+            {
+                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+                ((lpmsg)lpMsg)->message = WM_PAINT;
+                ((lpmsg)lpMsg)->wParam = 0;
+                ((lpmsg)lpMsg)->lParam = 0;
+                return 1;
+            }
+#endif
+
+            if (post_command_redraw && lpfnWndProc != NULL && lpMsg != NULL)
+            {
+                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+                ((lpmsg)lpMsg)->message = WM_PAINT;
+                ((lpmsg)lpMsg)->wParam = 0;
+                ((lpmsg)lpMsg)->lParam = 0;
+                post_command_redraw = 0;
+                return 1;
+            }
+
+            if (Game_Wing_Tick != NULL)
+            {
+                Game_Wing_Tick();
+            }
+
+            return 0;
+        }
 
         if (lpMsg != NULL)
         {
@@ -3292,7 +3458,7 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
     exit(1);
 }
 
-uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t /*wParam*/, uint32_t /*lParam*/)
+uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
 #ifdef DEBUG_USER32
     eprintf("PostMessageA: 0x%" PRIxPTR ", %i, %i, %i\n", (uintptr_t)hWnd, Msg, wParam, lParam);
@@ -3304,6 +3470,24 @@ uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t /*wParam*/, uin
 
         Winapi_SetLastError(ERROR_ACCESS_DENIED);
         return 0;
+    }
+
+    if (Msg == WM_PAINT && hWnd == PSEUDO_HANDLE_MAIN_WINDOW)
+    {
+        if (paint_pending)
+        {
+            return 1;
+        }
+        paint_pending = 1;
+    }
+
+    if (game_msgqueue_count < GAME_MSGQUEUE_SIZE)
+    {
+        game_queued_msg *m = &game_msgqueue[game_msgqueue_count++];
+        m->hwnd = hWnd;
+        m->message = Msg;
+        m->wParam = wParam;
+        m->lParam = lParam;
     }
 
     // Just succeed for unhandled messages to avoid exit
@@ -3447,9 +3631,13 @@ uint32_t CCALL WaitMessage_c(void)
     eprintf("WaitMessage\n");
 #endif
 
-    while (!SDL_WaitEventTimeout(NULL, 100))
+    /* Windows wakes the program up when a message arrives. The port has no
+     * message queue of its own: the program is woken up regularly and finds
+     * the repaint request (the port's own WM_PAINT) in PeekMessage. */
+    while (!SDL_WaitEventTimeout(NULL, 33))
     {
         if (Thread_Exit) Game_StopMain();
+        break;
     }
     return 1;
 }

@@ -33,6 +33,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include "Game_hooks.h"
 #elif defined(__APPLE__)
 #include <dlfcn.h>
 #include <stdint.h>
@@ -106,6 +107,16 @@ static pthread_mutex_t mutex;
 extern "C" void (*ptr_initialize_pointers)(uint64_t pointer_offset);
 
 uint64_t pointer_offset;
+
+#ifdef _WIN32
+/* Game_hooks.h may set GAME_GUEST_LOW_MEMORY(): how much of the guest's
+ * address space from pointer_offset up the program wants to be free of
+ * the host (Windows: below the image of the host). The default is the
+ * low megabyte of the guest and the 64 KB after it. */
+#ifndef GAME_GUEST_LOW_MEMORY
+#define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
+#endif
+#endif
 unsigned int pointer_reserved_length;
 #if defined(__ANDROID__)
 static uint64_t guest_region_base;
@@ -1327,7 +1338,7 @@ int initialize_pointer_offset(void)
 
     GetSystemInfo(&sinfo);
 
-    min_length = (1024*1024 + 65536 + (sinfo.dwAllocationGranularity - 1)) & ~(sinfo.dwAllocationGranularity - 1);
+    min_length = (GAME_GUEST_LOW_MEMORY() + (sinfo.dwAllocationGranularity - 1)) & ~(sinfo.dwAllocationGranularity - 1);
 
     if ((uintptr_t)hModule <= 2*min_length)
     {
@@ -1339,7 +1350,7 @@ int initialize_pointer_offset(void)
         return 0;
     }
 
-    min_length = (1024*1024 + 65536 + (sinfo.dwPageSize - 1)) & ~(sinfo.dwPageSize - 1);
+    min_length = (GAME_GUEST_LOW_MEMORY() + (sinfo.dwPageSize - 1)) & ~(sinfo.dwPageSize - 1);
 
     maddr = free_offset = 0;
     for (;;)

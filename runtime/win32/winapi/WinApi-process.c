@@ -631,14 +631,31 @@ uint32_t CCALL GetFileAttributesA_c(uint32_t a0)
 
 /* ------------------------------------------------------------------- time */
 
+/* the milliseconds of the wall clock: a program that times its frames by the
+ * clock of the C library (_ftime) needs more than seconds */
+static uint16_t winapi_time_milliseconds(time_t *seconds)
+{
+    struct timespec ts;
+
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+    {
+        *seconds = time(NULL);
+        return 0;
+    }
+
+    *seconds = ts.tv_sec;
+    return (uint16_t)(ts.tv_nsec / 1000000);
+}
+
 uint32_t CCALL GetSystemTime_c(uint32_t a0)
 {
     time_t now;
     struct tm parts;
     uint16_t *out;
+    uint16_t millis;
 
     if (a0 == 0) return 0;
-    now = time(NULL);
+    millis = winapi_time_milliseconds(&now);
     parts = *gmtime(&now);
     out = (uint16_t *)GUEST_MEM(a0);
     out[0] = (uint16_t)(parts.tm_year + 1900);
@@ -648,7 +665,7 @@ uint32_t CCALL GetSystemTime_c(uint32_t a0)
     out[4] = (uint16_t)parts.tm_hour;
     out[5] = (uint16_t)parts.tm_min;
     out[6] = (uint16_t)parts.tm_sec;
-    out[7] = 0;
+    out[7] = millis;
     return 0;
 }
 
@@ -657,9 +674,10 @@ uint32_t CCALL GetLocalTime_c(uint32_t a0)
     time_t now;
     struct tm parts;
     uint16_t *out;
+    uint16_t millis;
 
     if (a0 == 0) return 0;
-    now = time(NULL);
+    millis = winapi_time_milliseconds(&now);
     parts = *localtime(&now);
     out = (uint16_t *)GUEST_MEM(a0);
     out[0] = (uint16_t)(parts.tm_year + 1900);
@@ -669,7 +687,7 @@ uint32_t CCALL GetLocalTime_c(uint32_t a0)
     out[4] = (uint16_t)parts.tm_hour;
     out[5] = (uint16_t)parts.tm_min;
     out[6] = (uint16_t)parts.tm_sec;
-    out[7] = 0;
+    out[7] = millis;
     return 0;
 }
 

@@ -404,7 +404,7 @@ unsigned int CCALL Winapi_GetTicks(void)
 
     clock_gettime(MONOTONIC_CLOCK_TYPE, &_tp);
 
-    return ((_tp.tv_sec - start_time.tv_sec) * 1000) + ((_tp.tv_nsec - start_time.tv_nsec) / 1000000);
+    return (unsigned int)((((_tp.tv_sec - start_time.tv_sec) * 1000000000ULL) + (_tp.tv_nsec - start_time.tv_nsec)) / 1000000ULL);
 #endif
 #endif
 }
@@ -1692,6 +1692,19 @@ uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpK
     size_t default_length, length;
     int items;
     char buf[8192];
+    char filename_buf[512];
+    const char *name;
+
+    /* The path of the file is the name of the file in the game directory:
+     * the game asks for ".\\GAME.INI". */
+    if (lpFileName != NULL)
+    {
+        strncpy(filename_buf, lpFileName, sizeof(filename_buf) - 1);
+        filename_buf[sizeof(filename_buf) - 1] = 0;
+        name = strrchr(filename_buf, '\\');
+        if (name == NULL) name = strrchr(filename_buf, '/');
+        lpFileName = (name != NULL) ? (name + 1) : filename_buf;
+    }
 
 #ifdef DEBUG_KERNEL32
     eprintf("GetPrivateProfileStringA: %s, %s, %s, 0x%" PRIxPTR ", %i, %s\n", lpAppName, lpKeyName, lpDefault, (uintptr_t)lpReturnedString, nSize, lpFileName);
