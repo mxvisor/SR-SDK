@@ -64,6 +64,7 @@
 #                                      build/disc, not the bare image
 #     unpack=<disc file>[ <dir>]       an InstallShield .z of the disc, unpacked
 #                                      into the copy (so is build/disc)
+#     expand=<name>[=<out>]            an SZDD file of the disc, unpacked (disc_tree.py)
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
@@ -284,9 +285,9 @@ def main():
     root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
     copy = Copy(cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir,
                 read_place_rules(args.cfg), args.out)
-    if any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=')) for line in open(args.cfg)):
+    if any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=', 'expand=')) for line in open(args.cfg)):
         # the disc with its patch= archives over it and its unpack= archives
-        # unpacked, not the bare image
+        # and expand= files unpacked, not the bare image
         disc = os.path.join(root, 'build', 'disc')
         subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
                         disc, '--cfg', args.cfg, '--cue', cue_path], check=True)
