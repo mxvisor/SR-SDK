@@ -147,6 +147,29 @@ EOF
   find "$overlay" -type f -printf '  %s\t%P\n' | sort -k2 || true
 }
 
+# The CD player of the original under Wine. Wine's own mcicda reads the drive's TOC with an ioctl, which
+# a directory in the role of D: cannot answer, so `open cdaudio` fails. tools/orig_mcicda is a driver that
+# plays the audio tracks of the cue sheet instead; winmm picks it from [mci] of system.ini.
+# $1 = the cue sheet, or empty to give the prefix Wine's own driver back.
+_orig_cdaudio() {
+  local cue="$1" sys dll="$HOME/.cache/orig-mcicda/mcicda.dll" src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/orig_mcicda" ini="$WINEPREFIX/drive_c/windows/system.ini" name=mcicda.dll
+  if [ -n "$cue" ]; then
+    if [ ! -f "$dll" ] || [ "$src/mcicda.c" -nt "$dll" ] || [ "$src/mcicda.rc" -nt "$dll" ]; then
+      command -v i686-w64-mingw32-gcc >/dev/null && command -v i686-w64-mingw32-windres >/dev/null || {
+        echo "no MinGW (i686-w64-mingw32-gcc): CD audio stays with Wine's mcicda" >&2; return; }
+      mkdir -p "${dll%/*}"
+      i686-w64-mingw32-windres "$src/mcicda.rc" -O coff -o "${dll%.dll}.res.o" &&
+      i686-w64-mingw32-gcc -O2 -static-libgcc -shared -o "$dll" "$src/mcicda.c" "$src/mcicda.def" "${dll%.dll}.res.o" -lwinmm || {
+        echo "cannot build $src: CD audio stays with Wine's mcicda" >&2; return; }
+    fi
+    name=mcicda_img.dll
+    sys="$WINEPREFIX/drive_c/windows/syswow64"; [ -d "$sys" ] || sys="$WINEPREFIX/drive_c/windows/system32"
+    cp -f "$dll" "$sys/$name"
+    export ORIG_CDAUDIO_CUE="$(realpath "$cue")"
+  fi
+  [ -f "$ini" ] && sed -i "s/^cdaudio=.*/cdaudio=$name/I" "$ini" || true
+}
+
 run_orig_wine() {
   _orig_init DIR; _orig_parse "$@"
   _orig_need wine
@@ -168,8 +191,10 @@ run_orig_wine() {
   if [ -n "$CD" ]; then
     ln -sfn "$(realpath "$CD")" "$WINEPREFIX/dosdevices/d::"
     echo "D: = $CD"
+    _orig_cdaudio "$(ls "$GAME_REPO"/build/cd/*.cue 2>/dev/null | head -1)"
   else
     rm -f "$WINEPREFIX/dosdevices/d::"
+    _orig_cdaudio ""
   fi
 
   # the game's files under an overlay: the original never writes into them

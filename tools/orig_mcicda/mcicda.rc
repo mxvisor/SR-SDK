@@ -1,0 +1,8 @@
+#include <windows.h>
+#include <mmsystem.h>
+
+STRINGTABLE
+BEGIN
+    MCI_CDA_TRACK_AUDIO, "audio"
+    MCI_CDA_TRACK_OTHER, "other"
+END
