@@ -65,7 +65,8 @@ SourceFileScanner.add_scanner('.llasm', llasmscan)
 
 # the llasm command (SR-SDK/llasm/llasm.py or llasm=<path>), from SR-SDK/scons/game.py
 # pipefail: a failing llasm must stop the build and leave no object behind
-bld = Builder(action = "bash -o pipefail -c '" + llasm_tool + " $SOURCE -O $LLASMFLAGS | opt -O3 | llc -O=3 -filetype=obj $LLVMFLAGS > $TARGET || { rc=$?; rm -f $TARGET; exit $rc; }'",
+# (the $rc is escaped for SCons, which would take it for one of its own variables)
+bld = Builder(action = "bash -o pipefail -c '" + llasm_tool + " $SOURCE -O $LLASMFLAGS | opt -O3 | llc -O=3 -filetype=obj $LLVMFLAGS > $TARGET || { rc=$?; rm -f $TARGET; exit $$rc; }'",
               suffix = "$OBJSUFFIX",
               src_suffix = '.llasm'
              )

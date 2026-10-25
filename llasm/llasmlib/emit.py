@@ -140,7 +140,20 @@ def get_addr_to_int32(value, ptrtype="i8", nullable_pointer=False):
         return "ptrtoint (" + ptrtype + "* " + value + " to i32)"
 
 
+def _guest_data_label(param):
+    """The label of the guest's data that the guest reaches at its original
+    address (-guest-data-in-memory), global or not, or None."""
+    if not G.guest_data_in_memory:
+        return None
+    addrlabel = G.dlabel_list.get(param.value)
+    if addrlabel is None or addrlabel.ivalue == 0:
+        return None
+    return addrlabel
+
+
 def _extern_is_direct(param):
+    if _guest_data_label(param) is not None:
+        return False
     return (not G.position_independent_code) or (param.value in G.extern_list) or G.dlabel_list[param.value].isglobal
 
 
@@ -210,6 +223,16 @@ def get_parameter_read_value(param, as_pointer=False, nullable_pointer=False):
         else:
             addrlabel = G.dlabel_list[param.value]
 
+            if G.guest_data_in_memory and (addrlabel.ivalue != 0):
+                # the guest reaches its data at the address it had in the
+                # original program: the data is copied into the guest's
+                # memory (see the copy in the constructor), so the guest's
+                # own address of a label is its original address
+                if as_pointer:
+                    return get_int32_to_ptr(str(_s32(addrlabel.ivalue + param.ivalue)), "i8")
+                else:
+                    return str(_s32(addrlabel.ivalue + param.ivalue))
+
             if as_pointer:
                 return _dseg_gep(addrlabel, _s32(addrlabel.offset + param.ivalue))
             else:
@@ -245,6 +268,9 @@ def get_parameter_read_addr(param, ptrtype):
                     return "bitcast (i8* getelementptr (" + get_load_type("i8") + " " + _llref(param.value) + ", i32 " + str(param.ivalue) + ") to " + ptrtype + "*)"
         else:
             addrlabel = G.dlabel_list[param.value]
+
+            if G.guest_data_in_memory and (addrlabel.ivalue != 0):
+                return get_int32_to_ptr(str(_s32(addrlabel.ivalue + param.ivalue)), ptrtype)
 
             if ptrtype == "i8":
                 return _dseg_gep(addrlabel, _s32(addrlabel.offset + param.ivalue))

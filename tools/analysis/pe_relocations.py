@@ -393,12 +393,19 @@ def write_sci(sci_dir, rows, code_ranges, starts, sizes, immediates, memops, raw
             insn = inside(val)
             if val in from1 and insn is not None:
                 displaced[val] = insn + sizes[insn] - val
+            elif insn is None and reads_as_code(val):
+                # a real pointer at the start of an instruction (a function
+                # pointer table, a vtable) -- SRW takes it for code
+                code.add(val)
             else:
+                # a pointer that lands in the middle of an instruction: the
+                # linear sweep never reaches it, so SRW must not try to decode
+                # it (it would report a fixup mismatch)
                 nocode.add(val)
         elif src in immediates or src in raws:
-            if val in starts and reads_as_code(val):
+            if inside(val) is None and reads_as_code(val):
                 code.add(val)
-            elif src in immediates:
+            else:
                 nocode.add(val)
     # a table read with a negative index ends where code begins (memcpy of MSVC)
     nocode -= code

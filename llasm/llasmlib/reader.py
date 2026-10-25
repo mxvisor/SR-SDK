@@ -379,6 +379,13 @@ def _read_dlabel(cl):
     newlabel.offset = G.current_dataseg_offset
     newlabel.isglobal = False
 
+    # a label of a disassembled program is named after its address
+    if cl.param1.startswith("loc_"):
+        try:
+            newlabel.ivalue = int(cl.param1[len("loc_"):], 16)
+        except ValueError:
+            newlabel.ivalue = 0
+
     if cl.param1 != cl.params:
         st = strip(cl.params[len(cl.param1) + 1:])
 

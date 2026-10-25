@@ -109,6 +109,7 @@ instructions_base_list = [
     "endif",
     "ctlz reg, reg",
     "bswap reg, reg",
+    "not reg",
 ]
 
 

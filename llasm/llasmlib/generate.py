@@ -22,6 +22,7 @@
 """Second pass: writing the LLVM IR."""
 
 import os
+import re
 import sys
 
 from .emit import add_output_line, get_addr_to_int32, get_int32_to_ptr, get_load_type, get_new_temporary_register
@@ -194,7 +195,7 @@ def _write_procedures():
 
         # LLASM_SYMBOLS=1: every procedure keeps its name in the object (nm,
         # a debugger), where it is private otherwise
-        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if (proc.ispublic or _keep_names) else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind {")
+        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if (proc.ispublic or _keep_names) else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind" + (" noinline" if _keep_names else "") + " {")
 
         if not process_proc_body(proc_name):
             return 79
@@ -319,13 +320,21 @@ def _write_ctor():
                     dataseg_offset = _s32(dataseg_offset + dd.datalen)
                     continue
 
+                store_value_is_va = False
                 if dd.addr in G.proc_list:
                     store_value = "ptrtoint (" + ("i8*" if G.no_tail_calls else "void") + "(%_cpu*)* " + _llref(dd.addr) + " to i32)"
                 else:
                     if G.position_independent_code:
                         addrlabel = G.dlabel_list[dd.addr]
 
-                        store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* " + _llref(addrlabel.dataseg_name) + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
+                        if G.guest_data_in_memory and (addrlabel.ivalue != 0):
+                            # the data is copied into the guest's memory, so the
+                            # guest's own address of the label is its original
+                            # address
+                            store_value = str(_s32(addrlabel.ivalue + dd.addr_offset))
+                            store_value_is_va = True
+                        else:
+                            store_value = "ptrtoint (i8* getelementptr (" + get_load_type("i8") + " bitcast (%_" + addrlabel.dataseg_name + "* " + _llref(addrlabel.dataseg_name) + " to i8*), i32 " + str(_s32(addrlabel.offset + dd.addr_offset)) + ") to i32)"
                     else:
                         if dd.addr_offset == 0:
                             store_value = "ptrtoint (i8* " + _llref(dd.addr) + " to i32)"
@@ -336,7 +345,7 @@ def _write_ctor():
 
                 align_value = 4 if (dataseg_offset % 4 == 0) else (2 if (dataseg_offset % 2 == 0) else 1)
 
-                if G.pointers_with_offset:
+                if G.pointers_with_offset and (not store_value_is_va):
                     r1 = get_new_temporary_register()
                     add_output_line(r1 + " = sub i32 " + store_value + ", %1")
                     add_output_line("store i32 " + r1 + ", i32* " + ptr_value + ", align " + str(align_value))
@@ -368,13 +377,170 @@ def _write_ctor():
 
 
 
+def _guest_data_segments():
+    """The data of the guest, with the address it has in the original program:
+    (name, address, size, offset) for every run of a segment that has labels
+    with known addresses. A run is a part of the segment (from offset, size
+    bytes) that lies at consecutive addresses; a segment made of pieces of
+    data between the code (the data of a code section) has a run for every
+    piece."""
+
+    segments = []
+
+    for dataseg_name in sorted(G.dataseg_list.keys()):
+        dataseg = G.dataseg_list[dataseg_name]
+
+        size = 0
+        for i in range(len(dataseg.data)):
+            dd = dataseg.data[i]
+            size += 4 if dd.isaddr else dd.datalen
+
+        labels = sorted((label for label in dataseg.labels if label.ivalue != 0),
+                        key=lambda label: label.offset)
+
+        runs = []
+        for label in labels:
+            base = _s32(label.ivalue - label.offset)
+            if (len(runs) != 0) and (runs[-1][0] == base):
+                continue
+            runs.append((base, label.offset))
+
+        for i in range(len(runs)):
+            base, start = runs[i]
+            end = runs[i + 1][1] if (i + 1 < len(runs)) else size
+            if end > start:
+                segments.append((dataseg_name, _s32(base + start), end - start, start))
+
+    return segments
+
+
+def _write_guest_data_functions():
+    """The functions that copy the guest's data into the guest's memory.
+
+    With -guest-data-in-memory the guest reaches its data at the addresses
+    the data had in the original program, so the data has to be copied into
+    the guest's memory (which is at the pointer offset) before the guest
+    starts. The port maps the range (llasm_guest_data_range) and then calls
+    llasm_copy_guest_data."""
+
+    if not G.guest_data_in_memory:
+        return None
+
+    segments = _guest_data_segments()
+    if len(segments) == 0:
+        return None
+
+    range_start = min(seg[1] for seg in segments)
+    range_end = max(_s32(seg[1] + seg[2]) for seg in segments)
+
+    add_output_line("")
+    add_output_line("; the guest's data in the guest's memory")
+    add_output_line("define void @llasm_guest_data_range(i32* %r) nounwind {")
+    add_output_line("store i32 " + str(_s32(range_start)) + ", i32* %r, align 4")
+    add_output_line("%p = getelementptr i32, i32* %r, i32 1")
+    add_output_line("store i32 " + str(_s32(range_end)) + ", i32* %p, align 4")
+    add_output_line("ret void")
+    add_output_line("}")
+    add_output_line("")
+
+    add_output_line("define void @llasm_copy_guest_data(i64 %ptrofs) nounwind {")
+    add_output_line("entry:")
+
+    for i in range(len(segments)):
+        dataseg_name, address, size, offset = segments[i]
+
+        add_output_line("%srcb" + str(i) + " = bitcast %_" + dataseg_name + "* @" + dataseg_name + " to i8*")
+        add_output_line("%src" + str(i) + " = getelementptr i8, i8* %srcb" + str(i) + ", i32 " + str(offset))
+        add_output_line("%da" + str(i) + " = add i64 %ptrofs, " + str(_s32(address)))
+        add_output_line("%dst" + str(i) + " = inttoptr i64 %da" + str(i) + " to i8*")
+        add_output_line("br label %go" + str(i))
+        add_output_line("go" + str(i) + ":")
+        add_output_line("br label %loop" + str(i))
+        add_output_line("loop" + str(i) + ":")
+        add_output_line("%i" + str(i) + " = phi i32 [ 0, %go" + str(i) + " ], [ %in" + str(i) + ", %loop" + str(i) + " ]")
+        add_output_line("%sp" + str(i) + " = getelementptr i8, i8* %src" + str(i) + ", i32 %i" + str(i))
+        add_output_line("%dp" + str(i) + " = getelementptr i8, i8* %dst" + str(i) + ", i32 %i" + str(i))
+        add_output_line("%v" + str(i) + " = load i8, i8* %sp" + str(i))
+        add_output_line("store i8 %v" + str(i) + ", i8* %dp" + str(i))
+        add_output_line("%in" + str(i) + " = add i32 %i" + str(i) + ", 1")
+        add_output_line("%c" + str(i) + " = icmp ult i32 %in" + str(i) + ", " + str(size))
+        add_output_line("br i1 %c" + str(i) + ", label %loop" + str(i) + ", label %next" + str(i))
+        add_output_line("next" + str(i) + ":")
+
+    add_output_line("ret void")
+    add_output_line("}")
+    add_output_line("")
+
+    return None
+
+
+def _write_guest_code_resolver():
+    """The function that turns an address of the guest's code into a code pointer.
+
+    The code pointers of the generated code are not the addresses of the
+    original program, and a program that computes its jump targets from a
+    table of the original addresses (or from the addresses of its own
+    instructions) needs a translation: llasm_resolve_guest_code returns the
+    pointer of the procedure at the address loc_XXXXXX, or 0."""
+
+    if not G.guest_data_in_memory:
+        return None
+
+    targets = []
+    for proc_name in sorted(G.proc_list.keys()):
+        m = re.match(r"^loc_([0-9A-Fa-f]+)$", proc_name)
+        if m:
+            targets.append((int(m.group(1), 16), proc_name))
+
+    if len(targets) == 0:
+        return None
+
+    proc_type = "i8*" if G.no_tail_calls else "void"
+
+    add_output_line("")
+    add_output_line("; the procedures by the addresses of the original program")
+    add_output_line("define i32 @llasm_resolve_guest_code(i32 %va, i64 %ptrofs) nounwind {")
+    add_output_line("entry:")
+    add_output_line("switch i32 %va, label %none [")
+    for i in range(len(targets)):
+        add_output_line("i32 " + str(_s32(targets[i][0])) + ", label %t" + str(i))
+    add_output_line("]")
+    for i in range(len(targets)):
+        add_output_line("t" + str(i) + ":")
+        add_output_line("%a" + str(i) + " = ptrtoint " + proc_type + "(%_cpu*)* " + _llref(targets[i][1]) + " to i64")
+        add_output_line("%b" + str(i) + " = sub i64 %a" + str(i) + ", %ptrofs")
+        add_output_line("%c" + str(i) + " = trunc i64 %b" + str(i) + " to i32")
+        add_output_line("ret i32 %c" + str(i))
+    add_output_line("none:")
+    add_output_line("ret i32 0")
+    add_output_line("}")
+    add_output_line("")
+
+    # the addresses themselves: a program that adds an offset to a code pointer
+    # (guest_address_jumps.sci) finds the address of a pointer in this list
+    count = str(len(targets))
+    add_output_line("@llasm_guest_code_vas = internal constant [" + count + " x i32] [" +
+                    ", ".join("i32 " + str(_s32(t[0])) for t in targets) + "]")
+    add_output_line("define i32 @llasm_guest_code_count() nounwind {")
+    add_output_line("ret i32 " + count)
+    add_output_line("}")
+    add_output_line("define i32 @llasm_guest_code_va(i32 %i) nounwind {")
+    add_output_line("%p = getelementptr [" + count + " x i32], [" + count + " x i32]* @llasm_guest_code_vas, i32 0, i32 %i")
+    add_output_line("%v = load i32, i32* %p")
+    add_output_line("ret i32 %v")
+    add_output_line("}")
+    add_output_line("")
+
+    return None
+
+
 def generate():
     """Write the output file. Returns an exit status."""
     if G.output_preprocessed_file:
         write_output(G.output_filename)
         return 0
 
-    for section in (_write_header_and_data, _write_declarations, _write_intrinsics, _write_procedures, _write_ctor):
+    for section in (_write_header_and_data, _write_declarations, _write_intrinsics, _write_procedures, _write_ctor, _write_guest_data_functions, _write_guest_code_resolver):
         result = section()
         if result is not None:
             return result

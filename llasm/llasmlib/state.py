@@ -126,6 +126,9 @@ class DLabel:
         self.dataseg_name = ""
         self.offset = 0
         self.isglobal = False
+        # the address the label has in the original program (0 if unknown);
+        # the name of a label of a disassembled program is its address
+        self.ivalue = 0
 
 
 class DData:
@@ -167,6 +170,9 @@ def reset_state():
     G.position_independent_code = False
     G.old_bitcode = False
     G.no_tail_calls = False
+    # the guest's data segments are copied into the guest's memory, so that
+    # the guest reaches them at the addresses they had in the original program
+    G.guest_data_in_memory = False
     G.pointer_size_64 = False
     G.pointers_with_offset = False
     G.inline_idiv_instr = False

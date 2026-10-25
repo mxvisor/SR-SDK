@@ -90,6 +90,8 @@ def _parse_options(args):
             G.global_optimization_level = 1
         elif a == "-no-tail-calls":
             G.no_tail_calls = True
+        elif a == "-guest-data-in-memory":
+            G.guest_data_in_memory = True
         elif a == "-p":
             G.output_preprocessed_file = True
         elif a == "-pic":
@@ -126,6 +128,11 @@ def _parse_options(args):
                 write_usage()
                 return 1
         i += 1
+
+    if G.guest_data_in_memory and not (G.pointers_with_offset and G.pointer_size_64):
+        stderr_write("Parameter -guest-data-in-memory requires also parameters -m64 -ptrofs")
+        write_usage()
+        return 3
 
     if G.pointers_with_offset and not G.pointer_size_64:
         stderr_write("Parameter -ptrofs requires also parameter -m64")

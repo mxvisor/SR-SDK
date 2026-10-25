@@ -342,6 +342,11 @@ else:
                LIBS=['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2', 'winmm'],
                LLVMFLAGS='-mtriple=x86_64-pc-windows-gnu ' + LLC_PIC)
 
+# extra flags for llasm of the game: llasm_flags=-guest-data-in-memory in
+# game.cfg (the flags of a game that copies its data into the guest's memory)
+if CFG.get('llasm_flags', ''):
+    env.Append(LLASMFLAGS=' ' + CFG.get('llasm_flags', '').strip())
+
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
                  if lib.strip()])

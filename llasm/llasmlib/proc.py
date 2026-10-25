@@ -38,7 +38,7 @@ from .x87 import _BINARY_FLOAT, _COMPARE_FLOAT, _FLOAT_UNARY, binary_float_instr
 _ONE_REG_WRITE0 = ("mov", "add", "sub", "shl", "lshr", "ashr", "and", "or", "xor", "mul",
                    "load", "load8s", "load8z", "load16s", "load16z",
                    "ext8s", "ext16s", "ins16", "ins8ll", "ins8lh", "ins8hl", "ins8hh",
-                   "ctlz", "bswap")
+                   "ctlz", "bswap", "not")
 
 
 _FLOAT_WRITE_TOP0 = ("FCHS_VOID", "FIADD_INT32", "FADD_FLOAT", "FISUB_INT32", "FISUBR_INT32",
@@ -692,12 +692,22 @@ def _emit_ctlz(c):
 
 
 def _emit_bswap(c):
-        src = get_parameter_read_value(c.paramvals[1])
-        dst = get_new_temporary_register()
+    src = get_parameter_read_value(c.paramvals[1])
+    dst = get_new_temporary_register()
 
-        add_output_line(dst + " = call i32 @llvm.bswap.i32(i32 " + src + ")")
+    add_output_line(dst + " = call i32 @llvm.bswap.i32(i32 " + src + ")")
 
-        store_temporary_register_to_reg(dst, c.paramvals[0].value, c.last_reg_write[0])
+    store_temporary_register_to_reg(dst, c.paramvals[0].value, c.last_reg_write[0])
+
+
+def _emit_not(c):
+    # not reg: the bitwise complement of the register, in the register
+    src = get_parameter_read_value(c.paramvals[0])
+    dst = get_new_temporary_register()
+
+    add_output_line(dst + " = xor i32 " + src + ", -1")
+
+    store_temporary_register_to_reg(dst, c.paramvals[0].value, c.last_reg_write[0])
 
 
 def _emit_div_64_ze(c):
@@ -964,6 +974,7 @@ _EMIT_TABLE = [
     (("endif",), _emit_endif),
     (("ctlz",), _emit_ctlz),
     (("bswap",), _emit_bswap),
+    (("not",), _emit_not),
     (("DIV_64_ZE", "IDIV_64_SE"), _emit_div_64_ze),
     (("FLDCW_UINT16",), _emit_fldcw_uint16),
     (("FNSTCW_VOID",), _emit_fnstcw_void),
