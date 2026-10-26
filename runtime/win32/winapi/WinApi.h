@@ -53,19 +53,45 @@ WINAPI_STORAGE __declspec(thread) unsigned int Winapi_LastError;
 
 
 #ifndef WINAPI_NODEF_DEFINITIONS
+#ifndef ERROR_FILE_NOT_FOUND
 #define ERROR_FILE_NOT_FOUND 2
+#endif
+#ifndef ERROR_ACCESS_DENIED
 #define ERROR_ACCESS_DENIED 5
+#endif
+#ifndef ERROR_INVALID_HANDLE
 #define ERROR_INVALID_HANDLE 6
+#endif
+#ifndef ERROR_NOT_ENOUGH_MEMORY
 #define ERROR_NOT_ENOUGH_MEMORY 8
+#endif
+#ifndef ERROR_NO_MORE_FILES
 #define ERROR_NO_MORE_FILES 18
+#endif
+#ifndef ERROR_WRITE_FAULT
 #define ERROR_WRITE_FAULT 29
+#endif
+#ifndef ERROR_READ_FAULT
 #define ERROR_READ_FAULT 30
+#endif
+#ifndef ERROR_HANDLE_EOF
 #define ERROR_HANDLE_EOF 38
+#endif
+#ifndef ERROR_NOT_SUPPORTED
 #define ERROR_NOT_SUPPORTED 50
+#endif
+#ifndef ERROR_FILE_EXISTS
 #define ERROR_FILE_EXISTS 80
+#endif
+#ifndef ERROR_INVALID_PARAMETER
 #define ERROR_INVALID_PARAMETER 87
+#endif
+#ifndef ERROR_NEGATIVE_SEEK
 #define ERROR_NEGATIVE_SEEK 131
+#endif
+#ifndef ERROR_ALREADY_EXISTS
 #define ERROR_ALREADY_EXISTS 183
+#endif
 #endif
 
 
