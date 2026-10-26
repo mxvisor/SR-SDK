@@ -9,7 +9,7 @@ One line per image, TAB-separated, as the other checks print:
     image  GAME  ok|fail  sha256-of-the-result  files=N
 run_all.sh compares the hash with the reference run: a change is a change in
 what the converter writes. The output is built in a directory of its own under
-$REGRESS_OUT (default /tmp/sdk-regress) and removed afterwards."""
+$REGRESS_OUT (default <workspace>/cache/sdk-regress) and removed afterwards."""
 import hashlib
 import os
 import shutil
@@ -19,7 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.path.dirname(os.path.dirname(HERE))
 ROOT = os.environ.get('DOS_RECOMP_ROOT') or os.path.dirname(SDK)
-OUT = os.environ.get('REGRESS_OUT') or os.path.join(os.environ.get('TMPDIR', '/tmp'), 'sdk-regress')
+OUT = os.environ.get('REGRESS_OUT') or os.path.join(os.environ.get('DOS_RECOMP_ROOT') or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..')), 'cache', 'sdk-regress')
 TOOL = os.path.join(SDK, 'tools', 'image', 'image.py')
 
 

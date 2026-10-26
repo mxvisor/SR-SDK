@@ -17,7 +17,7 @@
 #
 # Needs: scons, make, MinGW-w64 and Wine (for the windows builds and tests), Xvfb,
 # ImageMagick (import, convert), 7z, unrar, dosbox, nasm (see sr-regression.sh).
-# Environment: REGRESS_OUT (reports and logs, default /tmp/sdk-regress), SR_IMAGES,
+# Environment: REGRESS_OUT (reports and logs, default <workspace>/cache/sdk-regress), SR_IMAGES,
 # DOS_RECOMP_ROOT (see lib.sh and sr-regression.sh).
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:

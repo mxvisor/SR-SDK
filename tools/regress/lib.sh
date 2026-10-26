@@ -2,13 +2,15 @@
 #
 # Sets: REGRESS_DIR (this directory), SDK (the SR-SDK it is in), ROOT (the workspace
 # root: $DOS_RECOMP_ROOT, or the parent of SDK), OUT (scratch and reports:
-# $REGRESS_OUT, default ${TMPDIR:-/tmp}/sdk-regress).
+# $REGRESS_OUT, default $ROOT/cache/sdk-regress; TMPDIR is
+# set to $ROOT/cache/tmp, so nothing of a run goes to /tmp).
 # Functions: game_ids, game_field ID N, game_repo ID, game_glob PATTERN.
 
 REGRESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK="$(cd "$REGRESS_DIR/../.." && pwd)"
 ROOT="${DOS_RECOMP_ROOT:-$(dirname "$SDK")}"
-OUT="${REGRESS_OUT:-${TMPDIR:-/tmp}/sdk-regress}"
+OUT="${REGRESS_OUT:-$ROOT/cache/sdk-regress}"
+export TMPDIR="$ROOT/cache/tmp"; mkdir -p "$TMPDIR"
 GAMES_TSV="${GAMES_TSV:-$REGRESS_DIR/games.tsv}"
 mkdir -p "$OUT"
 
