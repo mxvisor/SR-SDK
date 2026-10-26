@@ -152,6 +152,10 @@ int Game_RuntimeInit(void)
 
 void Game_RuntimeDeinit(void)
 {
+    /* A port's own Mix_Music (the MIDI of a Miles layer, say) is still loaded:
+     * Mix_Quit unloads the MIDI backend (fluidsynth) and Mix_CloseAudio's later
+     * halt of that music would call into the unloaded library. */
+    if (Game_AudioIsOpen()) Mix_HaltMusic();
     Game_MusicDeinit();
     Game_CdDeinit();
     Game_AudioDeinit();
