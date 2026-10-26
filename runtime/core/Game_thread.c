@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_memory.h"
@@ -36,6 +37,7 @@
 
 static int saved_argc;
 static char **saved_argv;
+static SDL_threadID main_thread_id;
 
 void Game_SetMainArgs(int argc, char *argv[])
 {
@@ -96,6 +98,16 @@ int Game_Main(void)
 void Game_StopMain(void)
 {
     Game_TimerTick += 2;
+    if (SDL_ThreadID() != main_thread_id)
+    {
+        /* the longjmp of Game_StopMain_Asm only works on the thread that did the
+         * setjmp: a game's own thread waits for it to notice Thread_Exit */
+        unsigned int i;
+
+        for (i = 0; i < 300; i++) SDL_Delay(10);
+        fflush(NULL);
+        _exit(0);
+    }
     Game_StopMain_Asm();
 }
 
@@ -103,6 +115,7 @@ int Game_MainThread(void *data)
 {
     (void)data;
 
+    main_thread_id = SDL_ThreadID();
     Game_CleanState(Thread_Exit);
 
     {
