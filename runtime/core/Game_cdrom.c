@@ -549,12 +549,18 @@ int Game_CdInit(const char *game_dir)
         }
     }
     if (data == NULL) {
-#ifdef GAME_CD_MARKER
-        fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") ", and no copy of the disc (" GAME_CD_MARKER ") in %s\n",
-                game_dir, game_dir);
-#else
-        fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") "\n", game_dir);
+#ifdef GAME_CD_OPTIONAL
+        /* a game that works without its disc: not finding it is not news */
+        if (trace_cd())
 #endif
+        {
+#ifdef GAME_CD_MARKER
+            fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") ", and no copy of the disc (" GAME_CD_MARKER ") in %s\n",
+                    game_dir, game_dir);
+#else
+            fprintf(stderr, GAME_NAME ": no CD: no image in %s/CD or $" GAME_ENV("CD_IMAGE") "\n", game_dir);
+#endif
+        }
     } else if (trace_cd()) {
         fprintf(stderr, GAME_NAME ": CD: %s from %s, %d audio tracks%s%s\n", data,
                 disc_dir[0] != 0 ? disc_dir : cue_path, audio, cue_path[0] != 0 ? " in " : "",

@@ -203,6 +203,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_NAME` | the game's name in the port's messages |
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
 | `GAME_CD_MARKER` | a file or directory the game reads from the CD: a game directory holding it is also the disc (a portable copy); without it, only a disc image is found |
+| `GAME_CD_OPTIONAL` | the game works without its disc: "no CD" is printed only when the CD trace is on |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
 
