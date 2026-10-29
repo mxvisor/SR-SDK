@@ -25,6 +25,8 @@ include llasm.llinc
 include Game-asm-calls.llinc
 
 func AdjustWindowRectEx_c *lpRect, dwStyle, bMenu, dwExStyle
+func wvsprintfA_c *str, *format, *arglist
+func wsprintfA_c *str, *format, *ap
 func ClipCursor_c *lpRect
 funcp CreateWindowExA_c dwExStyle, *lpClassName, *lpWindowName, dwStyle, x, y, nWidth, nHeight, *hWndParent, *hMenu, *hInstance, *lpParam
 func DefWindowProcA_c *hWnd, Msg, wParam, lParam
@@ -516,3 +518,29 @@ proc WaitMessage_asm2c public
 
 endp ; end procedure WaitMessage_asm2c
 
+proc wsprintfA_asm2c public
+
+; [esp + 3*4] = ...
+; [esp + 2*4] = const char *format
+; [esp +   4] = char *str
+; [esp      ] = return address
+
+        Call_Asm_VariableStack2 wsprintfA_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure wsprintfA_asm2c
+
+
+proc wvsprintfA_asm2c public
+
+; [esp + 3*4] = va_list arglist
+; [esp + 2*4] = const char *format
+; [esp +   4] = char *str
+; [esp      ] = return address
+
+        Call_Asm_Stack3 wvsprintfA_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure wvsprintfA_asm2c

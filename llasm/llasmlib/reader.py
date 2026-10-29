@@ -810,11 +810,39 @@ def read_input():
     # llasm.d walks its associative array here, in druntime's hash order, so
     # with several bad daddr in different datasegments it may name another one
     # than this (the status is the same); every other walk is by sorted name.
+    labels = {}
+    for name in list(G.proc_list) + list(G.dlabel_list):
+        if name.startswith("loc_"):
+            try:
+                labels[name] = int(name[4:], 16)
+            except ValueError:
+                pass
+    ordered = sorted((address, name) for name, address in labels.items())
     for dataseg in G.dataseg_list.values():
         for data in dataseg.data:
-            if data.isaddr:
-                if data.addr not in G.proc_list and data.addr not in G.dlabel_list:
-                    stderr_write("Daddr not a proc nor a dlabel: " + data.addr)
-                    return 82
+            if not data.isaddr:
+                continue
+            if data.addr in G.proc_list or data.addr in G.dlabel_list:
+                continue
+            # A pointer may land between two labels, e.g. on a jump table
+            # inside a translated procedure: express it from the nearest
+            # label before it instead of rejecting it.
+            address = None
+            if data.addr.startswith("loc_"):
+                try:
+                    address = int(data.addr[4:], 16)
+                except ValueError:
+                    pass
+            base = None
+            if address is not None:
+                for candidate, name in ordered:
+                    if candidate > address:
+                        break
+                    base = (candidate, name)
+            if base is None:
+                stderr_write("Daddr not a proc nor a dlabel: " + data.addr)
+                return 82
+            data.addr = base[1]
+            data.addr_offset = _s32(data.addr_offset + (address - base[0]))
 
     return None

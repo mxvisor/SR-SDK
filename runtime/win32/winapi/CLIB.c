@@ -187,6 +187,16 @@ int32_t CCALL sprintf2_c(char *str, const char *format, uint32_t *ap)
     return res;
 }
 
+int32_t CCALL wsprintfA_c(char *str, const char *format, uint32_t *ap)
+{
+    return vsprintf_x86(str, format, ap);
+}
+
+int32_t CCALL wvsprintfA_c(char *str, const char *format, uint32_t *arglist)
+{
+    return vsprintf_x86(str, format, arglist);
+}
+
 int32_t CCALL sscanf2_c(const char *str, const char *format, uint32_t *ap)
 {
 #define MAX_VALUES 2

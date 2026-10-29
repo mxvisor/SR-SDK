@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright (C) 2019-2026 Roman Pauer
+ *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -48,6 +49,8 @@ int32_t CCALL atol_c(const char *nptr);
 int32_t CCALL toupper_c(int32_t c);
 
 int32_t CCALL sprintf2_c(char *str, const char *format, uint32_t *ap);
+int32_t CCALL wsprintfA_c(char *str, const char *format, uint32_t *ap);
+int32_t CCALL wvsprintfA_c(char *str, const char *format, uint32_t *arglist);
 int32_t CCALL sscanf2_c(const char *str, const char *format, uint32_t *ap);
 
 int32_t CCALL system_c(const char *command);
