@@ -1630,9 +1630,14 @@ static uint32_t GetSurfaceDesc(struct IDirectDrawSurface_c *lpThis, struct _ddsu
     lpDDSurfaceDesc->dwWidth = lpThis->width;
     lpDDSurfaceDesc->lPitch = lpThis->pitch;
     lpDDSurfaceDesc->dwBackBufferCount = (lpThis->lpBackbuffer != NULL)?1:0;
-    lpDDSurfaceDesc->ddsCaps.dwCaps =
-        ((lpThis->primary)?DDSCAPS_PRIMARYSURFACE:((lpThis->backbuffer)?DDSCAPS_BACKBUFFER:DDSCAPS_OFFSCREENPLAIN)) |
-        ((lpThis->primary)?DDSCAPS_VIDEOMEMORY:DDSCAPS_SYSTEMMEMORY);
+    lpDDSurfaceDesc->ddsCaps.dwCaps = lpThis->caps;
+    if (lpThis->primary) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_PRIMARYSURFACE;
+    if (lpThis->backbuffer) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_BACKBUFFER;
+    if (lpDDSurfaceDesc->ddsCaps.dwCaps == 0)
+    {
+        lpDDSurfaceDesc->ddsCaps.dwCaps = ((lpThis->primary)?DDSCAPS_PRIMARYSURFACE:((lpThis->backbuffer)?DDSCAPS_BACKBUFFER:DDSCAPS_OFFSCREENPLAIN)) |
+            ((lpThis->primary)?DDSCAPS_VIDEOMEMORY:DDSCAPS_SYSTEMMEMORY);
+    }
     FillPixelFormat(lpThis, &lpDDSurfaceDesc->ddpfPixelFormat);
 
     return DD_OK;
