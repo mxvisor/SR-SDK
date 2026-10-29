@@ -616,9 +616,20 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(struct IDirectDraw_c) *lpl
     eprintf("DirectDrawCreate: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR " - ", (uintptr_t)lpGUID, (uintptr_t)lplpDD, (uintptr_t)pUnkOuter);
 #endif
 
-    if ((lpGUID != NULL) || (pUnkOuter != NULL) || (lplpDD == NULL))
+    if (pUnkOuter != NULL || lplpDD == NULL)
     {
         return DDERR_INVALIDPARAMS;
+    }
+    if (lpGUID != NULL)
+    {
+        /* GUID_NULL is the primary device too: a game that enumerated the
+         * devices may pass a copy of the callback's NULL GUID. */
+        const unsigned char *guid = (const unsigned char *)lpGUID;
+        int i;
+        for (i = 0; i < 16; i++)
+        {
+            if (guid[i] != 0) return DDERR_INVALIDPARAMS;
+        }
     }
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO))
@@ -637,6 +648,10 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(struct IDirectDraw_c) *lpl
     memset(lpDD_c, 0, sizeof(struct IDirectDraw_c));
     lpDD_c->lpVtbl = &IDirectDrawVtbl_asm2c;
     lpDD_c->RefCount = 1;
+    /* a new object reports the mode the display is in before SetDisplayMode */
+    lpDD_c->width = 640;
+    lpDD_c->height = 480;
+    lpDD_c->bpp = 16;
 
     *lplpDD = lpDD_c;
 
