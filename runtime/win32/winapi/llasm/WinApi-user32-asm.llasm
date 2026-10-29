@@ -541,6 +541,6 @@ proc wvsprintfA_asm2c public
 
         Call_Asm_Stack3 wvsprintfA_c
 
-        Call_Asm_Return 0
+        Call_Asm_Return 3
 
 endp ; end procedure wvsprintfA_asm2c
