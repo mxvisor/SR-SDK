@@ -29,13 +29,15 @@
 #     image.py expand FILE... [-o OUT_FILE]
 #
 # disc: IMAGE is .nrg (Nero), .mds (Alcohol 120%; its .mdf is taken from next
-# to it), .bin or .iso (with or without a .cue next to it). It writes a cue
-# sheet, NAME.cue, to OUT_DIR (default: next to the image; NAME defaults to
-# the image's name), which is what the rest of the SDK takes as the disc:
+# to it), .ccd (CloneCD; its .img is taken from next to it), .bin or .iso
+# (with or without a .cue next to it). It writes a cue sheet, NAME.cue, to
+# OUT_DIR (default: next to the image; NAME defaults to the image's name),
+# which is what the rest of the SDK takes as the disc:
 #
 #   .nrg   NAME.cue + NAME.bin: the data track re-wrapped into 2352-byte
 #          sectors and the audio tracks, byte for byte (--no-audio: data only)
 #   .mds   NAME.cue pointing at the .mdf; nothing is copied
+#   .ccd   NAME.cue pointing at the .img beside it, with all its tracks
 #   .bin   the cue sheet beside it, else NAME.cue with one data track
 #   .iso   NAME.cue with one MODE1/2048 data track
 #
@@ -60,6 +62,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import ccd              # noqa: E402
 import cdimage          # noqa: E402
 import installshield    # noqa: E402
 import mds              # noqa: E402
@@ -82,8 +85,10 @@ def cmd_disc(args):
         cue = mds.mds_to_cue(os.path.splitext(image)[0] + '.mds', out_dir, name)
     elif ext in ('.bin', '.iso', '.img'):
         cue = rawbin.raw_to_cue(image, out_dir, name)
+    elif ext == '.ccd':
+        cue = ccd.to_cue(image, out_dir, name)
     else:
-        cdimage.fail('%s: unknown image type (.nrg, .mds, .bin, .iso)' % image)
+        cdimage.fail('%s: unknown image type (.nrg, .mds, .ccd, .bin, .iso)' % image)
     print('cue: %s' % cue)
 
     if args.iso or args.extract:

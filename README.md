@@ -150,11 +150,12 @@ program finds the game in its own directory.
 `tools/image/image.py` turns a disc image into what the rest of the SDK takes as
 the disc, a cue sheet: `image.py disc IMAGE [-o DIR] [--iso] [--extract DIR]`
 takes a Nero `.nrg` (a cue + bin pair is written, with the audio tracks), an
-Alcohol 120% `.mds`/`.mdf` (a cue sheet that points at the `.mdf`), a raw `.bin`
-or an `.iso`. `--iso` also writes the data track as an ISO, `--extract` copies
+Alcohol 120% `.mds`/`.mdf` (a cue sheet that points at the `.mdf`), a CloneCD
+`.ccd` (a cue sheet that points at the `.img` beside it, with all its tracks),
+a raw `.bin` or an `.iso`. `--iso` also writes the data track as an ISO, `--extract` copies
 its files. It writes only the files it names, and deletes nothing.
 `image.py installer FILE.z OUT_DIR` unpacks an InstallShield 3 installer. The
-format modules (`nrg.py`, `mds.py`, `rawbin.py`, `installshield.py`) share
+format modules (`nrg.py`, `mds.py`, `ccd.py`, `rawbin.py`, `installshield.py`) share
 `cdimage.py` with `portable_cd.py`.
 
 The stages are `host` (SR, built from a copy in `build/`), `input` (the
