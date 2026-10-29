@@ -901,6 +901,7 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
                 return DDERR_OUTOFVIDEOMEMORY;
             }
             s->lpBackbuffer->backbuffer = 1;
+            s->lpBackbuffer->caps = DDSCAPS_BACKBUFFER | DDSCAPS_VIDEOMEMORY;
         }
 
         lpThis->Primary = s;
