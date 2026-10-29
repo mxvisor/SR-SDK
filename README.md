@@ -114,8 +114,8 @@ The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets 
 (`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.
 `make linux`, `make windows` (the MinGW build with the SDL DLLs beside the exe),
 `make portable-data` (`build/dist/portable`: the game directory of the fullest install with the music, from `game/portable.cfg`),
-`make portable` (both builds, the data, and `build/dist/<name>-{linux,windows}-x64.{tar.gz,zip}`:
-the program, `game/release/<os>/` and its `x64/`, and the data), `make apk`, `make disc`
+`make portable` (both builds, the data, and `build/dist/<name>-x64.zip`:
+both programs with the Windows DLLs, `game/release/{linux,windows}/` and their `x64/`, and the data), `make apk`, `make disc`
 (`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean`, `make test`.
 The same names work as `scons <name>`; `MINGW_BIN=` points at the DLLs.
 

@@ -27,14 +27,15 @@
 #     windows        the MinGW cross build and the SDL DLLs beside the exe
 #     disc           build/disc: the disc image with game/portable.cfg over it
 #     portable-data  build/dist/portable: the game directory of the fullest install, with the music
-#     portable       build/dist/<dist_name>-{linux,windows}-x64.{tar.gz,zip}
+#     portable       build/dist/<dist_name>-x64.zip
 #     check          the native binary is there
 #
 # `portable` packs binaries of two devices, so it does not build them: it is
-# run after `linux` and `windows`, as game.mk does.  What goes into an archive:
-# the program, every file of game/release/<os>/ and game/release/<os>/x64/
-# (configs, readmes), and build/dist/portable.  There is no launcher script: the
-# program is started as it is, and finds the game beside itself
+# run after `linux` and `windows`, as game.mk does.  There is one archive for
+# both systems, holding both programs: the native binary and the exe with its
+# DLLs, every file of game/release/{linux,windows}/ and their x64/ (configs,
+# readmes), and build/dist/portable.  There is no launcher script: the program
+# is started as it is, and finds the game beside itself
 # (runtime/core/Game_gamedir.c).
 #
 # game.cfg keys: program (the binary), dist_name (the archives' name, default
@@ -47,7 +48,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import tarfile
 import zipfile
 
 Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes')
@@ -121,20 +121,23 @@ if os.path.isfile(PORTABLE_CFG):
 
 # ----------------------------------------------------------------- portable --
 
-def stage_directory(name, binary, dlls, release_os):
-    """build/dist/<name>/: the program, the release files, the data."""
+def stage_directory(name, binaries, dlls, release_oses):
+    """build/dist/<name>/: the programs, the release files, the data."""
     directory = os.path.join(DIST, name)
     shutil.rmtree(directory, ignore_errors=True)
     os.makedirs(directory)
-    shutil.copy2(binary, directory)
+    for binary in binaries:
+        shutil.copy2(binary, directory)
     for dll in dlls:
         shutil.copy2(dll, directory)
-    for source in release_files(release_os):
-        shutil.copy2(source, directory)
+    for release_os in release_oses:
+        for source in release_files(release_os):
+            shutil.copy2(source, directory)
     if os.path.isdir(PORTABLE_DIR):
         shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
-    path = os.path.join(directory, os.path.basename(binary))
-    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    for binary in binaries:
+        path = os.path.join(directory, os.path.basename(binary))
+        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return directory
 
 
@@ -145,24 +148,12 @@ def release_files(release_os):
     return files
 
 
-def pack_linux(target, source, env):
-    name = '%s-linux-x64' % DIST_NAME
-    directory = stage_directory(name, str(source[0]), [], 'linux')
-
-    def anonymous(info):
-        info.uid = info.gid = 0
-        info.uname = info.gname = ''
-        return info
-
-    with tarfile.open(str(target[0]), 'w:gz') as archive:
-        archive.add(directory, arcname=name, filter=anonymous)
-
-
-def pack_windows(target, source, env):
-    name = '%s-windows-x64' % DIST_NAME
-    binary = str(source[0])
-    dlls = sorted(glob.glob(os.path.join(os.path.dirname(binary), '*.dll')))
-    directory = stage_directory(name, binary, dlls, 'windows')
+def pack_archive(target, source, env):
+    name = '%s-x64' % DIST_NAME
+    linux_binary = str(source[0])
+    windows_binary = str(source[1])
+    dlls = sorted(glob.glob(os.path.join(os.path.dirname(windows_binary), '*.dll')))
+    directory = stage_directory(name, [linux_binary, windows_binary], dlls, ('linux', 'windows'))
     with zipfile.ZipFile(str(target[0]), 'w', zipfile.ZIP_DEFLATED) as archive:
         for base, dirs, files in os.walk(directory):
             dirs.sort()
@@ -174,10 +165,10 @@ def pack_windows(target, source, env):
 linux_binary = program_nodes if (program_nodes is not None and device == LINUX_DEVICE) \
     else [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, PROGRAM))]
 windows_binary = File(os.path.join(WINDOWS_BIN_DIR, PROGRAM + '.exe'))
+dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS]
 data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
-tar = env.Command(os.path.join(DIST, '%s-linux-x64.tar.gz' % DIST_NAME),
-                  linux_binary + data + release_files('linux'), pack_linux)
-zipped = env.Command(os.path.join(DIST, '%s-windows-x64.zip' % DIST_NAME),
-                     [windows_binary] + [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS]
-                     + data + release_files('windows'), pack_windows)
-env.Alias('portable', tar + zipped)
+archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
+                      linux_binary + [windows_binary] + dlls + data
+                      + release_files('linux') + release_files('windows'),
+                      pack_archive)
+env.Alias('portable', archive)
