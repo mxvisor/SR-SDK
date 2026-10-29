@@ -141,8 +141,9 @@ game's data directory the port runs from, the directory the game's fullest
 install makes: the files of the disc's data track that installer copies, where
 it puts them, with what that install leaves on the disc and the game still reads
 there at their disc paths (the game directory is the disc as well), the files
-the installer would have written, and the audio tracks as flac, wav or ogg files
-with a cue sheet. What to skip, move and add is in `game/portable.cfg`; the
+the installer would have written (with `unpack=`, a setup program of the disc
+that keeps its files inside itself), and the audio tracks as flac, wav or ogg
+files with a cue sheet. What to skip, move and add is in `game/portable.cfg`; the
 script's header lists its keys. Its `image=`, the disc image, is the one path outside the repository; its
 cue sheet is made in `build/cd/`. A portable copy has no launcher script: the
 program finds the game in its own directory.
@@ -154,8 +155,9 @@ Alcohol 120% `.mds`/`.mdf` (a cue sheet that points at the `.mdf`), a CloneCD
 `.ccd` (a cue sheet that points at the `.img` beside it, with all its tracks),
 a raw `.bin` or an `.iso`. `--iso` also writes the data track as an ISO, `--extract` copies
 its files. It writes only the files it names, and deletes nothing.
-`image.py installer FILE.z OUT_DIR` unpacks an InstallShield 3 installer. The
-format modules (`nrg.py`, `mds.py`, `ccd.py`, `rawbin.py`, `installshield.py`) share
+`image.py installer FILE OUT_DIR` unpacks an InstallShield 3 `.z` installer or
+a Wise setup program (the game directory, `%MAINDIR%`). The format modules
+(`nrg.py`, `mds.py`, `ccd.py`, `rawbin.py`, `installshield.py`, `wise.py`) share
 `cdimage.py` with `portable_cd.py`.
 
 The stages are `host` (SR, built from a copy in `build/`), `input` (the

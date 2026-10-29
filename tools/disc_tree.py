@@ -120,7 +120,8 @@ def find_path_ci(root, name):
 
 
 def unpack_tree(out, unpacks):
-    """Unpacks the InstallShield archives unpack= names, as the installer would."""
+    """Unpacks the InstallShield .z or Wise setup files unpack= names, as the
+    installer would."""
     installer = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image', 'image.py')
     for name, directory in unpacks:
         target = os.path.join(out, directory) if directory else out

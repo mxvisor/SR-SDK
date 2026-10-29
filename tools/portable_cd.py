@@ -62,8 +62,9 @@
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
-#     unpack=<disc file>[ <dir>]       an InstallShield .z of the disc, unpacked
-#                                      into the copy (so is build/disc)
+#     unpack=<disc file>[ <dir>]       an InstallShield .z or a Wise setup
+#                                      program of the disc, unpacked into the copy
+#                                      (so is build/disc)
 #     expand=<name>[=<out>]            an SZDD file of the disc, unpacked (disc_tree.py)
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth

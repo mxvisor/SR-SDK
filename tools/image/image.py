@@ -47,7 +47,8 @@
 # Nothing is ever deleted and an existing file is overwritten only if it is
 # one of these outputs. Needs no external program.
 #
-# installer: unpack an InstallShield 3 .z archive (see installshield.py).
+# installer: unpack an InstallShield 3 .z archive (see installshield.py) or a
+# Wise setup program (see wise.py).
 #
 # expand: unpack SZDD files (COMPRESS.EXE's LZSS, `*_` installer files such
 # as SETUP.EX_ for SETUP.EXE), each to its original name beside it; with a
@@ -69,6 +70,7 @@ import mds              # noqa: E402
 import nrg              # noqa: E402
 import rawbin           # noqa: E402
 import szdd             # noqa: E402
+import wise             # noqa: E402
 
 
 def cmd_disc(args):
@@ -107,9 +109,15 @@ def cmd_disc(args):
 
 def cmd_installer(args):
     if args.list or not args.out:
-        installshield.list_contents(args.z_file)
+        if wise.is_wise(args.z_file):
+            wise.list_contents(args.z_file)
+        else:
+            installshield.list_contents(args.z_file)
         return 0
-    ok, bad = installshield.extract(args.z_file, args.out)
+    if wise.is_wise(args.z_file):
+        ok, bad = wise.extract(args.z_file, args.out)
+    else:
+        ok, bad = installshield.extract(args.z_file, args.out)
     print('extracted %d files (%d failed) to %s' % (ok, bad, args.out))
     return 1 if bad else 0
 
@@ -135,7 +143,7 @@ def main():
     disc.add_argument('--iso', action='store_true', help='also write the data track as NAME.iso')
     disc.add_argument('--extract', metavar='DIR', help='also copy the data track files to DIR')
     disc.set_defaults(func=cmd_disc)
-    inst = sub.add_parser('installer', help='unpack an InstallShield 3 .z archive')
+    inst = sub.add_parser('installer', help='unpack an InstallShield 3 .z or a Wise setup program')
     inst.add_argument('z_file')
     inst.add_argument('out', nargs='?', help='output directory (omit to list)')
     inst.add_argument('-l', '--list', action='store_true')
