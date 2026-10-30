@@ -76,6 +76,7 @@
 #define MCI_SEEK_TO_START       0x00000100
 #define MCI_SEEK_TO_END         0x00000200
 #define MCI_STATUS_ITEM         0x00000100
+#define MCI_GETDEVCAPS_ITEM     0x00000100
 #define MCI_SET_DOOR_OPEN       0x00000100
 #define MCI_SET_DOOR_CLOSED     0x00000200
 #define MCI_SET_TIME_FORMAT     0x00000400
@@ -89,6 +90,12 @@
 #define MCI_STATUS_READY            7
 #define MCI_STATUS_CURRENT_TRACK    8
 #define MCI_CDA_STATUS_TYPE_TRACK   0x00004001
+
+#define MCI_GETDEVCAPS_CAN_RECORD   1
+#define MCI_GETDEVCAPS_HAS_AUDIO    2
+#define MCI_GETDEVCAPS_HAS_VIDEO    4
+#define MCI_GETDEVCAPS_DEVICE_TYPE  8
+#define MCI_GETDEVCAPS_HAS_MIDI     0x20
 
 #define MCI_MODE_STOP           525
 #define MCI_MODE_PLAY           526
@@ -368,6 +375,29 @@ uint32_t CCALL mciSendCommandA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t
     case MCI_STATUS:
         if (parms == NULL) return MCIERR_NULL_PARAMETER_BLOCK;
         result = cd_status(a2, parms);
+        break;
+    case MCI_GETDEVCAPS:
+        /* MCI_GETDEVCAPS_PARMS: dwCallback, dwReturn, dwItem */
+        if (parms == NULL) return MCIERR_NULL_PARAMETER_BLOCK;
+        result = 0;
+        if (a2 & MCI_GETDEVCAPS_ITEM) {
+            switch (parms[2]) {
+            case MCI_GETDEVCAPS_DEVICE_TYPE:
+                parms[1] = MCI_DEVTYPE_CD_AUDIO;
+                break;
+            case MCI_GETDEVCAPS_HAS_AUDIO:
+                parms[1] = 1;
+                break;
+            case MCI_GETDEVCAPS_CAN_RECORD:
+            case MCI_GETDEVCAPS_HAS_VIDEO:
+            case MCI_GETDEVCAPS_HAS_MIDI:
+                parms[1] = 0;
+                break;
+            default:
+                result = MCIERR_UNRECOGNIZED_COMMAND;
+                break;
+            }
+        }
         break;
     case MCI_PLAY: {
         /* MCI_PLAY_PARMS: dwCallback, dwFrom, dwTo */
