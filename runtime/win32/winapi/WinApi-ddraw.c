@@ -868,7 +868,6 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
     {
         return DDERR_INVALIDPARAMS;
     }
-
 #if DEBUG_DDRAW
     eprintf("%ux%u flags 0x%x caps 0x%x back %u - ", lpDDSurfaceDesc->dwWidth, lpDDSurfaceDesc->dwHeight, lpDDSurfaceDesc->dwFlags, lpDDSurfaceDesc->ddsCaps.dwCaps, lpDDSurfaceDesc->dwBackBufferCount);
 #endif
@@ -1632,6 +1631,9 @@ static uint32_t GetSurfaceDesc(struct IDirectDrawSurface_c *lpThis, struct _ddsu
     lpDDSurfaceDesc->lPitch = lpThis->pitch;
     lpDDSurfaceDesc->dwBackBufferCount = (lpThis->lpBackbuffer != NULL)?1:0;
     lpDDSurfaceDesc->ddsCaps.dwCaps = lpThis->caps;
+    /* texture surfaces live in the accelerator's memory here (the GL texture);
+       the game keeps a texture page only if the desc says video memory */
+    if (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_TEXTURE) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_VIDEOMEMORY;
     if (lpThis->primary) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_PRIMARYSURFACE;
     if (lpThis->backbuffer) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_BACKBUFFER;
     if (lpDDSurfaceDesc->ddsCaps.dwCaps == 0)
