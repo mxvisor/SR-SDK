@@ -40,8 +40,11 @@
 #include "Game_vfs.h"
 #include "Game_hooks.h"
 
+/* <program>.log: the port's files in the game directory are <program>, its
+ * settings and its log, so they never take a name of the game's (one file on
+ * Windows); a game names another file with GAME_LOG_FILE (Game_hooks.h) */
 #ifndef GAME_LOG_FILE
-#define GAME_LOG_FILE "game.log"
+#define GAME_LOG_FILE GAME_PROGRAM_NAME ".log"
 #endif
 
 /* A GUI program (-mwindows) starts without a console.  Unless the caller

@@ -27,8 +27,10 @@
  * allocator, the winapi layer) and the end, and on Windows the log file of a
  * program without a console and a report of a crash (Game_log.c).  The window
  * is display/pc.c's.  The game's own parts come through Game_hooks.h:
- *   GAME_CONFIG_FILENAME     the port's configuration file in the game directory (required)
- *   GAME_LOG_FILE            the name of the Windows log file (default "game.log")
+ *   GAME_CONFIG_FILENAME     the port's configuration file in the game directory
+ *                            (default <program>.cfg; the program's name is also the
+ *                            log's, so the port's files never take a name of the game's)
+ *   GAME_LOG_FILE            the name of the Windows log file (default <program>.log)
  *   GAME_WIN_START()         optional: after the winapi layer is up, before the game runs
  *                            (a registry the game reads, a line to the log) */
 

@@ -33,7 +33,7 @@
  *   GAME_RUNTIME_DEINIT()    its end
  *   GAME_DOS_ENV             without GAME_RUNTIME_INIT: the variables of the environment, "NAME=VALUE" strings
  *                            separated by commas (the BLASTER of GAME_DOS_SOUNDBLASTER comes first)
- *   GAME_LOG_FILE            the name of the Windows log file (default "game.log")
+ *   GAME_LOG_FILE            the name of the Windows log file (default <program>.log)
  * The window is display/pc.c's, unless the game brings its own. */
 
 #include <stdio.h>

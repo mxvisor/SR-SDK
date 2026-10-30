@@ -94,11 +94,22 @@ opengl=no               # the shared OpenGL module, runtime/core/gl (glad, conte
 glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide (implies opengl)
 d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl (implies opengl)
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
-program=game
+program=game                       # the port's name: build/bin/<device>/<program>, and
+                                   # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)
 android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
 ```
+
+The port puts four files into the game's directory, all named after `program`:
+`<program>` and `<program>.exe` (the programs), `<program>.cfg` (the port's settings,
+`Game_config.c`; `GAME_CONFIG_FILENAME` names another) and `<program>.log` (the log of a
+Windows program without a console, `Game_log.c`; `GAME_LOG_FILE` names another).  Windows
+has one file for names that differ only in case, and the game's own files are there too, so
+`program` must not be a name of the game's: a portable release compares them
+(`stage_directory` of `scons/release.SConscript`) and fails with the pair of names.  A game
+whose original is called like the port's program renames the port (`program=<game>-recomp`
+when the install has `<game>.exe`).
 
 `game/recomp/<module>/<variant>/` holds SR's inputs for the original: its
 `sha256`, `SR.cfg` and the `*.sci` files. Then:

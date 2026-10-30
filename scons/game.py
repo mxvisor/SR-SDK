@@ -357,6 +357,11 @@ if GL:
 if D3D_GL:
     env.Append(CPPDEFINES=['GAME_D3D_GL'])
 
+# The port's namespace in the game's directory: the runtime's defaults name the
+# settings file <program>.cfg and the log <program>.log (Game_config.c,
+# Game_log.c), so the port never takes a name of the game's.
+env.Append(CPPDEFINES=[('GAME_PROGRAM_NAME', '\\"%s\\"' % PROGRAM)])
+
 for utility in ['opt', 'llc']:
     utility_path = shutil.which(utility)
     if utility_path is not None:

@@ -25,9 +25,11 @@
 
 /* The port's settings, the Game_config.c of SR's ports with only this port's keys.
  * The file is the one --config-file= names (Game_winmain.c), else
- * GAME_CONFIG_FILENAME (Game_hooks.h) in the game directory; without it everything stays as
- * Init_Display/Init_Audio/Init_Input set it.  The environment variables
- * of the same meaning are read where they apply and win over the file. */
+ * <program>.cfg of the game directory (GAME_PROGRAM_NAME of scons/game.py); a
+ * game names another file with GAME_CONFIG_FILENAME (Game_hooks.h).  Without
+ * the file everything stays as Init_Display/Init_Audio/Init_Input set it.  The
+ * environment variables of the same meaning are read where they apply and win
+ * over the file. */
 
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +43,13 @@
 #include "input.h"
 #include "Game_runtime.h"
 #include "Game_hooks.h"
+
+/* the program's name is the port's namespace in the game directory: the
+ * settings file and the log are <program>.cfg and <program>.log there, so the
+ * port's files never take a name of the game's (one file on Windows) */
+#ifndef GAME_CONFIG_FILENAME
+#define GAME_CONFIG_FILENAME GAME_PROGRAM_NAME ".cfg"
+#endif
 
 static char *trim_string(char *buf)
 {
