@@ -126,15 +126,18 @@ def stage_directory(name, binaries, dlls, release_oses):
     directory = os.path.join(DIST, name)
     shutil.rmtree(directory, ignore_errors=True)
     os.makedirs(directory)
-    for binary in binaries:
-        shutil.copy2(binary, directory)
-    for dll in dlls:
-        shutil.copy2(dll, directory)
+    # The data first: a game may install a file of the same name as the program
+    # (the original's exe in another case), and the programs of
+    # the release must be the port's, not covered by it.
+    if os.path.isdir(PORTABLE_DIR):
+        shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
     for release_os in release_oses:
         for source in release_files(release_os):
             shutil.copy2(source, directory)
-    if os.path.isdir(PORTABLE_DIR):
-        shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
+    for dll in dlls:
+        shutil.copy2(dll, directory)
+    for binary in binaries:
+        shutil.copy2(binary, directory)
     for binary in binaries:
         path = os.path.join(directory, os.path.basename(binary))
         os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
