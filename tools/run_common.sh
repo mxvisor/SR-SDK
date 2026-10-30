@@ -155,6 +155,9 @@ run_native() {
   if [ "$HEADLESS" -eq 0 ]; then
     echo "Run: $BIN (${ENVP}_DATA_DIR=$DATA_DIR, ${ENVP}_WRITE_ROOT=$WRITE_ROOT${CD_IMAGE:+, ${ENVP}_CD_IMAGE=$CD_IMAGE})"
     cd "$WRITE_ROOT"
+    if [ -n "${WITH_GDB:-}" ]; then
+      exec env "${PORT_ENV[@]}" gdb --args "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}"
+    fi
     exec env "${PORT_ENV[@]}" "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}"
   fi
 
@@ -164,8 +167,13 @@ run_native() {
   _start_xvfb
   trap 'kill -9 $XVFB_PID 2>/dev/null || true; [ -z "${PID:-}" ] || kill -9 $PID 2>/dev/null || true; rm -f "$LOGF"' EXIT
   cd "$WRITE_ROOT"
-  env -u WAYLAND_DISPLAY DISPLAY="$XDISPLAY" SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy \
-    "${PORT_ENV[@]}" "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}" > "$LOGF" 2>&1 &
+  if [ -n "${WITH_GDB:-}" ]; then
+    env -u WAYLAND_DISPLAY DISPLAY="$XDISPLAY" SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy \
+      "${PORT_ENV[@]}" gdb -batch -ex "set confirm off" -ex "run" -ex "bt full" -ex "info reg" -ex "info locals" -ex "x/20i \$rip-16" -ex "x/20gx \$rsp" -ex "quit" --args "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}" > "$LOGF" 2>&1 &
+  else
+    env -u WAYLAND_DISPLAY DISPLAY="$XDISPLAY" SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy \
+      "${PORT_ENV[@]}" "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}" > "$LOGF" 2>&1 &
+  fi
   PID=$!
   echo "$PROG (pid $PID) on Xvfb $XDISPLAY, screenshots in $SHOTS"
   [ -z "$AUTO_KEYS" ] || echo "  ${ENVP}_AUTO_KEYS=$AUTO_KEYS"
