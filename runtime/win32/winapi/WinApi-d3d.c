@@ -137,7 +137,37 @@ typedef struct {
     int gl_scene;                       /* the scene is in the GL backend's FBO */
     uint32_t draws;                     /* DrawPrimitive calls in the scene */
     uint32_t vertices;
+    void *v1;                           /* IDirect3DDevice (DirectX 3) view of this device */
+    void *v3;                           /* IDirect3DDevice3 (DirectX 6) view of this device */
+    uint32_t matrices[16][16];
+    uint32_t matrix_used[16];
 } d3d_device;
+
+/* IID_IDirect3DDevice: the same device, the DirectX 3 method order */
+typedef struct {
+    uint32_t lpVtbl;
+    uint32_t RefCount;
+    d3d_device *dev;
+} d3d_device1;
+
+/* IDirect3DDevice3 (DirectX 6): the same device, the DirectX 6 method order */
+typedef struct {
+    uint32_t lpVtbl;
+    uint32_t RefCount;
+    d3d_device *dev;
+} d3d_device3;
+
+/* IDirect3DExecuteBuffer (DirectX 3): the buffer the game fills with instructions
+ * and vertices, and a copy of its D3DEXECUTEDATA (48 bytes) */
+typedef struct {
+    uint32_t lpVtbl;
+    uint32_t RefCount;
+    d3d_device1 *device;
+    uint32_t data;                      /* the buffer, a guest address */
+    uint32_t size;
+    uint32_t owner;                     /* the buffer was allocated here */
+    uint32_t exec_data[12];
+} d3d_execbuf;
 
 typedef struct d3d_viewport {
     uint32_t lpVtbl;
@@ -159,13 +189,25 @@ typedef struct {
     uint32_t lpVtbl;
     struct IDirectDrawSurface_c *surface;
     uint32_t handle;
+    void *v1;                           /* its IDirect3DTexture (DirectX 3) view */
 } d3d_texture;
+
+/* IDirect3DTexture (DirectX 3): a view of the DirectX 5 texture object */
+typedef struct {
+    uint32_t lpVtbl;
+    uint32_t RefCount;
+    d3d_texture *tex;
+} d3d_texture1;
 
 extern uint32_t IDirect3D2Vtbl_asm2c;
 extern uint32_t IDirect3DDevice2Vtbl_asm2c;
+extern uint32_t IDirect3DDeviceVtbl_asm2c;
+extern uint32_t IDirect3DDevice3Vtbl_asm2c;
+extern uint32_t IDirect3DExecuteBufferVtbl_asm2c;
 extern uint32_t IDirect3DViewport2Vtbl_asm2c;
 extern uint32_t IDirect3DMaterial2Vtbl_asm2c;
 extern uint32_t IDirect3DTexture2Vtbl_asm2c;
+extern uint32_t IDirect3DTextureVtbl_asm2c;
 
 /* handle - 1 indexes these */
 static d3d_texture *texture_handles[MAX_TEXTURES];
@@ -175,7 +217,10 @@ static d3d_material *material_handles[MAX_MATERIALS];
 static const uint8_t IID_IUnknown_[16]           = { 0,0,0,0, 0,0, 0,0, 0xc0,0,0,0,0,0,0,0x46 };
 static const uint8_t IID_IDirect3D2_[16]         = { 0xc1,0x1e,0xae,0x6a, 0x2a,0x66, 0xd0,0x11, 0x88,0x9d,0x00,0xaa,0x00,0xbb,0xb7,0x6a };
 static const uint8_t IID_IDirect3DDevice2_[16]   = { 0x01,0x15,0x28,0x93, 0xf8,0x8c, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
+static const uint8_t IID_IDirect3DDevice_[16]    = { 0x00,0x88,0x10,0x64, 0x7d,0x95, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
+static const uint8_t IID_IDirect3DDevice3_[16]   = { 0x60,0x3b,0xab,0xb0, 0xd7,0x33, 0xd1,0x11, 0xa9,0x81,0x00,0xc0,0x4f,0xd7,0xb1,0x74 };
 static const uint8_t IID_IDirect3DTexture2_[16]  = { 0x02,0x15,0x28,0x93, 0xf8,0x8c, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
+static const uint8_t IID_IDirect3DTexture_[16]   = { 0xe0,0xd9,0xdc,0x2c, 0xa0,0x25, 0xcf,0x11, 0xa3,0x1a,0x00,0xaa,0x00,0xb9,0x33,0x56 };
 static const uint8_t IID_IDirect3DViewport2_[16] = { 0x03,0x15,0x28,0x93, 0xf8,0x8c, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
 static const uint8_t IID_IDirect3DMaterial2_[16] = { 0x02,0x4a,0xcf,0x93, 0x6e,0x21, 0xd1,0x11, 0xa7,0x97,0x00,0xa0,0xc9,0x05,0x41,0x29 };
 static const uint8_t IID_HALDevice[16]           = { 0xe0,0x3d,0xe6,0x84, 0xaa,0x46, 0xcf,0x11, 0x81,0x6f,0x00,0x00,0xc0,0x20,0x15,0x6e };
@@ -226,7 +271,11 @@ static void fill_prim_caps(uint32_t *c)
     c[6]  = 0xff;           /* dwAlphaCmpCaps: all */
     c[7]  = 0x2 | 0x8 | 0x80 | 0x200 | 0x1000 | 0x4000 | 0x40000 | 0x80000;   /* dwShadeCaps: flat and gouraud colour and specular, alpha blend, fog */
     c[8]  = 0x1 | 0x2 | 0x4 | 0x8;   /* dwTextureCaps: PERSPECTIVE | POW2 | ALPHA | TRANSPARENCY */
-    c[9]  = 0x3;            /* dwTextureFilterCaps: NEAREST | LINEAR */
+    /* dwTextureFilterCaps: NEAREST | LINEAR.  DirectX 3/5 and DirectX 6 number
+     * the same capability differently, and a game reads the fields with the
+     * headers it was built with, so both encodings are set: MINF/MAGF POINT and
+     * LINEAR.  No mip filter: the textures of the port have a single level. */
+    c[9]  = 0x1 | 0x2 | 0x100 | 0x200 | 0x01000000 | 0x02000000;
     c[10] = 0x1 | 0x2 | 0x4 | 0x8 | 0x40;    /* dwTextureBlendCaps: DECAL | MODULATE | DECALALPHA | MODULATEALPHA | COPY */
     c[11] = 0x1 | 0x2 | 0x4;    /* dwTextureAddressCaps: WRAP | MIRROR | CLAMP */
     c[12] = 32;             /* dwStippleWidth */
@@ -234,10 +283,10 @@ static void fill_prim_caps(uint32_t *c)
 }
 
 /* hw != 0: the description of the hardware part; else of the software emulation, left empty */
-static void fill_device_desc(uint32_t *d, int hw)
+static void fill_device_desc_size(uint32_t *d, int hw, uint32_t size)
 {
-    memset(d, 0, D3DDEVICEDESC_V1_SIZE);
-    d[0] = D3DDEVICEDESC_V1_SIZE;
+    memset(d, 0, size);
+    d[0] = size;
     if (!hw) return;
     d[1] = 0x7ff;           /* dwFlags: every group below is valid */
     d[2] = 2;               /* dcmColorModel: D3DCOLOR_RGB */
@@ -255,6 +304,7 @@ static void fill_device_desc(uint32_t *d, int hw)
     d[40] = 0x400;          /* dwDeviceZBufferBitDepth: DDBD_16 */
     d[41] = 0;              /* dwMaxBufferSize */
     d[42] = 65536;          /* dwMaxVertexCount */
+    if (size < 0xcc) return;    /* the DirectX 3 description ends at dwMaxVertexCount */
     d[43] = 1;              /* dwMinTextureWidth */
     d[44] = 1;              /* dwMinTextureHeight */
     d[45] = 256;            /* dwMaxTextureWidth */
@@ -263,6 +313,11 @@ static void fill_device_desc(uint32_t *d, int hw)
     d[48] = 32;             /* dwMaxStippleWidth */
     d[49] = 1;              /* dwMinStippleHeight */
     d[50] = 32;             /* dwMaxStippleHeight */
+}
+
+static void fill_device_desc(uint32_t *d, int hw)
+{
+    fill_device_desc_size(d, hw, D3DDEVICEDESC_V1_SIZE);
 }
 
 /* ---- IDirectDraw::QueryInterface(IID_IDirect3D2) ---- */
@@ -357,6 +412,7 @@ uint32_t CCALL IDirect3D2_CreateMaterial_c(void */*lpThis*/, void *a1, void */*a
     m = (d3d_material *)new_object(sizeof(d3d_material), &IDirect3DMaterial2Vtbl_asm2c);
     if (m == NULL) return D3DERR_GENERIC;
     *(uint32_t *)a1 = GUEST_ADDR(m);
+    d3d_log("D3D: CreateMaterial -> %p\n", (void *)m);
     return D3D_OK;
 }
 
@@ -418,6 +474,43 @@ uint32_t CCALL IDirect3D2_CreateDevice_c(void *lpThis, void *a1, void *a2, void 
 uint32_t CCALL IDirect3DDevice2_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
 {
     d3d_device *dev = (d3d_device *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IDirect3DDevice_))
+    {
+        d3d_device1 *v1 = (d3d_device1 *)dev->v1;
+
+        if (v1 == NULL)
+        {
+            v1 = (d3d_device1 *)new_object(sizeof(d3d_device1), &IDirect3DDeviceVtbl_asm2c);
+            if (v1 == NULL) { *out = 0; return D3DERR_GENERIC; }
+            v1->dev = dev;
+            dev->v1 = v1;
+        }
+        v1->RefCount++;
+        dev->RefCount++;
+        *out = GUEST_ADDR(v1);
+        d3d_log("D3D: IDirect3DDevice\n");
+        return D3D_OK;
+    }
+    if (same_guid(riid, IID_IDirect3DDevice3_))
+    {
+        d3d_device3 *v3 = (d3d_device3 *)dev->v3;
+
+        if (v3 == NULL)
+        {
+            v3 = (d3d_device3 *)new_object(sizeof(d3d_device3), &IDirect3DDevice3Vtbl_asm2c);
+            if (v3 == NULL) { *out = 0; return D3DERR_GENERIC; }
+            v3->dev = dev;
+            dev->v3 = v3;
+        }
+        v3->RefCount++;
+        dev->RefCount++;
+        *out = GUEST_ADDR(v3);
+        d3d_log("D3D: IDirect3DDevice3\n");
+        return D3D_OK;
+    }
     return query_self(dev, &dev->RefCount, riid, IID_IDirect3DDevice2_, ppvObj);
 }
 
@@ -519,7 +612,7 @@ uint32_t CCALL IDirect3DDevice2_NextViewport_c(void */*lpThis*/, void */*a1*/, v
 uint32_t CCALL IDirect3DDevice2_EnumTextureFormats_c(void */*lpThis*/, uint32_t callback, uint32_t context)
 {
     static const struct { uint32_t flags, bits, r, g, b, a; } formats[4] = {
-        { 0x40 | 0x20, 8, 0, 0, 0, 0 },
+        { 0x20, 8, 0, 0, 0, 0 },
         { 0x40, 16, 0xf800, 0x07e0, 0x001f, 0 },
         { 0x40 | 0x01, 16, 0x7c00, 0x03e0, 0x001f, 0x8000 },
         { 0x40 | 0x01, 16, 0x0f00, 0x00f0, 0x000f, 0xf000 }
@@ -576,6 +669,7 @@ uint32_t CCALL IDirect3DDevice2_EndScene_c(void *lpThis)
 {
     d3d_device *dev = (d3d_device *)lpThis;
 
+
     if (!dev->in_scene) return D3DERR_GENERIC;
     dev->in_scene = 0;
 #ifdef GAME_D3D_GL
@@ -585,7 +679,7 @@ uint32_t CCALL IDirect3DDevice2_EndScene_c(void *lpThis)
         dev->gl_scene = 0;
     }
 #endif
-    d3d_log("D3D: scene: %u draws, %u vertices\n", dev->draws, dev->vertices);
+    d3d_log("D3D: scene: %u draws, %u vertices\n", (unsigned)dev->draws, (unsigned)dev->vertices);
     return D3D_OK;
 }
 
@@ -743,6 +837,7 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
 #define RS_FILLMODE         8
 #define RS_SHADEMODE        9
 #define RS_ZWRITEENABLE     14
+#define RS_TEXTUREMIN       16
 #define RS_TEXTUREMAG       17
 #define RS_SRCBLEND         19
 #define RS_DESTBLEND        20
@@ -831,6 +926,40 @@ static int rt_sample(const rtex *t, int x, int y, int ckey, int *r, int *g, int 
     return 1;
 }
 
+/* linear filtering: the four texels around the sample, weights of the fraction;
+ * the colour key cuts the footprint, then the nearest texel decides */
+static int rt_sample_linear(const rtex *t, float fx, float fy, int ckey, uint32_t mode,
+                            int *r, int *g, int *b, int *a)
+{
+    int x0 = (int)floorf(fx), y0 = (int)floorf(fy);
+    float wx = fx - (float)x0, wy = fy - (float)y0;
+    int c[4][4], ok[4], i, j;
+
+    for (j = 0; j < 2; j++)
+    {
+        for (i = 0; i < 2; i++)
+        {
+            int k = j * 2 + i;
+            ok[k] = rt_sample(t, rt_addr(x0 + i, t->w, mode), rt_addr(y0 + j, t->h, mode),
+                              ckey, &c[k][0], &c[k][1], &c[k][2], &c[k][3]);
+        }
+    }
+    if (!ok[0] || !ok[1] || !ok[2] || !ok[3])
+    {
+        int nx = (int)floorf(fx + 0.5f), ny = (int)floorf(fy + 0.5f);
+        return rt_sample(t, rt_addr(nx, t->w, mode), rt_addr(ny, t->h, mode), ckey, r, g, b, a);
+    }
+    *r = (int)(((c[0][0] * (1.0f - wx) + c[1][0] * wx) * (1.0f - wy) +
+                (c[2][0] * (1.0f - wx) + c[3][0] * wx) * wy) + 0.5f);
+    *g = (int)(((c[0][1] * (1.0f - wx) + c[1][1] * wx) * (1.0f - wy) +
+                (c[2][1] * (1.0f - wx) + c[3][1] * wx) * wy) + 0.5f);
+    *b = (int)(((c[0][2] * (1.0f - wx) + c[1][2] * wx) * (1.0f - wy) +
+                (c[2][2] * (1.0f - wx) + c[3][2] * wx) * wy) + 0.5f);
+    *a = (int)(((c[0][3] * (1.0f - wx) + c[1][3] * wx) * (1.0f - wy) +
+                (c[2][3] * (1.0f - wx) + c[3][3] * wx) * wy) + 0.5f);
+    return 1;
+}
+
 static int blend_factor(uint32_t mode, int sc, int sa, int dc, int da)
 {
     switch (mode)
@@ -907,6 +1036,7 @@ typedef struct {
     int cx1, cy1, cx2, cy2;
     rtex tex;
     int textured;
+    int filt_linear;
 } rctx;
 
 static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rvert *v2)
@@ -992,9 +1122,17 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
                     u = w0 * v0->u + w1 * v1->u + w2 * v2->u;
                     v = w0 * v0->v + w1 * v1->v + w2 * v2->v;
                 }
-                tx = rt_addr((int)floorf(u * (float)c->tex.w), c->tex.w, addr);
-                ty = rt_addr((int)floorf(v * (float)c->tex.h), c->tex.h, addr);
-                if (!rt_sample(&c->tex, tx, ty, ckey, &tr, &tg, &tb, &ta)) continue;
+                if (c->filt_linear)
+                {
+                    if (!rt_sample_linear(&c->tex, u * (float)c->tex.w - 0.5f, v * (float)c->tex.h - 0.5f,
+                                          ckey, addr, &tr, &tg, &tb, &ta)) continue;
+                }
+                else
+                {
+                    tx = rt_addr((int)floorf(u * (float)c->tex.w), c->tex.w, addr);
+                    ty = rt_addr((int)floorf(v * (float)c->tex.h), c->tex.h, addr);
+                    if (!rt_sample(&c->tex, tx, ty, ckey, &tr, &tg, &tb, &ta)) continue;
+                }
                 switch (tmb)
                 {
                     case 1: r = tr; g = tg; b = tb; break;                                          /* DECAL */
@@ -1061,7 +1199,11 @@ static void dump_texture(uint32_t th, const struct IDirectDrawSurface_c *ts)
     FILE *f;
     uint32_t x, y;
 
-    if ((dir == NULL) || done[th - 1] || (ts->bpp != 16)) return;
+    if (done[th - 1]) return;
+    done[th - 1] = 1;
+    d3d_log("D3D: texture %u: %ux%u bpp=%u pixels=%s\n", th,
+            (unsigned)ts->width, (unsigned)ts->height, (unsigned)ts->bpp, ts->pixels != NULL ? "yes" : "no");
+    if ((dir == NULL) || (ts->bpp != 16)) return;
     done[th - 1] = 1;
     snprintf(name, sizeof(name), "%s/tex%03u.ppm", dir, th);
     f = fopen(name, "wb");
@@ -1109,10 +1251,23 @@ static uint32_t draw_primitive(d3d_device *dev, uint32_t type, uint32_t vtype, c
         if (x2 < c.cx2) c.cx2 = x2;
         if (y2 < c.cy2) c.cy2 = y2;
     }
+    if (th != 0 && !((th <= MAX_TEXTURES) && (texture_handles[th - 1] != NULL)))
+    {
+        static uint32_t warned;
+        if (warned != th + 1) { warned = th + 1; d3d_log("D3D: texture handle %u is not bound\n", th); }
+    }
     if ((th >= 1) && (th <= MAX_TEXTURES) && (texture_handles[th - 1] != NULL))
     {
         const struct IDirectDrawSurface_c *ts = texture_handles[th - 1]->surface;
-        if ((ts->width != 0) && (ts->height != 0) && (ts->pixels != NULL)) { rt_setup(&c.tex, ts); c.textured = 1; }
+        if ((ts->width != 0) && (ts->height != 0) && (ts->pixels != NULL))
+        {
+            /* D3DFILTER_LINEAR and the linear mip variants of the min/mag states */
+            uint32_t mn = dev->state[RS_TEXTUREMIN], mg = dev->state[RS_TEXTUREMAG];
+            rt_setup(&c.tex, ts);
+            c.textured = 1;
+            c.filt_linear = ((mn == 2) || (mn == 4) || (mn == 5) || (mn == 6) ||
+                             (mg == 2) || (mg == 5) || (mg == 6));
+        }
         dump_texture(th, ts);
     }
 
@@ -1176,6 +1331,699 @@ uint32_t CCALL IDirect3DDevice2_SetClipStatus_c(void */*lpThis*/, void */*a1*/)
 uint32_t CCALL IDirect3DDevice2_GetClipStatus_c(void */*lpThis*/, void */*a1*/)
 {
     return D3DERR_NOTIMPL;
+}
+
+/* ---- IDirect3DDevice (DirectX 3) ---- */
+extern "C" {
+
+uint32_t CCALL IDirect3DDevice_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
+{
+    d3d_device1 *v1 = (d3d_device1 *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IUnknown_) || same_guid(riid, IID_IDirect3DDevice_))
+    {
+        v1->RefCount++;
+        v1->dev->RefCount++;
+        *out = GUEST_ADDR(v1);
+        return D3D_OK;
+    }
+    if (same_guid(riid, IID_IDirect3DDevice2_))
+    {
+        v1->dev->RefCount++;
+        *out = GUEST_ADDR(v1->dev);
+        return D3D_OK;
+    }
+    if (same_guid(riid, IID_IDirect3DDevice3_))
+    {
+        d3d_device *dev = v1->dev;
+        d3d_device3 *v3 = (d3d_device3 *)dev->v3;
+
+        if (v3 == NULL)
+        {
+            v3 = (d3d_device3 *)new_object(sizeof(d3d_device3), &IDirect3DDevice3Vtbl_asm2c);
+            if (v3 == NULL) { *out = 0; return D3DERR_GENERIC; }
+            v3->dev = dev;
+            dev->v3 = v3;
+        }
+        v3->RefCount++;
+        dev->RefCount++;
+        *out = GUEST_ADDR(v3);
+        d3d_log("D3D: IDirect3DDevice3\n");
+        return D3D_OK;
+    }
+    *out = 0;
+    return D3DERR_NOINTERFACE;
+}
+
+uint32_t CCALL IDirect3DDevice_AddRef_c(void *lpThis)
+{
+    d3d_device1 *v1 = (d3d_device1 *)lpThis;
+    v1->dev->RefCount++;
+    return ++v1->RefCount;
+}
+
+uint32_t CCALL IDirect3DDevice_Release_c(void *lpThis)
+{
+    d3d_device1 *v1 = (d3d_device1 *)lpThis;
+
+    if (--v1->RefCount != 0)
+    {
+        v1->dev->RefCount--;
+        return v1->RefCount;
+    }
+    if (v1->dev->v1 == v1) v1->dev->v1 = NULL;
+    v1->dev->RefCount--;
+    IDirect3DDevice2_Release_c(v1->dev);
+    x86_free(v1);
+    return 0;
+}
+
+uint32_t CCALL IDirect3DDevice_Initialize_c(void */*lpThis*/, void */*a1*/, void */*a2*/, void */*a3*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_GetCaps_c(void */*lpThis*/, void *a1, void *a2)
+{
+    uint32_t *hw = (uint32_t *)a1, *hel = (uint32_t *)a2;
+    uint32_t hwsize, helsize;
+
+    if ((hw == NULL) || (hel == NULL)) return D3DERR_INVALIDARG;
+    hwsize = hw[0];
+    helsize = hel[0];
+    if ((hwsize < 0xac) || (helsize < 0xac)) return D3DERR_INVALIDARG;
+    if (hwsize > 0xcc) hwsize = 0xcc;
+    if (helsize > 0xcc) helsize = 0xcc;
+    fill_device_desc_size(hw, 1, hwsize);
+    fill_device_desc_size(hel, 0, helsize);
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_SwapTextureHandles_c(void */*lpThis*/, void *a1, void *a2)
+{
+    d3d_log("D3D: SwapTextureHandles(%p, %p)\n", a1, a2);
+    return D3DERR_NOTIMPL;
+}
+
+uint32_t CCALL IDirect3DDevice_CreateExecuteBuffer_c(void *lpThis, void *a1, void *a2, void */*a3*/)
+{
+    /* D3DEXECUTEBUFFERDESC: dwSize, dwFlags, dwCaps, dwBufferSize, lpData */
+    uint32_t *desc = (uint32_t *)a1, *out = (uint32_t *)a2;
+    d3d_execbuf *b;
+
+    if (out == NULL) return D3DERR_POINTER;
+    *out = 0;
+    if ((desc == NULL) || (desc[0] < 20)) return D3DERR_INVALIDARG;
+
+    b = (d3d_execbuf *)new_object(sizeof(d3d_execbuf), &IDirect3DExecuteBufferVtbl_asm2c);
+    if (b == NULL) return D3DERR_GENERIC;
+    b->device = (d3d_device1 *)lpThis;
+    b->size = desc[3];
+    if (((desc[1] & 0x4) != 0) && (desc[4] != 0))    /* D3DDEB_LPDATA: the game's memory */
+    {
+        b->data = desc[4];
+    }
+    else
+    {
+        void *mem = x86_malloc(b->size != 0 ? b->size : 1);
+        if (mem == NULL) { x86_free(b); return D3DERR_GENERIC; }
+        b->data = GUEST_ADDR(mem);
+        b->owner = 1;
+    }
+    d3d_log("D3D: CreateExecuteBuffer size=%u\n", b->size);
+    *out = GUEST_ADDR(b);
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_GetStats_c(void */*lpThis*/, void */*a1*/)
+{
+    return D3DERR_NOTIMPL;
+}
+
+/* the instruction stream of an execute buffer, when <GAME>_D3D_LOG is set */
+static void execute_buffer_trace(d3d_execbuf *b)
+{
+    uint8_t *base = (uint8_t *)(uintptr_t)GUEST_MEM(b->data);
+    uint32_t off = b->exec_data[3], len = b->exec_data[4], end = off + len;
+
+    d3d_log("D3D: Execute buffer=%08x vertices=%u+%u instructions=%u+%u\n",
+            b->data, b->exec_data[1], b->exec_data[2], off, len);
+    while ((base != NULL) && (off + 4 <= end))
+    {
+        uint8_t op = base[off], size = base[off + 1];
+        uint16_t count = (uint16_t)(base[off + 2] | (base[off + 3] << 8));
+        uint8_t *d = base + off + 4;
+        unsigned i;
+
+        d3d_log("  at %u: op=%u size=%u count=%u\n", off, op, size, count);
+        if ((op == 11) || (size == 0)) break;       /* D3DOP_EXIT */
+        switch (op)
+        {
+        case 8:     /* D3DOP_STATERENDER: D3DSTATE */
+            for (i = 0; i < count; i++)
+                d3d_log("    render state %u = 0x%x\n",
+                        (unsigned)(((uint32_t *)d)[i * 2]), ((uint32_t *)d)[i * 2 + 1]);
+            break;
+        case 6:     /* D3DOP_STATETRANSFORM */
+        case 7:     /* D3DOP_STATELIGHT */
+            for (i = 0; i < count; i++)
+                d3d_log("    state %u = 0x%x\n",
+                        (unsigned)(((uint32_t *)d)[i * 2]), ((uint32_t *)d)[i * 2 + 1]);
+            break;
+        case 9:     /* D3DOP_PROCESSVERTICES: D3DPROCESSVERTICES */
+            for (i = 0; i < count; i++)
+            {
+                uint32_t *pv = (uint32_t *)d + i * 4;
+                d3d_log("    process flags=0x%x start=%u dest=%u count=%u\n",
+                        pv[0], (unsigned)(pv[1] & 0xffff), (unsigned)(pv[1] >> 16), pv[2]);
+            }
+            break;
+        case 4:     /* D3DOP_MATRIXLOAD: D3DMATRIXLOAD */
+        case 5:     /* D3DOP_MATRIXMULTIPLY */
+        case 10:    /* D3DOP_TEXTURELOAD: D3DTEXTURELOAD */
+            for (i = 0; i < count; i++)
+                d3d_log("    handles %u -> %u\n",
+                        (unsigned)(((uint32_t *)d)[i * 2]), ((uint32_t *)d)[i * 2 + 1]);
+            break;
+        case 3:     /* D3DOP_TRIANGLE: D3DTRIANGLE */
+            if (count != 0)
+                d3d_log("    first triangle %u %u %u flags=0x%x\n",
+                        (unsigned)(((uint16_t *)d)[0]), (unsigned)(((uint16_t *)d)[1]),
+                        (unsigned)(((uint16_t *)d)[2]), (unsigned)(((uint16_t *)d)[3]));
+            break;
+        case 12:    /* D3DOP_BRANCHFORWARD: D3DBRANCH */
+            d3d_log("    branch mask=0x%x value=0x%x negate=%u offset=%u\n",
+                    ((uint32_t *)d)[0], ((uint32_t *)d)[1], ((uint32_t *)d)[2], ((uint32_t *)d)[3]);
+            break;
+        }
+        off += 4 + (uint32_t)size * count;
+    }
+}
+
+/* The instructions of an execute buffer, in order: the render states go to the
+ * device, the triangle lists (pre-transformed vertices, the game sends
+ * D3DPROCESSVERTICES_COPY) are drawn through the DirectX 5 device. */
+static uint32_t execute_buffer_run(d3d_execbuf *b)
+{
+    d3d_device *dev = b->device->dev;
+    uint8_t *base = (uint8_t *)(uintptr_t)GUEST_MEM(b->data);
+    uint32_t voff = b->exec_data[1], vcount = b->exec_data[2];
+    uint32_t off, end;
+
+    if (base == NULL) return D3DERR_INVALIDARG;
+    off = b->exec_data[3];
+    end = off + b->exec_data[4];
+    while (off + 4 <= end)
+    {
+        uint8_t op = base[off], size = base[off + 1];
+        uint16_t count = (uint16_t)(base[off + 2] | (base[off + 3] << 8));
+        uint8_t *d = base + off + 4;
+        unsigned i;
+
+        if (size == 0) break;
+
+        switch (op)
+        {
+        case 8:             /* D3DOP_STATERENDER: D3DSTATE */
+            for (i = 0; i < count; i++)
+            {
+                uint32_t state = ((uint32_t *)d)[i * 2], value = ((uint32_t *)d)[i * 2 + 1];
+                if (state < MAX_STATES) dev->state[state] = value;
+#ifdef GAME_D3D_GL
+                if (dev->gl_scene) Winapi_D3dGLSetState(state, value);
+#endif
+                d3d_log("    render state %u = 0x%x\n", (unsigned)state, value);
+            }
+            break;
+        case 6:             /* D3DOP_STATETRANSFORM */
+        case 7:             /* D3DOP_STATELIGHT */
+            for (i = 0; i < count; i++)
+            {
+                uint32_t state = ((uint32_t *)d)[i * 2], value = ((uint32_t *)d)[i * 2 + 1];
+                d3d_log("    %s state %u = 0x%x\n", (op == 6) ? "transform" : "light",
+                        (unsigned)state, value);
+            }
+            break;
+        case 9:             /* D3DOP_PROCESSVERTICES: D3DPROCESSVERTICES */
+            for (i = 0; i < count; i++)
+            {
+                uint32_t *pv = (uint32_t *)d + i * 4;
+                uint32_t start = pv[1] & 0xffff, dest = pv[1] >> 16, n = pv[2];
+                if ((pv[0] & 7) == 2)   /* D3DPROCESSVERTICES_COPY: already transformed */
+                {
+                    if ((start != dest) && (n != 0))
+                        memmove(base + voff + dest * 32, base + voff + start * 32, (size_t)n * 32);
+                }
+                else
+                {
+                    d3d_log("    process vertices: flags 0x%x are not transformed\n", pv[0]);
+                }
+            }
+            break;
+        case 10:            /* D3DOP_TEXTURELOAD: D3DTEXTURELOAD */
+            for (i = 0; i < count; i++)
+            {
+                uint32_t dst = ((uint32_t *)d)[i * 2], src = ((uint32_t *)d)[i * 2 + 1];
+                if ((dst >= 1) && (dst <= MAX_TEXTURES) && (src >= 1) && (src <= MAX_TEXTURES))
+                    texture_handles[dst - 1] = texture_handles[src - 1];
+            }
+            break;
+        case 3:             /* D3DOP_TRIANGLE: D3DTRIANGLE */
+            if (count != 0)
+            {
+                static long exec_no;
+                uint16_t *index = (uint16_t *)malloc((size_t)count * 3 * sizeof(uint16_t));
+                if (index != NULL)
+                {
+                    for (i = 0; i < count; i++)
+                    {
+                        index[i * 3 + 0] = ((uint16_t *)d)[i * 4 + 0];
+                        index[i * 3 + 1] = ((uint16_t *)d)[i * 4 + 1];
+                        index[i * 3 + 2] = ((uint16_t *)d)[i * 4 + 2];
+                    }
+                    exec_no++;
+                    draw_primitive(dev, 4 /* D3DPT_TRIANGLELIST */, 3 /* D3DVT_TLVERTEX */,
+                                   (const float *)(base + voff), vcount, index, count * 3);
+                    free(index);
+                }
+            }
+            break;
+        case 12:            /* D3DOP_BRANCHFORWARD: D3DBRANCH */
+        {
+            uint32_t mask = ((uint32_t *)d)[0], value = ((uint32_t *)d)[1];
+            uint32_t negate = ((uint32_t *)d)[2], offset = ((uint32_t *)d)[3];
+            int taken = (((b->exec_data[7] /* dsStatus.dwStatus */) & mask) == value) != (negate != 0);
+            if (taken)
+            {
+                off += offset;
+                continue;
+            }
+            break;
+        }
+        }
+        off += 4 + (uint32_t)size * count;
+    }
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_Execute_c(void */*lpThis*/, void *a1, void */*a2*/, uint32_t /*a3*/)
+{
+    d3d_execbuf *b = (d3d_execbuf *)a1;
+
+    if (b == NULL) return D3DERR_INVALIDARG;
+    d3d_log("D3D: Execute\n");
+    if (d3d_logging()) execute_buffer_trace(b);
+    return execute_buffer_run(b);
+}
+
+uint32_t CCALL IDirect3DDevice_AddViewport_c(void *lpThis, void *a1)
+{
+    return IDirect3DDevice2_AddViewport_c(((d3d_device1 *)lpThis)->dev, a1);
+}
+
+uint32_t CCALL IDirect3DDevice_DeleteViewport_c(void *lpThis, void *a1)
+{
+    return IDirect3DDevice2_DeleteViewport_c(((d3d_device1 *)lpThis)->dev, a1);
+}
+
+uint32_t CCALL IDirect3DDevice_NextViewport_c(void *lpThis, void *a1, void *a2, uint32_t a3)
+{
+    return IDirect3DDevice2_NextViewport_c(((d3d_device1 *)lpThis)->dev, a1, a2, a3);
+}
+
+uint32_t CCALL IDirect3DDevice_Pick_c(void */*lpThis*/, void */*a1*/, void */*a2*/, uint32_t /*a3*/, void */*a4*/)
+{
+    return D3DERR_NOTIMPL;
+}
+
+uint32_t CCALL IDirect3DDevice_GetPickRecords_c(void */*lpThis*/, void */*a1*/, void */*a2*/)
+{
+    return D3DERR_NOTIMPL;
+}
+
+uint32_t CCALL IDirect3DDevice_EnumTextureFormats_c(void *lpThis, uint32_t cb, uint32_t ctx)
+{
+    return IDirect3DDevice2_EnumTextureFormats_c(((d3d_device1 *)lpThis)->dev, cb, ctx);
+}
+
+uint32_t CCALL IDirect3DDevice_CreateMatrix_c(void *lpThis, void *a1)
+{
+    d3d_device *dev = ((d3d_device1 *)lpThis)->dev;
+    uint32_t i;
+
+    if (a1 == NULL) return D3DERR_INVALIDARG;
+    for (i = 0; i < 16; i++)
+    {
+        if (!dev->matrix_used[i])
+        {
+            dev->matrix_used[i] = 1;
+            *(uint32_t *)a1 = i + 1;
+            return D3D_OK;
+        }
+    }
+    return D3DERR_GENERIC;
+}
+
+uint32_t CCALL IDirect3DDevice_DeleteMatrix_c(void *lpThis, uint32_t handle)
+{
+    d3d_device *dev = ((d3d_device1 *)lpThis)->dev;
+
+    if ((handle >= 1) && (handle <= 16)) dev->matrix_used[handle - 1] = 0;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_SetMatrix_c(void *lpThis, uint32_t handle, void *m)
+{
+    d3d_device *dev = ((d3d_device1 *)lpThis)->dev;
+
+    if ((handle < 1) || (handle > 16) || (m == NULL)) return D3DERR_INVALIDARG;
+    memcpy(dev->matrices[handle - 1], m, 16 * sizeof(uint32_t));
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_GetMatrix_c(void *lpThis, uint32_t handle, void *m)
+{
+    d3d_device *dev = ((d3d_device1 *)lpThis)->dev;
+
+    if ((handle < 1) || (handle > 16) || (m == NULL)) return D3DERR_INVALIDARG;
+    memcpy(m, dev->matrices[handle - 1], 16 * sizeof(uint32_t));
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice_BeginScene_c(void *lpThis)
+{
+    return IDirect3DDevice2_BeginScene_c(((d3d_device1 *)lpThis)->dev);
+}
+
+uint32_t CCALL IDirect3DDevice_EndScene_c(void *lpThis)
+{
+    return IDirect3DDevice2_EndScene_c(((d3d_device1 *)lpThis)->dev);
+}
+
+uint32_t CCALL IDirect3DDevice_GetDirect3D_c(void *lpThis, void *a1)
+{
+    return IDirect3DDevice2_GetDirect3D_c(((d3d_device1 *)lpThis)->dev, a1);
+}
+
+}
+
+/* ---- IDirect3DDevice3 (DirectX 6) ---- */
+extern "C" {
+
+static uint32_t texture_handle_of(d3d_texture *t)
+{
+    int i;
+
+    if (t == NULL) return 0;
+    if (t->handle == 0)
+    {
+        for (i = 0; i < MAX_TEXTURES; i++)
+        {
+            if (texture_handles[i] == NULL)
+            {
+                texture_handles[i] = t;
+                t->handle = (uint32_t)i + 1;
+                break;
+            }
+        }
+    }
+    return t->handle;
+}
+
+uint32_t CCALL IDirect3DDevice3_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
+{
+    d3d_device3 *v3 = (d3d_device3 *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IUnknown_) || same_guid(riid, IID_IDirect3DDevice3_))
+    {
+        v3->RefCount++;
+        v3->dev->RefCount++;
+        *out = GUEST_ADDR(v3);
+        return D3D_OK;
+    }
+    return IDirect3DDevice2_QueryInterface_c(v3->dev, riid, ppvObj);
+}
+
+uint32_t CCALL IDirect3DDevice3_AddRef_c(void *lpThis)
+{
+    d3d_device3 *v3 = (d3d_device3 *)lpThis;
+    v3->dev->RefCount++;
+    return ++v3->RefCount;
+}
+
+uint32_t CCALL IDirect3DDevice3_Release_c(void *lpThis)
+{
+    d3d_device3 *v3 = (d3d_device3 *)lpThis;
+
+    if (--v3->RefCount != 0) { v3->dev->RefCount--; return v3->RefCount; }
+    if (v3->dev->v3 == v3) v3->dev->v3 = NULL;
+    IDirect3DDevice2_Release_c(v3->dev);
+    x86_free(v3);
+    return 0;
+}
+
+#define FORWARD1(name) \
+uint32_t CCALL IDirect3DDevice3_##name##_c(void *lpThis) \
+{ return IDirect3DDevice2_##name##_c(((d3d_device3 *)lpThis)->dev); }
+
+#define FORWARD2P(name, A1) \
+uint32_t CCALL IDirect3DDevice3_##name##_c(void *lpThis, void *A1) \
+{ return IDirect3DDevice2_##name##_c(((d3d_device3 *)lpThis)->dev, A1); }
+
+#define FORWARD2U(name, A1) \
+uint32_t CCALL IDirect3DDevice3_##name##_c(void *lpThis, uint32_t A1) \
+{ return IDirect3DDevice2_##name##_c(((d3d_device3 *)lpThis)->dev, A1); }
+
+#define FORWARD3PU(name, A1, A2) \
+uint32_t CCALL IDirect3DDevice3_##name##_c(void *lpThis, uint32_t A1, void *A2) \
+{ return IDirect3DDevice2_##name##_c(((d3d_device3 *)lpThis)->dev, A1, A2); }
+
+#define FORWARD3UU(name, A1, A2) \
+uint32_t CCALL IDirect3DDevice3_##name##_c(void *lpThis, uint32_t A1, uint32_t A2) \
+{ return IDirect3DDevice2_##name##_c(((d3d_device3 *)lpThis)->dev, A1, A2); }
+
+uint32_t CCALL IDirect3DDevice3_GetCaps_c(void *lpThis, void *a1, void *a2)
+{ return IDirect3DDevice2_GetCaps_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+FORWARD2P(GetStats, a1)
+FORWARD2P(AddViewport, a1)
+FORWARD2P(DeleteViewport, a1)
+
+uint32_t CCALL IDirect3DDevice3_NextViewport_c(void *lpThis, void *a1, void *a2, uint32_t a3)
+{ return IDirect3DDevice2_NextViewport_c(((d3d_device3 *)lpThis)->dev, a1, a2, a3); }
+
+uint32_t CCALL IDirect3DDevice3_EnumTextureFormats_c(void *lpThis, uint32_t a1, uint32_t a2)
+{ return IDirect3DDevice2_EnumTextureFormats_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+FORWARD1(BeginScene)
+FORWARD1(EndScene)
+FORWARD2P(GetDirect3D, a1)
+FORWARD2P(SetCurrentViewport, a1)
+FORWARD2P(GetCurrentViewport, a1)
+
+uint32_t CCALL IDirect3DDevice3_SetRenderTarget_c(void *lpThis, void *a1, uint32_t a2)
+{ return IDirect3DDevice2_SetRenderTarget_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+FORWARD2P(GetRenderTarget, a1)
+
+uint32_t CCALL IDirect3DDevice3_Begin_c(void *lpThis, uint32_t a1, uint32_t a2, uint32_t a3)
+{ return IDirect3DDevice2_Begin_c(((d3d_device3 *)lpThis)->dev, a1, a2, a3); }
+
+uint32_t CCALL IDirect3DDevice3_BeginIndexed_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+{ return IDirect3DDevice2_BeginIndexed_c(((d3d_device3 *)lpThis)->dev, a1, a2, a3, a4, a5); }
+
+uint32_t CCALL IDirect3DDevice3_Vertex_c(void *lpThis, void *a1)
+{ return IDirect3DDevice2_Vertex_c(((d3d_device3 *)lpThis)->dev, a1); }
+
+FORWARD2U(Index, a1)
+FORWARD2U(End, a1)
+FORWARD3PU(GetRenderState, a1, a2)
+FORWARD3UU(SetRenderState, a1, a2)
+FORWARD3PU(GetLightState, a1, a2)
+FORWARD3UU(SetLightState, a1, a2)
+
+uint32_t CCALL IDirect3DDevice3_SetTransform_c(void *lpThis, uint32_t a1, void *a2)
+{ return IDirect3DDevice2_SetTransform_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+uint32_t CCALL IDirect3DDevice3_GetTransform_c(void *lpThis, uint32_t a1, void *a2)
+{ return IDirect3DDevice2_GetTransform_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+uint32_t CCALL IDirect3DDevice3_MultiplyTransform_c(void *lpThis, uint32_t a1, void *a2)
+{ return IDirect3DDevice2_MultiplyTransform_c(((d3d_device3 *)lpThis)->dev, a1, a2); }
+
+uint32_t CCALL IDirect3DDevice3_DrawPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, uint32_t a5)
+{ return IDirect3DDevice2_DrawPrimitive_c(((d3d_device3 *)lpThis)->dev, a1, a2, a3, a4, a5); }
+
+uint32_t CCALL IDirect3DDevice3_DrawIndexedPrimitive_c(void *lpThis, uint32_t a1, uint32_t a2, void *a3, uint32_t a4, void *a5, uint32_t a6, uint32_t a7)
+{ return IDirect3DDevice2_DrawIndexedPrimitive_c(((d3d_device3 *)lpThis)->dev, a1, a2, a3, a4, a5, a6, a7); }
+
+uint32_t CCALL IDirect3DDevice3_SetClipStatus_c(void *lpThis, void *a1)
+{ return IDirect3DDevice2_SetClipStatus_c(((d3d_device3 *)lpThis)->dev, a1); }
+
+uint32_t CCALL IDirect3DDevice3_GetClipStatus_c(void *lpThis, void *a1)
+{ return IDirect3DDevice2_GetClipStatus_c(((d3d_device3 *)lpThis)->dev, a1); }
+
+uint32_t CCALL IDirect3DDevice3_DrawPrimitiveStrided_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/, void */*a3*/, uint32_t /*a4*/, uint32_t /*a5*/)
+{ return D3DERR_NOTIMPL; }
+
+uint32_t CCALL IDirect3DDevice3_DrawIndexedPrimitiveStrided_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/, void */*a3*/, uint32_t /*a4*/, void */*a5*/, uint32_t /*a6*/, uint32_t /*a7*/)
+{ return D3DERR_NOTIMPL; }
+
+uint32_t CCALL IDirect3DDevice3_DrawPrimitiveVB_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/, uint32_t /*a3*/, uint32_t /*a4*/, uint32_t /*a5*/)
+{ return D3DERR_NOTIMPL; }
+
+uint32_t CCALL IDirect3DDevice3_DrawIndexedPrimitiveVB_c(void */*lpThis*/, uint32_t /*a1*/, void */*a2*/, void */*a3*/, uint32_t /*a4*/, uint32_t /*a5*/)
+{ return D3DERR_NOTIMPL; }
+
+uint32_t CCALL IDirect3DDevice3_ComputeSphereVisibility_c(void */*lpThis*/, void */*a1*/, void */*a2*/, uint32_t /*a3*/, uint32_t /*a4*/, void *a5)
+{
+    if (a5 != NULL) *(uint32_t *)a5 = 0;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice3_GetTexture_c(void */*lpThis*/, uint32_t /*a1*/, void *a2)
+{
+    if (a2 != NULL) *(uint32_t *)a2 = 0;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice3_SetTexture_c(void *lpThis, uint32_t a1, void *a2)
+{
+    d3d_device *dev = ((d3d_device3 *)lpThis)->dev;
+    d3d_texture *t = (d3d_texture *)a2;
+
+    d3d_log("D3D: SetTexture stage %u -> %p\n", (unsigned)a1, a2);
+    if (a1 == 0)
+    {
+        dev->state[RS_TEXTUREHANDLE] = texture_handle_of(t);
+#ifdef GAME_D3D_GL
+        if (dev->gl_scene) Winapi_D3dGLSetState(RS_TEXTUREHANDLE, dev->state[RS_TEXTUREHANDLE]);
+#endif
+    }
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice3_GetTextureStageState_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/, void *a3)
+{
+    if (a3 != NULL) *(uint32_t *)a3 = 0;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice3_SetTextureStageState_c(void *lpThis, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)lpThis;
+    d3d_log("D3D: SetTextureStageState %u %u = 0x%x\n", (unsigned)a1, (unsigned)a2, a3);
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DDevice3_ValidateDevice_c(void */*lpThis*/, void *a1)
+{
+    if (a1 != NULL) *(uint32_t *)a1 = 1;
+    return D3D_OK;
+}
+
+}
+
+/* ---- IDirect3DExecuteBuffer (DirectX 3) ---- */
+extern "C" {
+
+uint32_t CCALL IDirect3DExecuteBuffer_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
+{
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IUnknown_))
+    {
+        b->RefCount++;
+        *out = GUEST_ADDR(b);
+        return D3D_OK;
+    }
+    *out = 0;
+    return D3DERR_NOINTERFACE;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_AddRef_c(void *lpThis)
+{
+    return ++((d3d_execbuf *)lpThis)->RefCount;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Release_c(void *lpThis)
+{
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+
+    if (--b->RefCount != 0) return b->RefCount;
+    if (b->owner && (b->data != 0)) x86_free((void *)(uintptr_t)GUEST_MEM(b->data));
+    x86_free(b);
+    return 0;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Initialize_c(void *lpThis, void *a1, void *a2)
+{
+    /* D3DEXECUTEBUFFERDESC: dwSize, dwFlags, dwCaps, dwBufferSize, lpData */
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+    uint32_t *desc = (uint32_t *)a2;
+
+    if (a1 != NULL) b->device = (d3d_device1 *)a1;
+    if ((desc != NULL) && (desc[0] >= 20))
+    {
+        if (desc[3] != 0) b->size = desc[3];
+        if (((desc[1] & 0x4) != 0) && (desc[4] != 0) && !b->owner) b->data = desc[4];
+    }
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Lock_c(void *lpThis, void *a1)
+{
+    /* D3DEXECUTEBUFFERDESC: dwSize, dwFlags, dwCaps, dwBufferSize, lpData */
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+    uint32_t *desc = (uint32_t *)a1;
+
+    if ((desc == NULL) || (desc[0] < 20)) return D3DERR_INVALIDARG;
+    desc[3] = b->size;
+    desc[4] = b->data;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Unlock_c(void */*lpThis*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_SetExecuteData_c(void *lpThis, void *a1)
+{
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+    uint32_t *data = (uint32_t *)a1;
+
+    if ((data == NULL) || (data[0] < sizeof(b->exec_data))) return D3DERR_INVALIDARG;
+    memcpy(b->exec_data, data, sizeof(b->exec_data));
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_GetExecuteData_c(void *lpThis, void *a1)
+{
+    d3d_execbuf *b = (d3d_execbuf *)lpThis;
+    uint32_t *data = (uint32_t *)a1;
+
+    if ((data == NULL) || (data[0] < sizeof(b->exec_data))) return D3DERR_INVALIDARG;
+    memcpy(data, b->exec_data, sizeof(b->exec_data));
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Validate_c(void */*lpThis*/, void */*a1*/, void */*a2*/, void */*a3*/, uint32_t /*a4*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DExecuteBuffer_Optimize_c(void */*lpThis*/, uint32_t /*a1*/)
+{
+    return D3D_OK;
+}
+
 }
 
 /* ---- IDirect3DViewport2 ---- */
@@ -1409,6 +2257,8 @@ uint32_t CCALL IDirect3DMaterial2_SetMaterial_c(void *lpThis, void *a1)
 
     if (a1 == NULL) return D3DERR_INVALIDARG;
     memcpy(m->mat, a1, sizeof(m->mat));
+    d3d_log("D3D: SetMaterial %p size=%u hTexture=%u ramp=%u\n", (void *)m,
+            (unsigned)m->mat[0], (unsigned)m->mat[18], (unsigned)m->mat[19]);
     return D3D_OK;
 }
 
@@ -1441,29 +2291,68 @@ uint32_t CCALL IDirect3DMaterial2_GetHandle_c(void *lpThis, void */*a1*/, void *
         if (m->handle == 0) return D3DERR_GENERIC;
     }
     *(uint32_t *)a2 = m->handle;
+    d3d_log("D3D: IDirect3DMaterial2::GetHandle %p -> %u (hTexture=%u)\n",
+            (void *)m, (unsigned)m->handle, (unsigned)m->mat[18]);
     return D3D_OK;
 }
 
 /* ---- IDirect3DTexture2: a view of a surface made with DDSCAPS_TEXTURE ---- */
 
-int Winapi_D3dSurfaceQuery(struct IDirectDrawSurface_c *surface, const void *riid, uint32_t *out)
+static d3d_texture *texture_for_surface(struct IDirectDrawSurface_c *surface)
 {
-    d3d_texture *t;
+    d3d_texture *t = (d3d_texture *)surface->d3dtex;
 
-    if (!Winapi_Direct3DEnabled() || !same_guid(riid, IID_IDirect3DTexture2_)) return 0;
-    t = (d3d_texture *)surface->d3dtex;
     if (t == NULL)
     {
         t = (d3d_texture *)x86_malloc(sizeof(d3d_texture));
-        if (t == NULL) { *out = 0; return 0; }
+        if (t == NULL) return NULL;
         memset(t, 0, sizeof(d3d_texture));
         t->lpVtbl = GUEST_ADDR(&IDirect3DTexture2Vtbl_asm2c);
         t->surface = surface;
         surface->d3dtex = t;
     }
-    surface->RefCount++;        /* the texture and the surface are one object: one count */
-    *out = GUEST_ADDR(t);
-    return 1;
+    return t;
+}
+
+int Winapi_D3dSurfaceQuery(struct IDirectDrawSurface_c *surface, const void *riid, uint32_t *out)
+{
+    d3d_texture *t;
+
+    if (!Winapi_Direct3DEnabled()) return 0;
+    if (same_guid(riid, IID_IDirect3DTexture2_))
+    {
+        t = texture_for_surface(surface);
+        if (t == NULL) { *out = 0; return 0; }
+        surface->RefCount++;    /* the texture and the surface are one object: one count */
+        d3d_log("D3D: surface QI -> IDirect3DTexture2 (DX5) %ux%u bpp %u\n",
+                (unsigned)t->surface->width, (unsigned)t->surface->height, (unsigned)t->surface->bpp);
+        *out = GUEST_ADDR(t);
+        return 1;
+    }
+    if (same_guid(riid, IID_IDirect3DTexture_))
+    {
+        d3d_texture1 *v1;
+
+        t = texture_for_surface(surface);
+        if (t == NULL) { *out = 0; return 0; }
+        v1 = (d3d_texture1 *)t->v1;
+        if (v1 == NULL)
+        {
+            v1 = (d3d_texture1 *)x86_malloc(sizeof(d3d_texture1));
+            if (v1 == NULL) { *out = 0; return 0; }
+            memset(v1, 0, sizeof(d3d_texture1));
+            v1->lpVtbl = GUEST_ADDR(&IDirect3DTextureVtbl_asm2c);
+            v1->RefCount = 1;
+            v1->tex = t;
+            t->v1 = v1;
+        }
+        else v1->RefCount++;
+        surface->RefCount++;
+        d3d_log("D3D: surface QI -> IDirect3DTexture (DX3)\n");
+        *out = GUEST_ADDR(v1);
+        return 1;
+    }
+    return 0;
 }
 
 void Winapi_D3dSurfaceFree(struct IDirectDrawSurface_c *surface)
@@ -1472,6 +2361,7 @@ void Winapi_D3dSurfaceFree(struct IDirectDrawSurface_c *surface)
 
     if (t == NULL) return;
     if (t->handle != 0) texture_handles[t->handle - 1] = NULL;
+    if (t->v1 != NULL) x86_free(t->v1);
     surface->d3dtex = NULL;
     x86_free(t);
 }
@@ -1483,11 +2373,13 @@ uint32_t CCALL IDirect3DTexture2_QueryInterface_c(void *lpThis, void *riid, void
 
 uint32_t CCALL IDirect3DTexture2_AddRef_c(void *lpThis)
 {
+    d3d_log("D3D: IDirect3DTexture2::AddRef\n");
     return IDirectDrawSurface_AddRef_c(((d3d_texture *)lpThis)->surface);
 }
 
 uint32_t CCALL IDirect3DTexture2_Release_c(void *lpThis)
 {
+    d3d_log("D3D: IDirect3DTexture2::Release\n");
     return IDirectDrawSurface_Release_c(((d3d_texture *)lpThis)->surface);
 }
 
@@ -1511,12 +2403,108 @@ uint32_t CCALL IDirect3DTexture2_GetHandle_c(void *lpThis, void */*a1*/, void *a
         if (t->handle == 0) return D3DERR_GENERIC;
     }
     *(uint32_t *)a2 = t->handle;
+    d3d_log("D3D: IDirect3DTexture2::GetHandle -> %u\n", t->handle);
     return D3D_OK;
+}
+
+/* ---- IDirect3DTexture (DirectX 3) ---- */
+extern "C" {
+
+uint32_t CCALL IDirect3DTexture_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
+{
+    d3d_texture1 *v1 = (d3d_texture1 *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IUnknown_) || same_guid(riid, IID_IDirect3DTexture_))
+    {
+        v1->RefCount++;
+        v1->tex->surface->RefCount++;
+        *out = GUEST_ADDR(v1);
+        return D3D_OK;
+    }
+    if (same_guid(riid, IID_IDirect3DTexture2_))
+    {
+        if (!Winapi_D3dSurfaceQuery(v1->tex->surface, riid, out)) { *out = 0; return D3DERR_NOINTERFACE; }
+        return D3D_OK;
+    }
+    *out = 0;
+    return D3DERR_NOINTERFACE;
+}
+
+uint32_t CCALL IDirect3DTexture_AddRef_c(void *lpThis)
+{
+    d3d_texture1 *v1 = (d3d_texture1 *)lpThis;
+    v1->tex->surface->RefCount++;
+    return ++v1->RefCount;
+}
+
+uint32_t CCALL IDirect3DTexture_Release_c(void *lpThis)
+{
+    d3d_texture1 *v1 = (d3d_texture1 *)lpThis;
+
+    if (--v1->RefCount != 0) { v1->tex->surface->RefCount--; return v1->RefCount; }
+    if (v1->tex->v1 == v1) v1->tex->v1 = NULL;
+    v1->tex->surface->RefCount--;
+    x86_free(v1);
+    return 0;
+}
+
+uint32_t CCALL IDirect3DTexture_Initialize_c(void *lpThis, void */*a1*/, void *a2)
+{
+    /* the surface the texture is a view of is the one the game asked through */
+    (void)lpThis; (void)a2;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DTexture_GetHandle_c(void *lpThis, void */*a1*/, void *a2)
+{
+    d3d_texture *t = ((d3d_texture1 *)lpThis)->tex;
+    int i;
+
+    if (a2 == NULL) return D3DERR_INVALIDARG;
+    if (t->handle == 0)
+    {
+        for (i = 0; i < MAX_TEXTURES; i++)
+        {
+            if (texture_handles[i] == NULL)
+            {
+                texture_handles[i] = t;
+                t->handle = (uint32_t)i + 1;
+                break;
+            }
+        }
+        if (t->handle == 0) return D3DERR_GENERIC;
+    }
+    *(uint32_t *)a2 = t->handle;
+    d3d_log("D3D: IDirect3DTexture::GetHandle -> %u\n", t->handle);
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DTexture_PaletteChanged_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DTexture_Load_c(void *lpThis, void *a1)
+{
+    d3d_log("D3D: IDirect3DTexture::Load(%p)\n", a1);
+    (void)lpThis;
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DTexture_Unload_c(void */*lpThis*/)
+{
+    d3d_log("D3D: IDirect3DTexture::Unload\n");
+    return D3D_OK;
+}
+
 }
 
 /* the palette of the surface is read when the texture is used */
 uint32_t CCALL IDirect3DTexture2_PaletteChanged_c(void *lpThis, uint32_t /*a1*/, uint32_t /*a2*/)
 {
+    d3d_log("D3D: IDirect3DTexture2::PaletteChanged\n");
     ((d3d_texture *)lpThis)->surface->texture_gen++;
     return D3D_OK;
 }
@@ -1524,6 +2512,7 @@ uint32_t CCALL IDirect3DTexture2_PaletteChanged_c(void *lpThis, uint32_t /*a1*/,
 /* the pixels (and the palette) of another texture of the same size and format */
 uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
 {
+    d3d_log("D3D: IDirect3DTexture2::Load\n");
     struct IDirectDrawSurface_c *dst = ((d3d_texture *)lpThis)->surface;
     d3d_texture *from = (d3d_texture *)a1;
     struct IDirectDrawSurface_c *src;
@@ -1531,6 +2520,8 @@ uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
 
     if (from == NULL) return D3DERR_INVALIDARG;
     src = from->surface;
+    d3d_log("D3D: Load %ux%u bpp %u -> %ux%u bpp %u\n", (unsigned)src->width, (unsigned)src->height, (unsigned)src->bpp,
+            (unsigned)dst->width, (unsigned)dst->height, (unsigned)dst->bpp);
     if ((src->width != dst->width) || (src->height != dst->height) || (src->bpp != dst->bpp)) return D3DERR_INVALIDARG;
     d3d_log("D3D: Load %ux%u masks %x/%x/%x/%x -> %x/%x/%x/%x\n", src->width, src->height, src->rmask, src->gmask, src->bmask, src->amask, dst->rmask, dst->gmask, dst->bmask, dst->amask);
     row = dst->width * (dst->bpp >> 3);

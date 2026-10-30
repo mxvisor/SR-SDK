@@ -387,6 +387,373 @@ proc IDirect3DDevice2_GetClipStatus_asm2c public
 
 endp ; end procedure IDirect3DDevice2_GetClipStatus_asm2c
 
+
+; ---- IDirect3DDevice (DirectX 3) ----
+
+func IDirect3DDevice_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DDevice_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_QueryInterface_asm2c
+
+func IDirect3DDevice_AddRef_c *lpThis
+proc IDirect3DDevice_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice_AddRef_asm2c
+
+func IDirect3DDevice_Release_c *lpThis
+proc IDirect3DDevice_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice_Release_asm2c
+
+func IDirect3DDevice_Initialize_c *lpThis, *a1, *a2, *a3
+proc IDirect3DDevice_Initialize_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice_Initialize_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice_Initialize_asm2c
+
+func IDirect3DDevice_GetCaps_c *lpThis, *a1, *a2
+proc IDirect3DDevice_GetCaps_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_GetCaps_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_GetCaps_asm2c
+
+func IDirect3DDevice_SwapTextureHandles_c *lpThis, *a1, *a2
+proc IDirect3DDevice_SwapTextureHandles_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_SwapTextureHandles_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_SwapTextureHandles_asm2c
+
+func IDirect3DDevice_CreateExecuteBuffer_c *lpThis, *a1, *a2, *a3
+proc IDirect3DDevice_CreateExecuteBuffer_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice_CreateExecuteBuffer_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice_CreateExecuteBuffer_asm2c
+
+func IDirect3DDevice_GetStats_c *lpThis, *a1
+proc IDirect3DDevice_GetStats_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_GetStats_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_GetStats_asm2c
+
+func IDirect3DDevice_Execute_c *lpThis, *a1, *a2, a3
+proc IDirect3DDevice_Execute_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice_Execute_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice_Execute_asm2c
+
+func IDirect3DDevice_AddViewport_c *lpThis, *a1
+proc IDirect3DDevice_AddViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_AddViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_AddViewport_asm2c
+
+func IDirect3DDevice_DeleteViewport_c *lpThis, *a1
+proc IDirect3DDevice_DeleteViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_DeleteViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_DeleteViewport_asm2c
+
+func IDirect3DDevice_NextViewport_c *lpThis, *a1, *a2, a3
+proc IDirect3DDevice_NextViewport_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice_NextViewport_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice_NextViewport_asm2c
+
+func IDirect3DDevice_Pick_c *lpThis, *a1, *a2, a3, *a4
+proc IDirect3DDevice_Pick_asm2c public
+
+        Call_Asm_Stack5 IDirect3DDevice_Pick_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirect3DDevice_Pick_asm2c
+
+func IDirect3DDevice_GetPickRecords_c *lpThis, *a1, *a2
+proc IDirect3DDevice_GetPickRecords_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_GetPickRecords_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_GetPickRecords_asm2c
+
+func IDirect3DDevice_EnumTextureFormats_c *lpThis, a1, a2
+proc IDirect3DDevice_EnumTextureFormats_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_EnumTextureFormats_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_EnumTextureFormats_asm2c
+
+func IDirect3DDevice_CreateMatrix_c *lpThis, *a1
+proc IDirect3DDevice_CreateMatrix_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_CreateMatrix_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_CreateMatrix_asm2c
+
+func IDirect3DDevice_SetMatrix_c *lpThis, a1, *a2
+proc IDirect3DDevice_SetMatrix_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_SetMatrix_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_SetMatrix_asm2c
+
+func IDirect3DDevice_GetMatrix_c *lpThis, a1, *a2
+proc IDirect3DDevice_GetMatrix_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice_GetMatrix_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice_GetMatrix_asm2c
+
+func IDirect3DDevice_DeleteMatrix_c *lpThis, a1
+proc IDirect3DDevice_DeleteMatrix_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_DeleteMatrix_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_DeleteMatrix_asm2c
+
+func IDirect3DDevice_BeginScene_c *lpThis
+proc IDirect3DDevice_BeginScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice_BeginScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice_BeginScene_asm2c
+
+func IDirect3DDevice_EndScene_c *lpThis
+proc IDirect3DDevice_EndScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice_EndScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice_EndScene_asm2c
+
+func IDirect3DDevice_GetDirect3D_c *lpThis, *a1
+proc IDirect3DDevice_GetDirect3D_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice_GetDirect3D_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice_GetDirect3D_asm2c
+
+; ---- IDirect3DExecuteBuffer ----
+
+func IDirect3DExecuteBuffer_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DExecuteBuffer_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DExecuteBuffer_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DExecuteBuffer_QueryInterface_asm2c
+
+func IDirect3DExecuteBuffer_AddRef_c *lpThis
+proc IDirect3DExecuteBuffer_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DExecuteBuffer_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DExecuteBuffer_AddRef_asm2c
+
+func IDirect3DExecuteBuffer_Release_c *lpThis
+proc IDirect3DExecuteBuffer_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DExecuteBuffer_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DExecuteBuffer_Release_asm2c
+
+func IDirect3DExecuteBuffer_Initialize_c *lpThis, *a1, *a2
+proc IDirect3DExecuteBuffer_Initialize_asm2c public
+
+        Call_Asm_Stack3 IDirect3DExecuteBuffer_Initialize_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DExecuteBuffer_Initialize_asm2c
+
+func IDirect3DExecuteBuffer_Lock_c *lpThis, *a1
+proc IDirect3DExecuteBuffer_Lock_asm2c public
+
+        Call_Asm_Stack2 IDirect3DExecuteBuffer_Lock_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DExecuteBuffer_Lock_asm2c
+
+func IDirect3DExecuteBuffer_Unlock_c *lpThis
+proc IDirect3DExecuteBuffer_Unlock_asm2c public
+
+        Call_Asm_Stack1 IDirect3DExecuteBuffer_Unlock_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DExecuteBuffer_Unlock_asm2c
+
+func IDirect3DExecuteBuffer_SetExecuteData_c *lpThis, *a1
+proc IDirect3DExecuteBuffer_SetExecuteData_asm2c public
+
+        Call_Asm_Stack2 IDirect3DExecuteBuffer_SetExecuteData_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DExecuteBuffer_SetExecuteData_asm2c
+
+func IDirect3DExecuteBuffer_GetExecuteData_c *lpThis, *a1
+proc IDirect3DExecuteBuffer_GetExecuteData_asm2c public
+
+        Call_Asm_Stack2 IDirect3DExecuteBuffer_GetExecuteData_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DExecuteBuffer_GetExecuteData_asm2c
+
+func IDirect3DExecuteBuffer_Validate_c *lpThis, *a1, *a2, *a3, a4
+proc IDirect3DExecuteBuffer_Validate_asm2c public
+
+        Call_Asm_Stack5 IDirect3DExecuteBuffer_Validate_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirect3DExecuteBuffer_Validate_asm2c
+
+func IDirect3DExecuteBuffer_Optimize_c *lpThis, a1
+proc IDirect3DExecuteBuffer_Optimize_asm2c public
+
+        Call_Asm_Stack2 IDirect3DExecuteBuffer_Optimize_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DExecuteBuffer_Optimize_asm2c
+
+; ---- IDirect3DTexture (DirectX 3) ----
+
+func IDirect3DTexture_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DTexture_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture_QueryInterface_asm2c
+
+func IDirect3DTexture_AddRef_c *lpThis
+proc IDirect3DTexture_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DTexture_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DTexture_AddRef_asm2c
+
+func IDirect3DTexture_Release_c *lpThis
+proc IDirect3DTexture_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DTexture_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DTexture_Release_asm2c
+
+func IDirect3DTexture_Initialize_c *lpThis, *a1, *a2
+proc IDirect3DTexture_Initialize_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture_Initialize_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture_Initialize_asm2c
+
+func IDirect3DTexture_GetHandle_c *lpThis, *a1, *a2
+proc IDirect3DTexture_GetHandle_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture_GetHandle_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture_GetHandle_asm2c
+
+func IDirect3DTexture_PaletteChanged_c *lpThis, a1, a2
+proc IDirect3DTexture_PaletteChanged_asm2c public
+
+        Call_Asm_Stack3 IDirect3DTexture_PaletteChanged_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DTexture_PaletteChanged_asm2c
+
+func IDirect3DTexture_Load_c *lpThis, *a1
+proc IDirect3DTexture_Load_asm2c public
+
+        Call_Asm_Stack2 IDirect3DTexture_Load_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DTexture_Load_asm2c
+
+func IDirect3DTexture_Unload_c *lpThis
+proc IDirect3DTexture_Unload_asm2c public
+
+        Call_Asm_Stack1 IDirect3DTexture_Unload_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DTexture_Unload_asm2c
+
 ; ---- IDirect3DViewport2 ----
 
 func IDirect3DViewport2_QueryInterface_c *lpThis, *a1, *a2
@@ -663,6 +1030,352 @@ proc IDirect3DTexture2_Load_asm2c public
 
 endp ; end procedure IDirect3DTexture2_Load_asm2c
 
+func IDirect3DDevice3_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3DDevice3_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_QueryInterface_asm2c
+func IDirect3DDevice3_AddRef_c *lpThis
+proc IDirect3DDevice3_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice3_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice3_AddRef_asm2c
+func IDirect3DDevice3_Release_c *lpThis
+proc IDirect3DDevice3_Release_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice3_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice3_Release_asm2c
+func IDirect3DDevice3_GetCaps_c *lpThis, *a1, *a2
+proc IDirect3DDevice3_GetCaps_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_GetCaps_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_GetCaps_asm2c
+func IDirect3DDevice3_GetStats_c *lpThis, *a1
+proc IDirect3DDevice3_GetStats_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_GetStats_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_GetStats_asm2c
+func IDirect3DDevice3_AddViewport_c *lpThis, *a1
+proc IDirect3DDevice3_AddViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_AddViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_AddViewport_asm2c
+func IDirect3DDevice3_DeleteViewport_c *lpThis, *a1
+proc IDirect3DDevice3_DeleteViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_DeleteViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_DeleteViewport_asm2c
+func IDirect3DDevice3_NextViewport_c *lpThis, *a1, *a2, a3
+proc IDirect3DDevice3_NextViewport_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice3_NextViewport_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice3_NextViewport_asm2c
+func IDirect3DDevice3_EnumTextureFormats_c *lpThis, a1, a2
+proc IDirect3DDevice3_EnumTextureFormats_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_EnumTextureFormats_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_EnumTextureFormats_asm2c
+func IDirect3DDevice3_BeginScene_c *lpThis
+proc IDirect3DDevice3_BeginScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice3_BeginScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice3_BeginScene_asm2c
+func IDirect3DDevice3_EndScene_c *lpThis
+proc IDirect3DDevice3_EndScene_asm2c public
+
+        Call_Asm_Stack1 IDirect3DDevice3_EndScene_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DDevice3_EndScene_asm2c
+func IDirect3DDevice3_GetDirect3D_c *lpThis, *a1
+proc IDirect3DDevice3_GetDirect3D_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_GetDirect3D_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_GetDirect3D_asm2c
+func IDirect3DDevice3_SetCurrentViewport_c *lpThis, *a1
+proc IDirect3DDevice3_SetCurrentViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_SetCurrentViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_SetCurrentViewport_asm2c
+func IDirect3DDevice3_GetCurrentViewport_c *lpThis, *a1
+proc IDirect3DDevice3_GetCurrentViewport_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_GetCurrentViewport_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_GetCurrentViewport_asm2c
+func IDirect3DDevice3_SetRenderTarget_c *lpThis, *a1, a2
+proc IDirect3DDevice3_SetRenderTarget_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_SetRenderTarget_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_SetRenderTarget_asm2c
+func IDirect3DDevice3_GetRenderTarget_c *lpThis, *a1
+proc IDirect3DDevice3_GetRenderTarget_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_GetRenderTarget_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_GetRenderTarget_asm2c
+func IDirect3DDevice3_Begin_c *lpThis, a1, a2, a3
+proc IDirect3DDevice3_Begin_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice3_Begin_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice3_Begin_asm2c
+func IDirect3DDevice3_BeginIndexed_c *lpThis, a1, a2, *a3, a4, a5
+proc IDirect3DDevice3_BeginIndexed_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_BeginIndexed_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_BeginIndexed_asm2c
+func IDirect3DDevice3_Vertex_c *lpThis, *a1
+proc IDirect3DDevice3_Vertex_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_Vertex_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_Vertex_asm2c
+func IDirect3DDevice3_Index_c *lpThis, a1
+proc IDirect3DDevice3_Index_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_Index_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_Index_asm2c
+func IDirect3DDevice3_End_c *lpThis, a1
+proc IDirect3DDevice3_End_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_End_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_End_asm2c
+func IDirect3DDevice3_GetRenderState_c *lpThis, a1, *a2
+proc IDirect3DDevice3_GetRenderState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_GetRenderState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_GetRenderState_asm2c
+func IDirect3DDevice3_SetRenderState_c *lpThis, a1, a2
+proc IDirect3DDevice3_SetRenderState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_SetRenderState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_SetRenderState_asm2c
+func IDirect3DDevice3_GetLightState_c *lpThis, a1, *a2
+proc IDirect3DDevice3_GetLightState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_GetLightState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_GetLightState_asm2c
+func IDirect3DDevice3_SetLightState_c *lpThis, a1, a2
+proc IDirect3DDevice3_SetLightState_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_SetLightState_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_SetLightState_asm2c
+func IDirect3DDevice3_SetTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice3_SetTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_SetTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_SetTransform_asm2c
+func IDirect3DDevice3_GetTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice3_GetTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_GetTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_GetTransform_asm2c
+func IDirect3DDevice3_MultiplyTransform_c *lpThis, a1, *a2
+proc IDirect3DDevice3_MultiplyTransform_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_MultiplyTransform_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_MultiplyTransform_asm2c
+func IDirect3DDevice3_DrawPrimitive_c *lpThis, a1, a2, *a3, a4, a5
+proc IDirect3DDevice3_DrawPrimitive_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_DrawPrimitive_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_DrawPrimitive_asm2c
+func IDirect3DDevice3_DrawIndexedPrimitive_c *lpThis, a1, a2, *a3, a4, *a5, a6, a7
+proc IDirect3DDevice3_DrawIndexedPrimitive_asm2c public
+
+        Call_Asm_Stack8 IDirect3DDevice3_DrawIndexedPrimitive_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure IDirect3DDevice3_DrawIndexedPrimitive_asm2c
+func IDirect3DDevice3_SetClipStatus_c *lpThis, *a1
+proc IDirect3DDevice3_SetClipStatus_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_SetClipStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_SetClipStatus_asm2c
+func IDirect3DDevice3_GetClipStatus_c *lpThis, *a1
+proc IDirect3DDevice3_GetClipStatus_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_GetClipStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_GetClipStatus_asm2c
+func IDirect3DDevice3_DrawPrimitiveStrided_c *lpThis, a1, a2, *a3, a4, a5
+proc IDirect3DDevice3_DrawPrimitiveStrided_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_DrawPrimitiveStrided_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_DrawPrimitiveStrided_asm2c
+
+func IDirect3DDevice3_DrawIndexedPrimitiveStrided_c *lpThis, a1, a2, *a3, a4, *a5, a6, a7
+proc IDirect3DDevice3_DrawIndexedPrimitiveStrided_asm2c public
+
+        Call_Asm_Stack8 IDirect3DDevice3_DrawIndexedPrimitiveStrided_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure IDirect3DDevice3_DrawIndexedPrimitiveStrided_asm2c
+
+func IDirect3DDevice3_DrawPrimitiveVB_c *lpThis, a1, *a2, a3, a4, a5
+proc IDirect3DDevice3_DrawPrimitiveVB_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_DrawPrimitiveVB_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_DrawPrimitiveVB_asm2c
+
+func IDirect3DDevice3_DrawIndexedPrimitiveVB_c *lpThis, a1, *a2, *a3, a4, a5
+proc IDirect3DDevice3_DrawIndexedPrimitiveVB_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_DrawIndexedPrimitiveVB_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_DrawIndexedPrimitiveVB_asm2c
+
+func IDirect3DDevice3_ComputeSphereVisibility_c *lpThis, *a1, *a2, a3, a4, *a5
+proc IDirect3DDevice3_ComputeSphereVisibility_asm2c public
+
+        Call_Asm_Stack6 IDirect3DDevice3_ComputeSphereVisibility_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure IDirect3DDevice3_ComputeSphereVisibility_asm2c
+
+func IDirect3DDevice3_GetTexture_c *lpThis, a1, *a2
+proc IDirect3DDevice3_GetTexture_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_GetTexture_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_GetTexture_asm2c
+
+func IDirect3DDevice3_SetTexture_c *lpThis, a1, *a2
+proc IDirect3DDevice3_SetTexture_asm2c public
+
+        Call_Asm_Stack3 IDirect3DDevice3_SetTexture_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3DDevice3_SetTexture_asm2c
+
+func IDirect3DDevice3_GetTextureStageState_c *lpThis, a1, a2, *a3
+proc IDirect3DDevice3_GetTextureStageState_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice3_GetTextureStageState_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice3_GetTextureStageState_asm2c
+
+func IDirect3DDevice3_SetTextureStageState_c *lpThis, a1, a2, a3
+proc IDirect3DDevice3_SetTextureStageState_asm2c public
+
+        Call_Asm_Stack4 IDirect3DDevice3_SetTextureStageState_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirect3DDevice3_SetTextureStageState_asm2c
+
+func IDirect3DDevice3_ValidateDevice_c *lpThis, *a1
+proc IDirect3DDevice3_ValidateDevice_asm2c public
+
+        Call_Asm_Stack2 IDirect3DDevice3_ValidateDevice_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DDevice3_ValidateDevice_asm2c
+
 datasegment d3d_data constant
 
 dlabel IDirect3D2Vtbl_asm2c global
@@ -746,5 +1459,95 @@ daddr IDirect3DTexture2_Release_asm2c
 daddr IDirect3DTexture2_GetHandle_asm2c
 daddr IDirect3DTexture2_PaletteChanged_asm2c
 daddr IDirect3DTexture2_Load_asm2c
+
+dlabel IDirect3DTextureVtbl_asm2c global
+daddr IDirect3DTexture_QueryInterface_asm2c
+daddr IDirect3DTexture_AddRef_asm2c
+daddr IDirect3DTexture_Release_asm2c
+daddr IDirect3DTexture_Initialize_asm2c
+daddr IDirect3DTexture_GetHandle_asm2c
+daddr IDirect3DTexture_PaletteChanged_asm2c
+daddr IDirect3DTexture_Load_asm2c
+daddr IDirect3DTexture_Unload_asm2c
+
+dlabel IDirect3DDevice3Vtbl_asm2c global
+daddr IDirect3DDevice3_QueryInterface_asm2c
+daddr IDirect3DDevice3_AddRef_asm2c
+daddr IDirect3DDevice3_Release_asm2c
+daddr IDirect3DDevice3_GetCaps_asm2c
+daddr IDirect3DDevice3_GetStats_asm2c
+daddr IDirect3DDevice3_AddViewport_asm2c
+daddr IDirect3DDevice3_DeleteViewport_asm2c
+daddr IDirect3DDevice3_NextViewport_asm2c
+daddr IDirect3DDevice3_EnumTextureFormats_asm2c
+daddr IDirect3DDevice3_BeginScene_asm2c
+daddr IDirect3DDevice3_EndScene_asm2c
+daddr IDirect3DDevice3_GetDirect3D_asm2c
+daddr IDirect3DDevice3_SetCurrentViewport_asm2c
+daddr IDirect3DDevice3_GetCurrentViewport_asm2c
+daddr IDirect3DDevice3_SetRenderTarget_asm2c
+daddr IDirect3DDevice3_GetRenderTarget_asm2c
+daddr IDirect3DDevice3_Begin_asm2c
+daddr IDirect3DDevice3_BeginIndexed_asm2c
+daddr IDirect3DDevice3_Vertex_asm2c
+daddr IDirect3DDevice3_Index_asm2c
+daddr IDirect3DDevice3_End_asm2c
+daddr IDirect3DDevice3_GetRenderState_asm2c
+daddr IDirect3DDevice3_SetRenderState_asm2c
+daddr IDirect3DDevice3_GetLightState_asm2c
+daddr IDirect3DDevice3_SetLightState_asm2c
+daddr IDirect3DDevice3_SetTransform_asm2c
+daddr IDirect3DDevice3_GetTransform_asm2c
+daddr IDirect3DDevice3_MultiplyTransform_asm2c
+daddr IDirect3DDevice3_DrawPrimitive_asm2c
+daddr IDirect3DDevice3_DrawIndexedPrimitive_asm2c
+daddr IDirect3DDevice3_SetClipStatus_asm2c
+daddr IDirect3DDevice3_GetClipStatus_asm2c
+daddr IDirect3DDevice3_DrawPrimitiveStrided_asm2c
+daddr IDirect3DDevice3_DrawIndexedPrimitiveStrided_asm2c
+daddr IDirect3DDevice3_DrawPrimitiveVB_asm2c
+daddr IDirect3DDevice3_DrawIndexedPrimitiveVB_asm2c
+daddr IDirect3DDevice3_ComputeSphereVisibility_asm2c
+daddr IDirect3DDevice3_GetTexture_asm2c
+daddr IDirect3DDevice3_SetTexture_asm2c
+daddr IDirect3DDevice3_GetTextureStageState_asm2c
+daddr IDirect3DDevice3_SetTextureStageState_asm2c
+daddr IDirect3DDevice3_ValidateDevice_asm2c
+
+dlabel IDirect3DDeviceVtbl_asm2c global
+daddr IDirect3DDevice_QueryInterface_asm2c
+daddr IDirect3DDevice_AddRef_asm2c
+daddr IDirect3DDevice_Release_asm2c
+daddr IDirect3DDevice_Initialize_asm2c
+daddr IDirect3DDevice_GetCaps_asm2c
+daddr IDirect3DDevice_SwapTextureHandles_asm2c
+daddr IDirect3DDevice_CreateExecuteBuffer_asm2c
+daddr IDirect3DDevice_GetStats_asm2c
+daddr IDirect3DDevice_Execute_asm2c
+daddr IDirect3DDevice_AddViewport_asm2c
+daddr IDirect3DDevice_DeleteViewport_asm2c
+daddr IDirect3DDevice_NextViewport_asm2c
+daddr IDirect3DDevice_Pick_asm2c
+daddr IDirect3DDevice_GetPickRecords_asm2c
+daddr IDirect3DDevice_EnumTextureFormats_asm2c
+daddr IDirect3DDevice_CreateMatrix_asm2c
+daddr IDirect3DDevice_SetMatrix_asm2c
+daddr IDirect3DDevice_GetMatrix_asm2c
+daddr IDirect3DDevice_DeleteMatrix_asm2c
+daddr IDirect3DDevice_BeginScene_asm2c
+daddr IDirect3DDevice_EndScene_asm2c
+daddr IDirect3DDevice_GetDirect3D_asm2c
+
+dlabel IDirect3DExecuteBufferVtbl_asm2c global
+daddr IDirect3DExecuteBuffer_QueryInterface_asm2c
+daddr IDirect3DExecuteBuffer_AddRef_asm2c
+daddr IDirect3DExecuteBuffer_Release_asm2c
+daddr IDirect3DExecuteBuffer_Initialize_asm2c
+daddr IDirect3DExecuteBuffer_Lock_asm2c
+daddr IDirect3DExecuteBuffer_Unlock_asm2c
+daddr IDirect3DExecuteBuffer_SetExecuteData_asm2c
+daddr IDirect3DExecuteBuffer_GetExecuteData_asm2c
+daddr IDirect3DExecuteBuffer_Validate_asm2c
+daddr IDirect3DExecuteBuffer_Optimize_asm2c
 
 endd
