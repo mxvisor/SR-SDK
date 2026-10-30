@@ -447,6 +447,17 @@ static GLuint gl_texture_of(const struct IDirectDrawSurface_c *s, int keyed)
     return keyed ? e->keyed : e->plain;
 }
 
+void Winapi_D3dGLPaletteChanged(const struct IDirectDrawPalette_c *palette)
+{
+    uint32_t i;
+
+    for (i = 0; i < MAX_GL_TEXTURES; i++)
+    {
+        struct IDirectDrawSurface_c *s = (struct IDirectDrawSurface_c *)texcache[i].surface;
+        if ((s != NULL) && (s->palette == palette)) s->texture_gen++;
+    }
+}
+
 void Winapi_D3dGLTextureFree(const struct IDirectDrawSurface_c *s)
 {
     uint32_t i;
@@ -505,10 +516,46 @@ static void gl_apply_draw_state(int textured)
     if (textured)
     {
         glEnable(GL_TEXTURE_2D);
+        /* the software rasteriser's blend of the texel and the vertex:
+         * MODULATE keeps the texel's alpha (not the vertex's, so the colour
+         * key of the keyed texture still tests as 0), MODULATEALPHA multiplies
+         * it, DECALALPHA mixes the colour by the texel's alpha */
         switch (gl_state[RS_TEXTUREMAPBLEND])
         {
             case 1: case 7: glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE); break;
-            default: glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); break;
+            case 3:
+                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+                break;
+            case 4:
+                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+                break;
+            default:
+                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+                break;
         }
         if (gl_state[RS_COLORKEYENABLE] != 0)
         {
@@ -529,13 +576,14 @@ static void gl_apply_draw_state(int textured)
 
 static void gl_vertex(const d3dgl_vert *v, int persp, const d3dgl_vert *flatfrom)
 {
-    /* glOrtho(0,W,0,H,-1,1) negates z: eye z = 1 - 2*guest_z maps the guest's
-     * 0 (near) to depth 0 and 1 (far) to the cleared depth 1 */
+    /* glOrtho(0,W,0,H,-1,1) maps eye z -1..1 to the depth 0..1: eye z =
+     * 2*guest_z - 1 keeps the guest's 0 (near) at depth 0 and 1 (far) at the
+     * cleared depth 1, as the software rasteriser's z_test() */
     if (flatfrom != NULL) glColor4ub((GLubyte)flatfrom->r, (GLubyte)flatfrom->g, (GLubyte)flatfrom->b, (GLubyte)flatfrom->a);
     else glColor4ub((GLubyte)v->r, (GLubyte)v->g, (GLubyte)v->b, (GLubyte)v->a);
     if (persp) glTexCoord4f(v->u * v->rhw, v->v * v->rhw, 0.0f, v->rhw);
     else glTexCoord2f(v->u, v->v);
-    glVertex3f(v->x, v->y, 1.0f - v->z * 2.0f);
+    glVertex3f(v->x, v->y, v->z * 2.0f - 1.0f);
 }
 
 static void gl_triangle(const d3dgl_vert *v0, const d3dgl_vert *v1, const d3dgl_vert *v2, int textured, int flat)
@@ -643,7 +691,7 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
         {
             const d3dgl_vert *v = gl_ith(verts, nverts, index, (uint32_t)i);
             glColor4ub((GLubyte)v->r, (GLubyte)v->g, (GLubyte)v->b, 255);
-            glVertex3f(v->x, v->y, 1.0f - v->z * 2.0f);
+            glVertex3f(v->x, v->y, v->z * 2.0f - 1.0f);
         }
         glEnd();
     }

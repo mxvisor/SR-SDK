@@ -1757,6 +1757,7 @@ uint32_t CCALL IDirectDrawSurface_SetPalette_c(struct IDirectDrawSurface_c *lpTh
     if (pal != NULL) pal->RefCount++;
     if (lpThis->palette != NULL) lpThis->palette->RefCount--;
     lpThis->palette = pal;
+    lpThis->texture_gen++;
 
     if (lpThis->primary) Present(lpThis->dd);
     return DD_OK;
@@ -1963,6 +1964,11 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpTh
     {
         lpThis->argb[dwStartingEntry + i] = 0xff000000u | (in[i * 4] << 16) | (in[i * 4 + 1] << 8) | in[i * 4 + 2];
     }
+
+#ifdef GAME_D3D_GL
+    /* the 8-bit textures are read through the palette when they are made */
+    if (Winapi_Direct3DGL()) Winapi_D3dGLPaletteChanged(lpThis);
+#endif
 
     /* a palette change shows at once on the screen */
     if (winapi_dd_screen != NULL) Present(winapi_dd_screen);

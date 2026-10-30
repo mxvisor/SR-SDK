@@ -59,6 +59,9 @@ void Winapi_D3dGLSync(struct IDirectDrawSurface_c *target);
 void Winapi_D3dGLUpload(struct IDirectDrawSurface_c *target);
 /* a texture surface goes away: drop both of its cached GL textures */
 void Winapi_D3dGLTextureFree(const struct IDirectDrawSurface_c *surface);
+/* the entries of a palette changed: the cached textures that use it want
+ * their pixels read again (the software rasteriser reads the palette live) */
+void Winapi_D3dGLPaletteChanged(const struct IDirectDrawPalette_c *palette);
 
 /* Clear inside a scene: the rect of the FBO, colour 0xAARRGGBB and/or depth */
 void Winapi_D3dGLClear(struct IDirectDrawSurface_c *target,
