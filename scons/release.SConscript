@@ -121,6 +121,33 @@ if os.path.isfile(PORTABLE_CFG):
 
 # ----------------------------------------------------------------- portable --
 
+def port_names(binaries, dlls, release_oses):
+    """The files of the port in the game's directory: the programs, the DLLs and
+    the release files, and the settings file and the log the runtime names after
+    the program (scons/game.py's GAME_PROGRAM_NAME)."""
+    names = [os.path.basename(binary) for binary in binaries]
+    names += [os.path.basename(dll) for dll in dlls]
+    for release_os in release_oses:
+        names += [os.path.basename(source) for source in release_files(release_os)]
+    names += [PROGRAM + '.cfg', PROGRAM + '.log']
+    return names
+
+
+def check_names(directory, names):
+    """A game's directory is the port's too, and Windows has one file for names
+    that differ only in case: a port's file must not be one of the game's."""
+    game = {}
+    for entry in os.listdir(PORTABLE_DIR):
+        game.setdefault(entry.lower(), entry)
+    clashes = ['%s (the port) / %s (the game)' % (name, game[name.lower()])
+               for name in names if name.lower() in game]
+    if clashes:
+        raise Exception('release: the port\'s files of %s collide with the game\'s '
+                        '(one file on a case-insensitive file system): %s; '
+                        'change the name in game.cfg (program=)'
+                        % (os.path.basename(directory), ', '.join(sorted(clashes))))
+
+
 def stage_directory(name, binaries, dlls, release_oses):
     """build/dist/<name>/: the programs, the release files, the data."""
     directory = os.path.join(DIST, name)
@@ -130,6 +157,7 @@ def stage_directory(name, binaries, dlls, release_oses):
     # (the original's exe in another case), and the programs of
     # the release must be the port's, not covered by it.
     if os.path.isdir(PORTABLE_DIR):
+        check_names(directory, port_names(binaries, dlls, release_oses))
         shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
     for release_os in release_oses:
         for source in release_files(release_os):
