@@ -42,7 +42,9 @@
 #elif defined(PYRA)
 #define CONFIG_FILE "../game.cfg"
 #else
-#define CONFIG_FILE "game.cfg"
+/* the port's settings file, the name Game_config.c reads as well: the port's files
+ * in the game's directory are named after the program (scons/game.py) */
+#define CONFIG_FILE GAME_PROGRAM_NAME ".cfg"
 #endif
 
 static char *trim_string(char *buf)
