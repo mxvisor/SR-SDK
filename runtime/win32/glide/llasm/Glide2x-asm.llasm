@@ -135,6 +135,26 @@ proc grAADrawLine_asm2c public
 
 endp ; end procedure grAADrawLine_asm2c
 
+func grAADrawPolygon_c count, *vertices, *ilist
+
+proc grAADrawPolygon_asm2c public
+
+        Call_Asm_Stack3 grAADrawPolygon_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grAADrawPolygon_asm2c
+
+func grAADrawPolygonVertexList_c count, *vertices
+
+proc grAADrawPolygonVertexList_asm2c public
+
+        Call_Asm_Stack2 grAADrawPolygonVertexList_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grAADrawPolygonVertexList_asm2c
+
 func guDrawTriangleWithClip_c *a, *b, *c
 
 proc guDrawTriangleWithClip_asm2c public
@@ -374,3 +394,243 @@ proc grAADrawPoint_asm2c public
         Call_Asm_Return 1
 
 endp ; end procedure grAADrawPoint_asm2c
+
+func grDrawTriangle_c *a, *b, *c
+
+proc grDrawTriangle_asm2c public
+
+        Call_Asm_Stack3 grDrawTriangle_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grDrawTriangle_asm2c
+
+func grDrawLine_c *v1, *v2
+
+proc grDrawLine_asm2c public
+
+        Call_Asm_Stack2 grDrawLine_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grDrawLine_asm2c
+
+func grDrawPoint_c *p
+
+proc grDrawPoint_asm2c public
+
+        Call_Asm_Stack1 grDrawPoint_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDrawPoint_asm2c
+
+func grDrawPolygon_c count, *vertices, flags
+
+proc grDrawPolygon_asm2c public
+
+        Call_Asm_Stack3 grDrawPolygon_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grDrawPolygon_asm2c
+
+func grDrawPlanarPolygon_c count, *vertices, flags
+
+proc grDrawPlanarPolygon_asm2c public
+
+        Call_Asm_Stack3 grDrawPlanarPolygon_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grDrawPlanarPolygon_asm2c
+
+func grDrawPolygonVertexList_c count, *vertices
+
+proc grDrawPolygonVertexList_asm2c public
+
+        Call_Asm_Stack2 grDrawPolygonVertexList_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grDrawPolygonVertexList_asm2c
+
+func grColorCombine_c function, factor, local, other, invert
+
+proc grColorCombine_asm2c public
+
+        Call_Asm_Stack5 grColorCombine_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure grColorCombine_asm2c
+
+func grAlphaCombine_c function
+
+proc grAlphaCombine_asm2c public
+
+        Call_Asm_Stack1 grAlphaCombine_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grAlphaCombine_asm2c
+
+func grFogMode_c mode
+
+proc grFogMode_asm2c public
+
+        Call_Asm_Stack1 grFogMode_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grFogMode_asm2c
+
+func grFogColorValue_c value
+
+proc grFogColorValue_asm2c public
+
+        Call_Asm_Stack1 grFogColorValue_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grFogColorValue_asm2c
+
+func grFogTable_c *table
+
+proc grFogTable_asm2c public
+
+        Call_Asm_Stack1 grFogTable_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grFogTable_asm2c
+
+func guFogGenerateExp_c *table, mode
+
+proc guFogGenerateExp_asm2c public
+
+        Call_Asm_Stack2 guFogGenerateExp_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure guFogGenerateExp_asm2c
+
+func grGammaCorrectionValue_c value
+
+proc grGammaCorrectionValue_asm2c public
+
+        Call_Asm_Stack1 grGammaCorrectionValue_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grGammaCorrectionValue_asm2c
+
+func grLfbConstantAlpha_c value
+
+proc grLfbConstantAlpha_asm2c public
+
+        Call_Asm_Stack1 grLfbConstantAlpha_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grLfbConstantAlpha_asm2c
+
+func grLfbConstantDepth_c value
+
+proc grLfbConstantDepth_asm2c public
+
+        Call_Asm_Stack1 grLfbConstantDepth_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grLfbConstantDepth_asm2c
+
+func grTexSource_c tmu, startAddress, evenOdd, *info
+
+proc grTexSource_asm2c public
+
+        Call_Asm_Stack4 grTexSource_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure grTexSource_asm2c
+
+func grTexDownloadMipMap_c tmu, startAddress, evenOdd, *info
+
+proc grTexDownloadMipMap_asm2c public
+
+        Call_Asm_Stack4 grTexDownloadMipMap_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure grTexDownloadMipMap_asm2c
+
+func grTexCalcMemRequired_c smallest_lod, largest_lod, aspect, format
+
+proc grTexCalcMemRequired_asm2c public
+
+        Call_Asm_Stack4 grTexCalcMemRequired_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure grTexCalcMemRequired_asm2c
+
+func grTexFilterMode_c tmu, minFilter, magFilter
+
+proc grTexFilterMode_asm2c public
+
+        Call_Asm_Stack3 grTexFilterMode_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grTexFilterMode_asm2c
+
+func grTexClampMode_c tmu, sClamp, tClamp
+
+proc grTexClampMode_asm2c public
+
+        Call_Asm_Stack3 grTexClampMode_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grTexClampMode_asm2c
+
+func grTexMinAddress_c address
+
+proc grTexMinAddress_asm2c public
+
+        Call_Asm_Stack1 grTexMinAddress_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grTexMinAddress_asm2c
+
+func grTexMaxAddress_c address
+
+proc grTexMaxAddress_asm2c public
+
+        Call_Asm_Stack1 grTexMaxAddress_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grTexMaxAddress_asm2c
+
+func grTexCombine_c tmu, rgb_function, alpha_function, rgb_invert, alpha_invert, rgb_factor, alpha_factor
+
+proc grTexCombine_asm2c public
+
+        Call_Asm_Stack7 grTexCombine_c
+
+        Call_Asm_Return 7
+
+endp ; end procedure grTexCombine_asm2c
+
+func grTexCombineFunction_c tmu, function
+
+proc grTexCombineFunction_asm2c public
+
+        Call_Asm_Stack2 grTexCombineFunction_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grTexCombineFunction_asm2c

@@ -51,6 +51,10 @@
 #define FXTRUE 1
 #define FXFALSE 0
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define GR_BUFFER_FRONTBUFFER 0
 #define GR_BUFFER_BACKBUFFER 1
 #define GR_BUFFER_AUXBUFFER 2
@@ -862,10 +866,6 @@ static void present_front(void)
 
 /* ---- the API ---- */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 uint32_t CCALL grGlideInit_c(void)
 {
     init_debug();
@@ -903,7 +903,6 @@ uint32_t CCALL grSstQueryHardware_c(void *hwconfig)
 {
     struct gr_hw_config *hw = (struct gr_hw_config *)hwconfig;
 
-    init_debug();
     DEBUG("grSstQueryHardware\n");
     if (hw == NULL) return FXFALSE;
 
@@ -1334,11 +1333,243 @@ uint32_t CCALL grAADrawLine_c(void *v1, void *v2)
     return 0;
 }
 
+uint32_t CCALL grDrawTriangle_c(void *a, void *b, void *c)
+{
+    if (a != NULL && b != NULL && c != NULL)
+    {
+        draw_triangle((const struct gr_vertex *)a, (const struct gr_vertex *)b, (const struct gr_vertex *)c);
+    }
+    return 0;
+}
+
+uint32_t CCALL grDrawLine_c(void *v1, void *v2)
+{
+    if (v1 != NULL && v2 != NULL) draw_line((const struct gr_vertex *)v1, (const struct gr_vertex *)v2);
+    return 0;
+}
+
+uint32_t CCALL grDrawPoint_c(void *p)
+{
+    if (p != NULL) draw_point((const struct gr_vertex *)p);
+    return 0;
+}
+
+/* a convex polygon as a fan of triangles; ilist, when not NULL, indexes vlist */
+static void draw_polygon(uint32_t count, const struct gr_vertex *v, const int *ilist)
+{
+    uint32_t i;
+
+    if (v == NULL || count < 3) return;
+    for (i = 1; i + 1 < count; i++)
+    {
+        const struct gr_vertex *a = ilist ? &v[ilist[0]] : &v[0];
+        const struct gr_vertex *b = ilist ? &v[ilist[i]] : &v[i];
+        const struct gr_vertex *c = ilist ? &v[ilist[i + 1]] : &v[i + 1];
+
+        draw_triangle(a, b, c);
+    }
+}
+
+uint32_t CCALL grDrawPolygon_c(uint32_t count, void *vertices, uint32_t flags)
+{
+    draw_polygon(count, (const struct gr_vertex *)vertices,
+                 (const int *)(void *)(uintptr_t)flags);
+    return 0;
+}
+
+uint32_t CCALL grDrawPlanarPolygon_c(uint32_t count, void *vertices, uint32_t flags)
+{
+    draw_polygon(count, (const struct gr_vertex *)vertices,
+                 (const int *)(void *)(uintptr_t)flags);
+    return 0;
+}
+
+uint32_t CCALL grDrawPolygonVertexList_c(uint32_t count, void *vertices)
+{
+    draw_polygon(count, (const struct gr_vertex *)vertices, NULL);
+    return 0;
+}
+
+uint32_t CCALL grAADrawPolygon_c(uint32_t count, void *vertices, void *ilist)
+{
+    draw_polygon(count, (const struct gr_vertex *)vertices,
+                 (const int *)ilist);
+    return 0;
+}
+
+uint32_t CCALL grAADrawPolygonVertexList_c(uint32_t count, void *vertices)
+{
+    draw_polygon(count, (const struct gr_vertex *)vertices, NULL);
+    return 0;
+}
+
+uint32_t CCALL grColorCombine_c(uint32_t function, uint32_t factor, uint32_t local, uint32_t other, uint32_t invert)
+{
+    gl_flush();
+    DEBUG("grColorCombine: %u, %u, 0x%x, 0x%x, %u\n", function, factor, local, other, invert);
+    (void)factor; (void)local; (void)other; (void)invert;
+    st.color_combine = function;
+    return 0;
+}
+
 uint32_t CCALL guColorCombineFunction_c(uint32_t function)
 {
     gl_flush();
     DEBUG("guColorCombineFunction: %u\n", function);
     st.color_combine = function;
+    return 0;
+}
+
+uint32_t CCALL grAlphaCombine_c(uint32_t function)
+{
+    gl_flush();
+    DEBUG("grAlphaCombine: %u\n", function);
+    st.alpha_source = function;
+    return 0;
+}
+
+uint32_t CCALL grFogMode_c(uint32_t mode)
+{
+    gl_flush();
+    DEBUG("grFogMode: %u\n", mode);
+    // Note: This is a stub; real fog handling needs depth buffer
+    return 0;
+}
+
+uint32_t CCALL grFogColorValue_c(uint32_t value)
+{
+    gl_flush();
+    DEBUG("grFogColorValue: 0x%x\n", value);
+    return 0;
+}
+
+uint32_t CCALL grFogTable_c(void *table)
+{
+    (void)table;
+    gl_flush();
+    DEBUG("grFogTable\n");
+    return 0;
+}
+
+uint32_t CCALL guFogGenerateExp_c(void *table, uint32_t mode)
+{
+    (void)table; (void)mode;
+    gl_flush();
+    DEBUG("guFogGenerateExp: %u\n", mode);
+    return 0;
+}
+
+uint32_t CCALL grGammaCorrectionValue_c(uint32_t value)
+{
+    gl_flush();
+    DEBUG("grGammaCorrectionValue: 0x%x\n", value);
+    return 0;
+}
+
+uint32_t CCALL grLfbConstantAlpha_c(uint32_t value)
+{
+    gl_flush();
+    DEBUG("grLfbConstantAlpha: 0x%x\n", value);
+    return 0;
+}
+
+uint32_t CCALL grLfbConstantDepth_c(uint32_t value)
+{
+    gl_flush();
+    DEBUG("grLfbConstantDepth: 0x%x\n", value);
+    return 0;
+}
+
+uint32_t CCALL grTexSource_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info)
+{
+    (void)startAddress; (void)evenOdd; (void)info;
+    gl_flush();
+    DEBUG("grTexSource: tmu=%u\n", tmu);
+    st.texture = tmu;
+    return 0;
+}
+
+uint32_t CCALL grTexDownloadMipMap_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info)
+{
+    (void)tmu; (void)startAddress; (void)evenOdd; (void)info;
+    gl_flush();
+    DEBUG("grTexDownloadMipMap\n");
+    /* mmid is passed as info->largeLod.baseAddress in real Voodoo2; ignored here */
+    return 0;
+}
+
+uint32_t CCALL grTexCalcMemRequired_c(uint32_t smallest_lod, uint32_t largest_lod, uint32_t aspect, uint32_t format)
+{
+    uint32_t big, w, h, lod, size;
+
+    (void)format;
+    DEBUG("grTexCalcMemRequired: lod %u-%u, aspect %u\n", smallest_lod, largest_lod, aspect);
+    if (largest_lod > 8 || smallest_lod > 8 || smallest_lod < largest_lod || aspect > 6) return 0;
+
+    big = lod_size(largest_lod);
+    w = (aspect <= 3) ? big : (big >> (aspect - 3));
+    h = (aspect >= 3) ? big : (big >> (3 - aspect));
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+
+    size = 0;
+    for (lod = largest_lod; lod <= smallest_lod; lod++)
+    {
+        uint32_t lw = (lod == largest_lod) ? w : (w >> (lod - largest_lod));
+        uint32_t lh = (lod == largest_lod) ? h : (h >> (lod - largest_lod));
+        if (lw < 1) lw = 1;
+        if (lh < 1) lh = 1;
+        size += lw * lh * texel_bytes(format);
+    }
+    return size;
+}
+
+uint32_t CCALL grTexFilterMode_c(uint32_t tmu, uint32_t minFilter, uint32_t magFilter)
+{
+    (void)tmu; (void)minFilter; (void)magFilter;
+    gl_flush();
+    DEBUG("grTexFilterMode: tmu=%u min=%u mag=%u\n", tmu, minFilter, magFilter);
+    return 0;
+}
+
+uint32_t CCALL grTexClampMode_c(uint32_t tmu, uint32_t sClamp, uint32_t tClamp)
+{
+    (void)tmu; (void)sClamp; (void)tClamp;
+    gl_flush();
+    DEBUG("grTexClampMode: tmu=%u sClamp=%u tClamp=%u\n", tmu, sClamp, tClamp);
+    return 0;
+}
+
+uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t alpha_function, uint32_t rgb_invert, uint32_t alpha_invert, uint32_t rgb_factor, uint32_t alpha_factor)
+{
+    (void)tmu; (void)rgb_function; (void)alpha_function; (void)rgb_invert; (void)alpha_invert; (void)rgb_factor; (void)alpha_factor;
+    gl_flush();
+    DEBUG("grTexCombine: tmu=%u\n", tmu);
+    if (tmu == 0) st.tex_combine = rgb_function;
+    return 0;
+}
+
+uint32_t CCALL grTexMinAddress_c(uint32_t address)
+{
+    (void)address;
+    gl_flush();
+    DEBUG("grTexMinAddress\n");
+    return 0;
+}
+
+uint32_t CCALL grTexMaxAddress_c(uint32_t address)
+{
+    (void)address;
+    gl_flush();
+    DEBUG("grTexMaxAddress\n");
+    return 0;
+}
+
+uint32_t CCALL grTexCombineFunction_c(uint32_t tmu, uint32_t function)
+{
+    gl_flush();
+    DEBUG("grTexCombineFunction: %u, %u\n", tmu, function);
+    if (tmu == 0) st.tex_combine = function;
     return 0;
 }
 

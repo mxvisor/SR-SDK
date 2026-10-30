@@ -63,6 +63,50 @@ uint32_t CCALL grLfbUnlock_c(uint32_t type, uint32_t buffer);
 uint32_t CCALL grTexDownloadTable_c(uint32_t tmu, uint32_t type, void *data);
 uint32_t CCALL grAADrawPoint_c(void *p);
 uint32_t CCALL grAADrawLine_c(void *v1, void *v2);
+uint32_t CCALL grAADrawPolygon_c(uint32_t count, void *vertices, void *ilist);
+uint32_t CCALL grAADrawPolygonVertexList_c(uint32_t count, void *vertices);
+
+/* the drawing primitives */
+uint32_t CCALL grDrawTriangle_c(void *a, void *b, void *c);
+uint32_t CCALL grDrawLine_c(void *v1, void *v2);
+uint32_t CCALL grDrawPoint_c(void *p);
+
+/* polygons */
+uint32_t CCALL grDrawPolygon_c(uint32_t count, void *vertices, uint32_t flags);
+uint32_t CCALL grDrawPlanarPolygon_c(uint32_t count, void *vertices, uint32_t flags);
+uint32_t CCALL grDrawPolygonVertexList_c(uint32_t count, void *vertices);
+
+/* colour and alpha combine */
+uint32_t CCALL grColorCombine_c(uint32_t function, uint32_t factor, uint32_t local, uint32_t other, uint32_t invert);
+uint32_t CCALL grAlphaCombine_c(uint32_t function);
+
+/* fog */
+uint32_t CCALL grFogMode_c(uint32_t mode);
+uint32_t CCALL grFogColorValue_c(uint32_t value);
+uint32_t CCALL grFogTable_c(void *table);
+uint32_t CCALL guFogGenerateExp_c(void *table, uint32_t mode);
+
+/* gamma */
+uint32_t CCALL grGammaCorrectionValue_c(uint32_t value);
+
+/* LFB constant alpha and depth */
+uint32_t CCALL grLfbConstantAlpha_c(uint32_t value);
+uint32_t CCALL grLfbConstantDepth_c(uint32_t value);
+
+/* texture source and download */
+uint32_t CCALL grTexSource_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info);
+uint32_t CCALL grTexDownloadMipMap_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info);
+uint32_t CCALL grTexCalcMemRequired_c(uint32_t smallest_lod, uint32_t largest_lod, uint32_t aspect, uint32_t format);
+
+/* texture filter and clamp */
+uint32_t CCALL grTexFilterMode_c(uint32_t tmu, uint32_t minFilter, uint32_t magFilter);
+uint32_t CCALL grTexClampMode_c(uint32_t tmu, uint32_t sClamp, uint32_t tClamp);
+uint32_t CCALL grTexMinAddress_c(uint32_t address);
+uint32_t CCALL grTexMaxAddress_c(uint32_t address);
+
+/* texture combine */
+uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t alpha_function, uint32_t rgb_invert, uint32_t alpha_invert, uint32_t rgb_factor, uint32_t alpha_factor);
+uint32_t CCALL grTexCombineFunction_c(uint32_t tmu, uint32_t function);
 
 uint32_t CCALL guColorCombineFunction_c(uint32_t function);
 uint32_t CCALL guAlphaSource_c(uint32_t mode);
