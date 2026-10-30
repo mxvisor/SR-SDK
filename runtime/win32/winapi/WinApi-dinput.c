@@ -397,7 +397,37 @@ uint32_t CCALL IDirectInputDevice_SetCooperativeLevel_c(uint32_t a0, uint32_t a1
     return DI_OK;
 }
 uint32_t CCALL IDirectInputDevice_GetObjectInfo_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { (void)a0; (void)a1; (void)a2; (void)a3; return DIERR_UNSUPPORTED; }
-uint32_t CCALL IDirectInputDevice_GetDeviceInfo_c(uint32_t a0, uint32_t a1) { (void)a0; (void)a1; return DIERR_UNSUPPORTED; }
+
+/* DIDEVICEINSTANCE (DirectInput 3): dwSize, guidInstance, guidProduct, dwDevType,
+ * tszInstanceName[260], tszProductName[260] */
+uint32_t CCALL IDirectInputDevice_GetDeviceInfo_c(uint32_t a0, uint32_t a1)
+{
+    static const uint8_t sys_mouse[16]    = { 0x60,0x2b,0x1d,0x6f, 0xa0,0xd5, 0xcf,0x11, 0xbf,0xc7,0x44,0x45,0x53,0x54,0x00,0x00 };
+    static const uint8_t sys_keyboard[16] = { 0x61,0x2b,0x1d,0x6f, 0xa0,0xd5, 0xcf,0x11, 0xbf,0xc7,0x44,0x45,0x53,0x54,0x00,0x00 };
+    di_device *d = (di_device *)GUEST_MEM(a0);
+    uint8_t *out = (uint8_t *)GUEST_MEM(a1);
+    const uint8_t *guid;
+    const char *name;
+    uint32_t size, devtype;
+
+    if (out == NULL) return DIERR_INVALIDPARAM;
+    size = *(uint32_t *)out;
+    if (size < 40) return DIERR_INVALIDPARAM;
+    if (size > 560) size = 560;
+    if (d->kind == DEV_KEYBOARD) { guid = sys_keyboard; name = "Keyboard"; devtype = 3; }
+    else if (d->kind == DEV_MOUSE) { guid = sys_mouse; name = "Mouse"; devtype = 2; }
+    else { guid = sys_mouse; name = "Device"; devtype = 0; }
+
+    memset(out, 0, size);
+    *(uint32_t *)out = size;
+    memcpy(out + 4, guid, 16);      /* guidInstance */
+    memcpy(out + 20, guid, 16);     /* guidProduct */
+    *(uint32_t *)(out + 36) = devtype;
+    if (size > 40) strncpy((char *)out + 40, name, (size - 40 < 260 ? size - 40 : 260) - 1);
+    if (size > 300) strncpy((char *)out + 300, name, (size - 300 < 260 ? size - 300 : 260) - 1);
+    if (input_debug()) fprintf(stderr, "[dinput %08x GetDeviceInfo size=%u devtype=%u]\n", a0, size, devtype);
+    return DI_OK;
+}
 uint32_t CCALL IDirectInputDevice_RunControlPanel_c(uint32_t a0, uint32_t a1, uint32_t a2) { (void)a0; (void)a1; (void)a2; return DI_OK; }
 uint32_t CCALL IDirectInputDevice_Initialize_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { (void)a0; (void)a1; (void)a2; (void)a3; return DI_OK; }
 
