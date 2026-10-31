@@ -34,9 +34,11 @@ import org.libsdl.app.SDLActivity;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -61,12 +63,78 @@ public class GameActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         tag = getString(R.string.app_name);
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            writeJavaCrash(throwable);
+            if (previous != null) previous.uncaughtException(thread, throwable);
+        });
+        startup("onCreate");
         try {
             prepareData();
+            startup("data ready");
         } catch (IOException e) {
+            startup("data failed: " + e);
             Log.e(tag, "cannot unpack the game's data", e);
         }
+        startup("super.onCreate");
         super.onCreate(savedInstanceState);
+        startup("super.onCreate done");
+    }
+
+    /* A file the user can read without adb: Android/data/<package>/files/.
+     * The Java crash and the steps before the native side starts. */
+    private File externalFile(String name) {
+        File dir = getExternalFilesDir(null);
+        return new File(dir != null ? dir : getFilesDir(), name);
+    }
+
+    private void startup(String message) {
+        try (PrintWriter out = new PrintWriter(new FileWriter(externalFile("startup.txt"), true))) {
+            out.println(System.currentTimeMillis() + " " + message);
+        } catch (IOException e) {
+            Log.w(tag, "cannot write startup.txt", e);
+        }
+    }
+
+    private void writeJavaCrash(Throwable throwable) {
+        try (PrintWriter out = new PrintWriter(externalFile("crash-java.txt"))) {
+            throwable.printStackTrace(out);
+        } catch (IOException e) {
+            Log.w(tag, "cannot write crash-java.txt", e);
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        startup("onStart done");
+    }
+
+    @Override
+    protected void onResume() {
+        startup("onResume");
+        super.onResume();
+        startup("onResume done");
+    }
+
+    @Override
+    protected void onPause() {
+        startup("onPause");
+        super.onPause();
+        startup("onPause done");
+    }
+
+    @Override
+    protected void onStop() {
+        startup("onStop");
+        super.onStop();
+        startup("onStop done");
+    }
+
+    @Override
+    protected void onDestroy() {
+        startup("onDestroy");
+        super.onDestroy();
     }
 
     /* libmain.so needs the others; before Android 6 the linker does not look

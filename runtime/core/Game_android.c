@@ -36,19 +36,36 @@
 
 #include "Game_hooks.h"
 
-/* stdout/stderr of an Android app go nowhere; pump them into logcat so
-   `adb logcat -s "<GAME_NAME>"` shows what the port prints. */
+/* stdout/stderr of an Android app go nowhere; pump them into logcat (so
+   `adb logcat -s "<GAME_NAME>"` shows what the port prints) and into
+   Android/data/<package>/files/game.log, which needs no adb. */
 static void *log_pump(void *arg)
 {
     int fd = (int)(intptr_t)arg;
     char buf[512];
+    char path[4096];
+    const char *external;
+    FILE *file = NULL;
     ssize_t got;
+
+    external = SDL_AndroidGetExternalStoragePath();
+    if (external != NULL)
+    {
+        snprintf(path, sizeof(path), "%s/game.log", external);
+        file = fopen(path, "a");
+    }
 
     while ((got = read(fd, buf, sizeof(buf) - 1)) > 0)
     {
         buf[got] = '\0';
         __android_log_write(ANDROID_LOG_INFO, GAME_NAME, buf);
+        if (file != NULL)
+        {
+            fputs(buf, file);
+            fflush(file);
+        }
     }
+    if (file != NULL) fclose(file);
     return NULL;
 }
 
