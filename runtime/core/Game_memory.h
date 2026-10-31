@@ -64,6 +64,11 @@ extern uint64_t pointer_offset;
 /* bytes at pointer_offset kept free for the guest's low memory (no access
  * until committed) */
 extern unsigned int pointer_reserved_length;
+#if defined(__ANDROID__)
+/* the first guest address the runtime may give to the game's heap; the game
+ * maps its data below it and the allocator must not overwrite that data */
+void Game_MemorySetGuestNext(uint64_t offset);
+#endif
 
 /* guest flat address (32-bit) -> host pointer */
 #define GAME_GUEST32_TO_PTR(value) ((uintptr_t)(pointer_offset + (uint32_t)(value)))

@@ -1289,6 +1289,13 @@ void unmap_memory_32bit(void *mem, unsigned int size)
 
 #ifdef PTROFS_64BIT
 
+#if defined(__ANDROID__)
+void Game_MemorySetGuestNext(uint64_t offset)
+{
+    if (offset > guest_region_next) guest_region_next = offset;
+}
+#endif
+
 int initialize_pointer_offset(void)
 {
 #if defined(__ANDROID__)
