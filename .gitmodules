@@ -2,3 +2,6 @@
 	path = SR
 	url = https://github.com/mxvisor/SR.git
 	branch = master
+[submodule "extern/tsf"]
+	path = extern/tsf
+	url = https://github.com/schellingb/TinySoundFont.git

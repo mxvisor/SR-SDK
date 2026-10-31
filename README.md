@@ -22,6 +22,11 @@ SR is used as it is: the submodule `SR/` is the fork
 [mxvisor/SR](https://github.com/mxvisor/SR), branch `master`, which is upstream
 plus fixes that can be offered back to it. SR-SDK does not change SR.
 
+`extern/tsf/` is the [TinySoundFont](https://github.com/schellingb/TinySoundFont)
+submodule: `tsf.h` (MIT) and `tml.h` (Zlib), header-only. Its directory is on
+the game's include path, for ports that synthesize MIDI music in the audio
+callback; SDL2_mixer's own MIDI backend is then not needed.
+
 ## Requirements
 
 - Python 3 and [SCons](https://scons.org/)
