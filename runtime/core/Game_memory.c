@@ -56,6 +56,12 @@
 #define MAP_FIXED_NOREPLACE (MAP_FIXED | MAP_EXCL)
 #endif
 #include <pthread.h>
+#if defined(__ANDROID__)
+#include "Game_hooks.h"
+#ifndef GAME_GUEST_LOW_MEMORY
+#define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
+#endif
+#endif
 #ifdef __linux__
 #include <linux/prctl.h>
 #include <sys/prctl.h>
@@ -1333,9 +1339,10 @@ int initialize_pointer_offset(void)
         guest_region_base = 0;
         return 4;
     }
-    /* the low 1 MB + 64 KB stay unmapped (null page, PSP/lowmem/framebuffer
-     * ranges); the first guest arena lands just past them, as on the host */
-    guest_region_next = 1024 * 1024 + 65536;
+    /* The first guest arena must be above the game's data: the runtime may
+     * allocate (Game_RuntimeInit) before GAME_WIN_START, and that allocation
+     * must not land where the game's low memory is mapped later. */
+    guest_region_next = GAME_GUEST_LOW_MEMORY();
     pointer_offset = guest_region_base;
     pointer_reserved_length = 0;
     if (ptr_initialize_pointers != NULL)
