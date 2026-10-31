@@ -185,6 +185,16 @@ void x86_deinit_malloc(void)
     #define UNLOCK_MUTEX pthread_mutex_unlock(&mutex);
 #endif
 
+/* GAME_MEM_LOG=1: every guest allocation and free on stderr (the Android port
+ * writes stderr to game.log), to find what overruns a heap block. */
+static void mem_log(const char *op, unsigned int size, const void *ptr)
+{
+    static int on = -1;
+
+    if (on < 0) on = (getenv("GAME_MEM_LOG") != NULL);
+    if (on) fprintf(stderr, "mem: %s %u %p\n", op, size, ptr);
+}
+
 static memblock_t *get_free_block(heapblock_t *heapblock, int32_t offset)
 {
     memblock_t *freeblock;
@@ -200,7 +210,9 @@ static memblock_t *get_free_block(heapblock_t *heapblock, int32_t offset)
         freeblock->u.offset_next < freeblock->block_size + offset
        )
     {
-        fprintf(stderr, "Corrupted memory header\n");
+        fprintf(stderr, "Corrupted memory header: heap %p size %d offset %d block %p next %08x size %d\n",
+                (void *)heapblock->address, heapblock->size, offset,
+                (void *)freeblock, freeblock->u.offset_next, freeblock->block_size);
         exit(1);
     }
 
@@ -252,7 +264,9 @@ static heapblock_t *find_alloc_heap_block(memblock_t *allocblock)
             allocblock->block_size > (int32_t)((heapblock->size + (uintptr_t)heapblock->address) - ((uintptr_t)allocblock))
            )
         {
-            fprintf(stderr, "Corrupted memory header\n");
+            fprintf(stderr, "Corrupted memory header: heap %p size %d block %p inv %08x size %d\n",
+                    (void *)heapblock->address, heapblock->size, (void *)allocblock,
+                    allocblock->u.inverted_value, allocblock->block_size);
             exit(1);
         }
 
@@ -300,6 +314,7 @@ void *x86_malloc(unsigned int size)
         heapblock_t *heapblock;
         memblock_t *largestblock, *freeblock, *prevblock;
 
+        mem_log("malloc", size, NULL);
         if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
         {
             errno = ENOMEM;
@@ -458,6 +473,7 @@ void x86_free(void *ptr)
             return;
         }
 
+        mem_log("free", 0, ptr);
         allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
 
         LOCK_MUTEX
@@ -731,6 +747,7 @@ void *x86_calloc(unsigned int nmemb, unsigned int size)
             }
         }
 
+        mem_log("calloc", nmemb * size, NULL);
         ptr = x86_malloc(nmemb * size);
         if (ptr != NULL)
         {
@@ -759,6 +776,8 @@ void *x86_realloc(void *ptr, unsigned int size)
         {
             return x86_malloc(size);
         }
+
+        mem_log("realloc", size, ptr);
 
         if (size == 0)
         {
