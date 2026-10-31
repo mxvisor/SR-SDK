@@ -85,9 +85,15 @@ struct IDirectDrawSurface_c {
     uint32_t caps;                  /* DDSCAPS_* the surface was made with */
     int zbuffer;                    /* a Z-buffer (pixel format DDPF_ZBUFFER) */
     struct IDirectDrawSurface_c *zsurf;  /* the Z-buffer attached to this surface */
+    struct IDirectDrawSurface_c *lpmip;  /* the next mip level of a texture (the chain we own) */
+    uint32_t mip_count;             /* levels of the chain, 0 when the surface has none */
+    struct IDirectDrawSurface_c *mip_base;   /* a mip level: the texture's level 0 */
+    uint32_t mips_filled;           /* level 0: the game wrote a level above 0 (mipmapping on) */
     void *d3dtex;                   /* its IDirect3DTexture2 object, once asked for (WinApi-d3d.c) */
     uint32_t texture_gen;           /* counts the changes of a texture's pixels and palette */
     uint32_t rmask, gmask, bmask, amask;    /* the channels of a 16 bit surface made with a pixel format */
 };
+
+uint32_t Winapi_DDrawCopyLevels(struct IDirectDrawSurface_c *dst, struct IDirectDrawSurface_c *src);
 
 #endif

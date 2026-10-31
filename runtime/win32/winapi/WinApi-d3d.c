@@ -270,12 +270,16 @@ static void fill_prim_caps(uint32_t *c)
     c[5]  = 0x1fff;         /* dwDestBlendCaps: all */
     c[6]  = 0xff;           /* dwAlphaCmpCaps: all */
     c[7]  = 0x2 | 0x8 | 0x80 | 0x200 | 0x1000 | 0x4000 | 0x40000 | 0x80000;   /* dwShadeCaps: flat and gouraud colour and specular, alpha blend, fog */
-    c[8]  = 0x1 | 0x2 | 0x4 | 0x8;   /* dwTextureCaps: PERSPECTIVE | POW2 | ALPHA | TRANSPARENCY */
-    /* dwTextureFilterCaps: NEAREST | LINEAR.  DirectX 3/5 and DirectX 6 number
-     * the same capability differently, and a game reads the fields with the
-     * headers it was built with, so both encodings are set: MINF/MAGF POINT and
-     * LINEAR.  No mip filter: the textures of the port have a single level. */
-    c[9]  = 0x1 | 0x2 | 0x100 | 0x200 | 0x01000000 | 0x02000000;
+    c[8]  = 0x1 | 0x2 | 0x4 | 0x8 | 0x4000;   /* dwTextureCaps: PERSPECTIVE | POW2 | ALPHA | TRANSPARENCY | MIPMAP */
+    /* dwTextureFilterCaps: NEAREST/LINEAR and the mip filters.  DirectX 3/5 and
+     * DirectX 6 number the same capability differently, and a game reads the
+     * fields with the headers it was built with, so both encodings are set:
+     * DX3/5 NEAREST/LINEAR/MIPNEAREST/MIPLINEAR/LINEARMIPNEAREST/LINEARMIPLINEAR
+     * and DX6 MINF/MIPF/MAGF POINT and LINEAR.  The textures of the game have a
+     * mip chain (it fills the levels itself, WinApi-ddraw.c hands it out) and
+     * both rasterisers sample it. */
+    c[9]  = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x20 |
+            0x100 | 0x200 | 0x10000 | 0x20000 | 0x01000000 | 0x02000000;
     c[10] = 0x1 | 0x2 | 0x4 | 0x8 | 0x40;    /* dwTextureBlendCaps: DECAL | MODULATE | DECALALPHA | MODULATEALPHA | COPY */
     c[11] = 0x1 | 0x2 | 0x4;    /* dwTextureAddressCaps: WRAP | MIRROR | CLAMP */
     c[12] = 32;             /* dwStippleWidth */
@@ -837,7 +841,7 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
 #define RS_FILLMODE         8
 #define RS_SHADEMODE        9
 #define RS_ZWRITEENABLE     14
-#define RS_TEXTUREMIN       16
+#define RS_TEXTUREMIN       18
 #define RS_TEXTUREMAG       17
 #define RS_SRCBLEND         19
 #define RS_DESTBLEND        20
@@ -853,10 +857,14 @@ typedef struct {
     int r, g, b, a, sr, sg, sb;
 } rvert;
 
+#define RT_MAX_MIPS 16
+
 typedef struct {
     const struct IDirectDrawSurface_c *s;
     int w, h;
     int shift[4], max[4];       /* r, g, b, a of a 16 bit format */
+    int levels;                 /* the mip chain: 1 when the texture has none */
+    const struct IDirectDrawSurface_c *lv[RT_MAX_MIPS];
 } rtex;
 
 static void rt_channel(uint32_t mask, int *shift, int *max)
@@ -871,6 +879,7 @@ static void rt_channel(uint32_t mask, int *shift, int *max)
 static void rt_setup(rtex *t, const struct IDirectDrawSurface_c *s)
 {
     uint32_t r = s->rmask, g = s->gmask, b = s->bmask, a = s->amask;
+    const struct IDirectDrawSurface_c *lv;
 
     t->s = s; t->w = (int)s->width; t->h = (int)s->height;
     if ((r | g | b) == 0) { r = 0xf800; g = 0x07e0; b = 0x001f; }
@@ -878,6 +887,13 @@ static void rt_setup(rtex *t, const struct IDirectDrawSurface_c *s)
     rt_channel(g, &t->shift[1], &t->max[1]);
     rt_channel(b, &t->shift[2], &t->max[2]);
     rt_channel(a, &t->shift[3], &t->max[3]);
+
+    t->levels = 0;
+    for (lv = s; (lv != NULL) && (t->levels < RT_MAX_MIPS); lv = lv->lpmip)
+    {
+        t->lv[t->levels++] = lv;
+    }
+    if (t->levels == 0) { t->lv[0] = s; t->levels = 1; }
 }
 
 static int rt_addr(int c, int n, uint32_t mode)
@@ -893,10 +909,9 @@ static int rt_addr(int c, int n, uint32_t mode)
     return (c < 0) ? c + n : c;
 }
 
-/* argb of the texel; returns 0 when the colour key hides it */
-static int rt_sample(const rtex *t, int x, int y, int ckey, int *r, int *g, int *b, int *a)
+/* argb of the texel of a level; returns 0 when the colour key hides it */
+static int rt_sample(const rtex *t, const struct IDirectDrawSurface_c *s, int x, int y, int ckey, int *r, int *g, int *b, int *a)
 {
-    const struct IDirectDrawSurface_c *s = t->s;
     uint32_t raw;
 
     if (s->bpp == 8)
@@ -928,11 +943,12 @@ static int rt_sample(const rtex *t, int x, int y, int ckey, int *r, int *g, int 
 
 /* linear filtering: the four texels around the sample, weights of the fraction;
  * the colour key cuts the footprint, then the nearest texel decides */
-static int rt_sample_linear(const rtex *t, float fx, float fy, int ckey, uint32_t mode,
+static int rt_sample_linear(const rtex *t, const struct IDirectDrawSurface_c *s, float fx, float fy, int ckey, uint32_t mode,
                             int *r, int *g, int *b, int *a)
 {
     int x0 = (int)floorf(fx), y0 = (int)floorf(fy);
     float wx = fx - (float)x0, wy = fy - (float)y0;
+    int w = (int)s->width, h = (int)s->height;
     int c[4][4], ok[4], i, j;
 
     for (j = 0; j < 2; j++)
@@ -940,14 +956,14 @@ static int rt_sample_linear(const rtex *t, float fx, float fy, int ckey, uint32_
         for (i = 0; i < 2; i++)
         {
             int k = j * 2 + i;
-            ok[k] = rt_sample(t, rt_addr(x0 + i, t->w, mode), rt_addr(y0 + j, t->h, mode),
+            ok[k] = rt_sample(t, s, rt_addr(x0 + i, w, mode), rt_addr(y0 + j, h, mode),
                               ckey, &c[k][0], &c[k][1], &c[k][2], &c[k][3]);
         }
     }
     if (!ok[0] || !ok[1] || !ok[2] || !ok[3])
     {
         int nx = (int)floorf(fx + 0.5f), ny = (int)floorf(fy + 0.5f);
-        return rt_sample(t, rt_addr(nx, t->w, mode), rt_addr(ny, t->h, mode), ckey, r, g, b, a);
+        return rt_sample(t, s, rt_addr(nx, w, mode), rt_addr(ny, h, mode), ckey, r, g, b, a);
     }
     *r = (int)(((c[0][0] * (1.0f - wx) + c[1][0] * wx) * (1.0f - wy) +
                 (c[2][0] * (1.0f - wx) + c[3][0] * wx) * wy) + 0.5f);
@@ -957,6 +973,56 @@ static int rt_sample_linear(const rtex *t, float fx, float fy, int ckey, uint32_
                 (c[2][2] * (1.0f - wx) + c[3][2] * wx) * wy) + 0.5f);
     *a = (int)(((c[0][3] * (1.0f - wx) + c[1][3] * wx) * (1.0f - wy) +
                 (c[2][3] * (1.0f - wx) + c[3][3] * wx) * wy) + 0.5f);
+    return 1;
+}
+
+/* the texel of one mip level, at the normalized (u,v) */
+static int rt_texel(const rtex *t, int level, float u, float v, int linear, int ckey, uint32_t mode,
+                    int *r, int *g, int *b, int *a)
+{
+    const struct IDirectDrawSurface_c *s = t->lv[level];
+    int w = (int)s->width, h = (int)s->height;
+
+    if (linear)
+        return rt_sample_linear(t, s, u * (float)w - 0.5f, v * (float)h - 0.5f, ckey, mode, r, g, b, a);
+    return rt_sample(t, s, rt_addr((int)floorf(u * (float)w), w, mode),
+                     rt_addr((int)floorf(v * (float)h), h, mode), ckey, r, g, b, a);
+}
+
+/* the filtered texel: the mip level of the LOD, and two levels blended for the
+ * linear mip filters (trilinear); a texture without a chain, or a filter that
+ * asks for no mip level, samples level 0 */
+static int rt_texel_lod(const rtex *t, float u, float v, float lod, uint32_t mn, uint32_t mg,
+                        int ckey, uint32_t mode, int *r, int *g, int *b, int *a)
+{
+    int texel_linear = (mn == 2) || (mn == 4) || (mn == 6) || ((mg >= 2) && ((mg & 1) == 0));
+    int levels = t->levels;
+    int l0;
+    float frac;
+    int c0[4], c1[4];
+
+    if ((levels < 2) || (mn < 3)) return rt_texel(t, 0, u, v, texel_linear, ckey, mode, r, g, b, a);
+
+    if (lod < 0.0f) lod = 0.0f;
+    if (lod > (float)(levels - 1)) lod = (float)(levels - 1);
+
+    if ((mn == 3) || (mn == 4))     /* a nearest mip level */
+    {
+        l0 = (int)(lod + 0.5f);
+        if (l0 >= levels) l0 = levels - 1;
+        return rt_texel(t, l0, u, v, texel_linear, ckey, mode, r, g, b, a);
+    }
+
+    l0 = (int)floorf(lod);          /* linear between two levels */
+    if (l0 >= levels - 1) return rt_texel(t, levels - 1, u, v, texel_linear, ckey, mode, r, g, b, a);
+    frac = lod - (float)l0;
+
+    if (!rt_texel(t, l0, u, v, texel_linear, ckey, mode, &c0[0], &c0[1], &c0[2], &c0[3])) return 0;
+    if (!rt_texel(t, l0 + 1, u, v, texel_linear, ckey, mode, &c1[0], &c1[1], &c1[2], &c1[3])) return 0;
+    *r = (int)floorf((float)c0[0] + ((float)c1[0] - (float)c0[0]) * frac + 0.5f);
+    *g = (int)floorf((float)c0[1] + ((float)c1[1] - (float)c0[1]) * frac + 0.5f);
+    *b = (int)floorf((float)c0[2] + ((float)c1[2] - (float)c0[2]) * frac + 0.5f);
+    *a = (int)floorf((float)c0[3] + ((float)c1[3] - (float)c0[3]) * frac + 0.5f);
     return 1;
 }
 
@@ -1052,13 +1118,34 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
     int ckey = (st[RS_COLORKEYENABLE] != 0);
     int spec = (st[RS_SPECULARENABLE] != 0);
     uint32_t cull = st[RS_CULLMODE], tmb = st[RS_TEXTUREMAPBLEND], addr = st[RS_TEXTUREADDRESS];
+    uint32_t mn = st[RS_TEXTUREMIN], mg = st[RS_TEXTUREMAG];
     float fminx, fmaxx, fminy, fmaxy;
+    /* the gradients of the barycentrics, and the texture coordinate gradients with
+     * them: the mip level of a pixel comes from how many texels it covers */
+    float dw0dx, dw1dx, dw2dx, dw0dy, dw1dy, dw2dy;
+    float dux_a, dvx_a, duy_a, dvy_a;           /* affine interpolation */
+    float dAux, dAvx, dBx, dAuy, dAvy, dBy;     /* perspective interpolation */
+    int mips;
 
     area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
     if (area == 0.0f) return;
     if ((cull == 2) && (area > 0)) return;      /* CW: clockwise on the screen (y down) */
     if ((cull == 3) && (area < 0)) return;      /* CCW */
     ia = 1.0f / area;
+
+    dw0dx = (v1->y - v2->y) * ia; dw1dx = (v2->y - v0->y) * ia; dw2dx = (v0->y - v1->y) * ia;
+    dw0dy = (v2->x - v1->x) * ia; dw1dy = (v0->x - v2->x) * ia; dw2dy = (v1->x - v0->x) * ia;
+    dux_a = dw0dx * v0->u + dw1dx * v1->u + dw2dx * v2->u;
+    dvx_a = dw0dx * v0->v + dw1dx * v1->v + dw2dx * v2->v;
+    duy_a = dw0dy * v0->u + dw1dy * v1->u + dw2dy * v2->u;
+    dvy_a = dw0dy * v0->v + dw1dy * v1->v + dw2dy * v2->v;
+    dAux = dw0dx * v0->u * v0->rhw + dw1dx * v1->u * v1->rhw + dw2dx * v2->u * v2->rhw;
+    dAvx = dw0dx * v0->v * v0->rhw + dw1dx * v1->v * v1->rhw + dw2dx * v2->v * v2->rhw;
+    dBx  = dw0dx * v0->rhw + dw1dx * v1->rhw + dw2dx * v2->rhw;
+    dAuy = dw0dy * v0->u * v0->rhw + dw1dy * v1->u * v1->rhw + dw2dy * v2->u * v2->rhw;
+    dAvy = dw0dy * v0->v * v0->rhw + dw1dy * v1->v * v1->rhw + dw2dy * v2->v * v2->rhw;
+    dBy  = dw0dy * v0->rhw + dw1dy * v1->rhw + dw2dy * v2->rhw;
+    mips = c->textured && (c->tex.levels > 1) && (mn >= 3) && (c->tex.lv[0]->mips_filled != 0);
 
     fminx = fminf(v0->x, fminf(v1->x, v2->x)); fmaxx = fmaxf(v0->x, fmaxf(v1->x, v2->x));
     fminy = fminf(v0->y, fminf(v1->y, v2->y)); fmaxy = fmaxf(v0->y, fmaxf(v1->y, v2->y));
@@ -1109,7 +1196,6 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
             if (c->textured)
             {
                 float u, v;
-                int tx, ty;
                 if (persp)
                 {
                     float rw = w0 * v0->rhw + w1 * v1->rhw + w2 * v2->rhw;
@@ -1122,16 +1208,29 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
                     u = w0 * v0->u + w1 * v1->u + w2 * v2->u;
                     v = w0 * v0->v + w1 * v1->v + w2 * v2->v;
                 }
-                if (c->filt_linear)
+                if (mips)
                 {
-                    if (!rt_sample_linear(&c->tex, u * (float)c->tex.w - 0.5f, v * (float)c->tex.h - 0.5f,
-                                          ckey, addr, &tr, &tg, &tb, &ta)) continue;
+                    float sw = (float)c->tex.w, sh = (float)c->tex.h, lod, rho;
+                    float rx, ry, sx, sy;
+                    if (persp)
+                    {
+                        float rw = w0 * v0->rhw + w1 * v1->rhw + w2 * v2->rhw;
+                        float k = (rw != 0.0f) ? 1.0f / rw : 0.0f;
+                        rx = (dAux - u * dBx) * k * sw; ry = (dAvx - v * dBx) * k * sh;
+                        sx = (dAuy - u * dBy) * k * sw; sy = (dAvy - v * dBy) * k * sh;
+                    }
+                    else
+                    {
+                        rx = dux_a * sw; ry = dvx_a * sh;
+                        sx = duy_a * sw; sy = dvy_a * sh;
+                    }
+                    rho = fmaxf(sqrtf(rx * rx + ry * ry), sqrtf(sx * sx + sy * sy));
+                    lod = (rho > 1e-6f) ? log2f(rho) : 0.0f;
+                    if (!rt_texel_lod(&c->tex, u, v, lod, mn, mg, ckey, addr, &tr, &tg, &tb, &ta)) continue;
                 }
                 else
                 {
-                    tx = rt_addr((int)floorf(u * (float)c->tex.w), c->tex.w, addr);
-                    ty = rt_addr((int)floorf(v * (float)c->tex.h), c->tex.h, addr);
-                    if (!rt_sample(&c->tex, tx, ty, ckey, &tr, &tg, &tb, &ta)) continue;
+                    if (!rt_texel(&c->tex, 0, u, v, c->filt_linear, ckey, addr, &tr, &tg, &tb, &ta)) continue;
                 }
                 switch (tmb)
                 {
@@ -1261,12 +1360,12 @@ static uint32_t draw_primitive(d3d_device *dev, uint32_t type, uint32_t vtype, c
         const struct IDirectDrawSurface_c *ts = texture_handles[th - 1]->surface;
         if ((ts->width != 0) && (ts->height != 0) && (ts->pixels != NULL))
         {
-            /* D3DFILTER_LINEAR and the linear mip variants of the min/mag states */
+            /* D3DFILTER_LINEAR (2), MIPLINEAR (4) and LINEARMIPLINEAR (6) filter
+             * the texels linearly; 3 and 5 sample the nearest texel */
             uint32_t mn = dev->state[RS_TEXTUREMIN], mg = dev->state[RS_TEXTUREMAG];
             rt_setup(&c.tex, ts);
             c.textured = 1;
-            c.filt_linear = ((mn == 2) || (mn == 4) || (mn == 5) || (mn == 6) ||
-                             (mg == 2) || (mg == 5) || (mg == 6));
+            c.filt_linear = (mn == 2) || (mn == 4) || (mn == 6) || ((mg >= 2) && ((mg & 1) == 0));
         }
         dump_texture(th, ts);
     }
@@ -1587,7 +1686,11 @@ static uint32_t execute_buffer_run(d3d_execbuf *b)
             {
                 uint32_t dst = ((uint32_t *)d)[i * 2], src = ((uint32_t *)d)[i * 2 + 1];
                 if ((dst >= 1) && (dst <= MAX_TEXTURES) && (src >= 1) && (src <= MAX_TEXTURES))
+                {
+                    if ((texture_handles[dst - 1] != NULL) && (texture_handles[src - 1] != NULL))
+                        Winapi_DDrawCopyLevels(texture_handles[dst - 1]->surface, texture_handles[src - 1]->surface);
                     texture_handles[dst - 1] = texture_handles[src - 1];
+                }
             }
             break;
         case 3:             /* D3DOP_TRIANGLE: D3DTRIANGLE */
@@ -2529,6 +2632,8 @@ uint32_t CCALL IDirect3DTexture2_Load_c(void *lpThis, void *a1)
     {
         memcpy(dst->pixels + (size_t)y * dst->pitch, src->pixels + (size_t)y * src->pitch, row);
     }
+    /* Direct3D's Load uploads the whole mip chain, not just level 0 */
+    if ((src->lpmip != NULL) && (dst->lpmip != NULL)) Winapi_DDrawCopyLevels(dst, src);
     if (src->palette != NULL && dst->palette != NULL) memcpy(dst->palette->argb, src->palette->argb, sizeof(dst->palette->argb));
     dst->texture_gen++;
     return D3D_OK;

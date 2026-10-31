@@ -219,7 +219,10 @@ typedef struct _ddsurfacedesc {
     uint32_t dwWidth;
     int32_t lPitch;
     uint32_t dwBackBufferCount;
-    uint32_t dwRefreshRate;
+    union {
+        uint32_t dwRefreshRate;
+        uint32_t dwMipMapCount;     /* with DDSD_MIPMAPCOUNT */
+    };
     uint32_t dwAlphaBitDepth;
     uint32_t dwReserved;
     PTR32(void) lpSurface;
@@ -503,12 +506,31 @@ static void FreeSurface(struct IDirectDrawSurface_c *s)
     if (s->palette != NULL) s->palette->RefCount--;
     if (s->clipper != NULL) s->clipper->RefCount--;
     if (s->zsurf != NULL) IDirectDrawSurface_Release_c(s->zsurf);
+    if (s->lpmip != NULL)
+    {
+        struct IDirectDrawSurface_c *next;
+        for (next = s->lpmip; next != NULL; next = next->lpmip) next->mip_base = NULL;
+        IDirectDrawSurface_Release_c(s->lpmip);
+        s->lpmip = NULL;
+    }
 #ifdef GAME_D3D_GL
     Winapi_D3dGLTextureFree(s);
 #endif
     Winapi_D3dSurfaceFree(s);
     x86_free(s->mem);
     x86_free(s);
+}
+
+/* a change of a mip level is a change of the texture: the GL mirror is keyed on
+ * the level 0's generation */
+static void TextureTouched(struct IDirectDrawSurface_c *s)
+{
+    s->texture_gen++;
+    if (s->mip_base != NULL)
+    {
+        s->mip_base->texture_gen++;
+        s->mip_base->mips_filled = 1;   /* the game filled a level above 0 */
+    }
 }
 
 /* Clips [left,top,right,bottom] to the surface, returns 0 when nothing is left */
@@ -604,6 +626,41 @@ static uint32_t BltRects(struct IDirectDrawSurface_c *dst, struct _rect d, struc
         }
     }
 
+    return DD_OK;
+}
+
+/* D3DOP_TEXTURELOAD: Direct3D copies a texture, mip levels included, from the
+ * source surface into the destination one; the game relies on it to fill the
+ * video-memory texture it later binds (its own writes go to the system one). */
+uint32_t Winapi_DDrawCopyLevels(struct IDirectDrawSurface_c *dst, struct IDirectDrawSurface_c *src)
+{
+    struct IDirectDrawSurface_c *dl, *sl;
+    struct _rect r;
+
+    if ((dst == NULL) || (src == NULL) || (dst == src)) return DD_OK;
+
+    r.left = 0; r.top = 0; r.right = (int32_t)dst->width; r.bottom = (int32_t)dst->height;
+    {
+        struct _rect s;
+        s.left = 0; s.top = 0;
+        s.right = (int32_t)((src->width < dst->width) ? src->width : dst->width);
+        s.bottom = (int32_t)((src->height < dst->height) ? src->height : dst->height);
+        BltRects(dst, r, src, s, NULL);
+    }
+    for (dl = dst->lpmip, sl = src->lpmip; (dl != NULL) && (sl != NULL); dl = dl->lpmip, sl = sl->lpmip)
+    {
+        struct _rect d, s;
+        d.left = 0; d.top = 0; d.right = (int32_t)dl->width; d.bottom = (int32_t)dl->height;
+        s.left = 0; s.top = 0;
+        s.right = (int32_t)((sl->width < dl->width) ? sl->width : dl->width);
+        s.bottom = (int32_t)((sl->height < dl->height) ? sl->height : dl->height);
+        BltRects(dl, d, sl, s, NULL);
+    }
+    dst->mips_filled = (src->mips_filled != 0);
+    dst->texture_gen++;
+#ifdef GAME_D3D_GL
+    if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(dst);
+#endif
     return DD_OK;
 }
 
@@ -945,6 +1002,32 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
     }
     s->zbuffer = ((lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT) && (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_ZBUFFER)) ||
                  (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER);
+
+    /* a texture with mip levels: the game gets the chain from GetAttachedSurface and
+     * fills every level itself, as DirectDraw would hand it out */
+    if (!s->zbuffer && (lpDDSurfaceDesc->dwFlags & DDSD_MIPMAPCOUNT) &&
+        (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_MIPMAP) && (lpDDSurfaceDesc->dwMipMapCount > 1))
+    {
+        uint32_t w = width, h = height, levels = lpDDSurfaceDesc->dwMipMapCount, i;
+        struct IDirectDrawSurface_c *prev = s;
+
+        if (levels > 16) levels = 16;       /* the DirectDraw limit */
+        for (i = 1; i < levels; i++)
+        {
+            struct IDirectDrawSurface_c *m;
+
+            w = (w > 1) ? w / 2 : 1;
+            h = (h > 1) ? h / 2 : 1;
+            m = NewSurface(lpThis, w, h, bpp);
+            if (m == NULL) break;
+            m->caps = (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_TEXTURE) | DDSCAPS_MIPMAP;
+            m->rmask = s->rmask; m->gmask = s->gmask; m->bmask = s->bmask; m->amask = s->amask;
+            m->mip_base = s;
+            prev->lpmip = m;                /* the chain's own reference */
+            prev = m;
+            s->mip_count = i + 1;
+        }
+    }
 
     *lplpDDSurface = s;
     return DD_OK;
@@ -1405,6 +1488,7 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
         }
 
         result = BltRects(lpThis, d, lpDDSrcSurface, s, ckey);
+        if ((result == DD_OK) && (lpThis->mip_base != NULL)) lpThis->mip_base->mips_filled = 1;
     }
 
 #ifdef GAME_D3D_GL
@@ -1510,6 +1594,13 @@ uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(struct IDirectDrawSurface
         return DD_OK;
     }
 
+    if ((lpDDSCaps->dwCaps & DDSCAPS_MIPMAP) && (lpThis->lpmip != NULL))
+    {
+        lpThis->lpmip->RefCount++;
+        *lplpDDAttachedSurface = lpThis->lpmip;
+        return DD_OK;
+    }
+
     return DDERR_NOTFOUND;
 }
 
@@ -1528,6 +1619,8 @@ uint32_t CCALL IDirectDrawSurface_GetCaps_c(struct IDirectDrawSurface_c *lpThis,
         ((lpThis->primary)?DDSCAPS_PRIMARYSURFACE:((lpThis->backbuffer)?DDSCAPS_BACKBUFFER:DDSCAPS_OFFSCREENPLAIN)) |
         ((lpThis->primary)?DDSCAPS_VIDEOMEMORY:DDSCAPS_SYSTEMMEMORY) |
         (lpThis->caps & (DDSCAPS_TEXTURE | DDSCAPS_3DDEVICE | DDSCAPS_ZBUFFER));
+    if (lpThis->lpmip != NULL) caps->dwCaps |= DDSCAPS_MIPMAP | DDSCAPS_COMPLEX;
+    else if (lpThis->mip_base != NULL) caps->dwCaps |= DDSCAPS_MIPMAP;
     return DD_OK;
 }
 
@@ -1630,7 +1723,14 @@ static uint32_t GetSurfaceDesc(struct IDirectDrawSurface_c *lpThis, struct _ddsu
     lpDDSurfaceDesc->dwWidth = lpThis->width;
     lpDDSurfaceDesc->lPitch = lpThis->pitch;
     lpDDSurfaceDesc->dwBackBufferCount = (lpThis->lpBackbuffer != NULL)?1:0;
+    if (lpThis->mip_count > 0)
+    {
+        lpDDSurfaceDesc->dwFlags |= DDSD_MIPMAPCOUNT;
+        lpDDSurfaceDesc->dwMipMapCount = lpThis->mip_count;
+    }
     lpDDSurfaceDesc->ddsCaps.dwCaps = lpThis->caps;
+    if (lpThis->lpmip != NULL) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_MIPMAP | DDSCAPS_COMPLEX;
+    else if (lpThis->mip_base != NULL) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_MIPMAP;
     /* texture surfaces live in the accelerator's memory here (the GL texture);
        the game keeps a texture page only if the desc says video memory */
     if (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_TEXTURE) lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_VIDEOMEMORY;
@@ -1729,6 +1829,8 @@ uint32_t CCALL IDirectDrawSurface_SetColorKey_c(struct IDirectDrawSurface_c *lpT
 
     if (dwFlags & DDCKEY_SRCBLT)
     {
+        struct IDirectDrawSurface_c *m;
+
         if (key == NULL)
         {
             lpThis->has_colorkey = 0;
@@ -1739,6 +1841,14 @@ uint32_t CCALL IDirectDrawSurface_SetColorKey_c(struct IDirectDrawSurface_c *lpT
             lpThis->colorkey_low = key->dwColorSpaceLowValue;
             lpThis->colorkey_high = (dwFlags & 1) ? key->dwColorSpaceHighValue : key->dwColorSpaceLowValue;
         }
+        /* the key of a texture is the key of every mip level */
+        for (m = lpThis->lpmip; m != NULL; m = m->lpmip)
+        {
+            m->has_colorkey = lpThis->has_colorkey;
+            m->colorkey_low = lpThis->colorkey_low;
+            m->colorkey_high = lpThis->colorkey_high;
+        }
+        TextureTouched(lpThis);
     }
     return DD_OK;
 }
@@ -1757,7 +1867,20 @@ uint32_t CCALL IDirectDrawSurface_SetPalette_c(struct IDirectDrawSurface_c *lpTh
     if (pal != NULL) pal->RefCount++;
     if (lpThis->palette != NULL) lpThis->palette->RefCount--;
     lpThis->palette = pal;
-    lpThis->texture_gen++;
+    TextureTouched(lpThis);
+
+    /* the same palette for the whole chain until a level gets its own */
+    if (lpThis->lpmip != NULL)
+    {
+        struct IDirectDrawSurface_c *m;
+        for (m = lpThis->lpmip; m != NULL; m = m->lpmip)
+        {
+            if (pal != NULL) pal->RefCount++;
+            if (m->palette != NULL) m->palette->RefCount--;
+            m->palette = pal;
+            m->texture_gen++;
+        }
+    }
 
     if (lpThis->primary) Present(lpThis->dd);
     return DD_OK;
@@ -1768,7 +1891,7 @@ uint32_t CCALL IDirectDrawSurface_Unlock_c(struct IDirectDrawSurface_c *lpThis, 
     if (lpThis == NULL) return DDERR_INVALIDPARAMS;
 
     lpThis->locked = 0;
-    lpThis->texture_gen++;
+    TextureTouched(lpThis);
 #ifdef GAME_D3D_GL
     /* the guest wrote the pixels (or a palette): under the 3D drawn so far */
     if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);

@@ -51,6 +51,8 @@
 #define RS_ZENABLE          7
 #define RS_SHADEMODE        9
 #define RS_ZWRITEENABLE     14
+#define RS_TEXTUREMIN       18
+#define RS_TEXTUREMAG       17
 #define RS_SRCBLEND         19
 #define RS_DESTBLEND        20
 #define RS_TEXTUREMAPBLEND  21
@@ -85,6 +87,7 @@ static uint32_t gl_state[MAX_GL_STATES];
 typedef struct {
     const struct IDirectDrawSurface_c *surface;
     uint32_t gen;
+    int levels;                 /* the levels uploaded, 1 when the surface has no mip chain */
     GLuint plain, keyed;
 } gl_texcache;
 static gl_texcache texcache[MAX_GL_TEXTURES];
@@ -374,6 +377,23 @@ static GLenum gl_zfunc(uint32_t func)
     return (func < 8) ? f[func] : GL_ALWAYS;
 }
 
+/* RS_TEXTUREMIN: D3DFILTER (DirectX 5) 1 NEAREST, 2 LINEAR, 3 MIPNEAREST,
+ * 4 MIPLINEAR, 5 LINEARMIPNEAREST, 6 LINEARMIPLINEAR (trilinear) */
+static GLint gl_min_filter(uint32_t mn, int levels)
+{
+    int texel_linear = (mn == 2) || (mn == 4) || (mn == 6);
+
+    if (levels < 2) return texel_linear ? GL_LINEAR : GL_NEAREST;   /* a mip filter would sample black */
+    switch (mn)
+    {
+        case 3: return GL_NEAREST_MIPMAP_NEAREST;
+        case 4: return GL_LINEAR_MIPMAP_NEAREST;
+        case 5: return GL_NEAREST_MIPMAP_LINEAR;
+        case 6: return GL_LINEAR_MIPMAP_LINEAR;
+        default: return texel_linear ? GL_LINEAR : GL_NEAREST;
+    }
+}
+
 static void gl_blend_factor(uint32_t mode, GLenum *factor)
 {
     switch (mode)
@@ -417,36 +437,46 @@ static GLuint gl_texture_of(const struct IDirectDrawSurface_c *s, int keyed)
     }
     if ((e->plain == 0) || (e->gen != s->texture_gen))
     {
+        const struct IDirectDrawSurface_c *lv;
         uint32_t *buf = (uint32_t *)malloc((size_t)s->width * s->height * 4);
+        int level = 0;
+
         if (buf == NULL) return 0;
 
-        surface_to_bgra(s, buf, 0);
-        glBindTexture(GL_TEXTURE_2D, e->plain);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)s->width, (GLsizei)s->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+        /* the texture of the game is a chain: every level is its own surface
+         * (the game filled it), and the mip filter picks one of them */
+        for (lv = s; lv != NULL; lv = lv->lpmip, level++)
+        {
+            surface_to_bgra(lv, buf, 0);
+            glBindTexture(GL_TEXTURE_2D, e->plain);
+            if (level == 0)
+            {
+                /* the default MIN_FILTER is a mipmap one; the levels alone make
+                 * the texture complete, the filter itself is set per draw */
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            }
+            glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)lv->width, (GLsizei)lv->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
 
-        if (s->has_colorkey)
-        {
-            surface_to_bgra(s, buf, 1);
+            /* the keyed texture: with the key in the alpha when the level has one,
+             * the plain pixels otherwise (a keyed draw of a keyless level) */
+            surface_to_bgra(lv, buf, 1);
             glBindTexture(GL_TEXTURE_2D, e->keyed);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)s->width, (GLsizei)s->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+            if (level == 0)
+            {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            }
+            glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)lv->width, (GLsizei)lv->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
         }
-        else
-        {
-            /* without a key the keyed texture is the plain pixels, but it
-             * still needs the filters: the default MIN_FILTER is a mipmap
-             * one, and without mipmaps the incomplete texture samples black */
-            glBindTexture(GL_TEXTURE_2D, e->keyed);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)s->width, (GLsizei)s->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
-        }
+        glBindTexture(GL_TEXTURE_2D, e->plain);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
+        glBindTexture(GL_TEXTURE_2D, e->keyed);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
         free(buf);
 
-        /* the wrap of RS_TEXTUREADDRESS is set per draw */
+        /* the wrap of RS_TEXTUREADDRESS and the filters are set per draw */
+        e->levels = level;
         e->gen = s->texture_gen;
     }
     return keyed ? e->keyed : e->plain;
@@ -652,9 +682,15 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
     {
         uint32_t addr = gl_state[RS_TEXTUREADDRESS];
         GLint wrap = (addr == 3) ? GL_CLAMP_TO_EDGE : ((addr == 2) ? GL_MIRRORED_REPEAT : GL_REPEAT);
+        int levels = 1;
+        const struct IDirectDrawSurface_c *lv;
+
+        for (lv = texture->lpmip; lv != NULL; lv = lv->lpmip) levels++;
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_min_filter(gl_state[RS_TEXTUREMIN], levels));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, ((gl_state[RS_TEXTUREMAG] >= 2) && ((gl_state[RS_TEXTUREMAG] & 1) == 0)) ? GL_LINEAR : GL_NEAREST);
     }
 
     if (type >= 4)
