@@ -3602,10 +3602,10 @@ uint32_t CCALL TranslateMessage_c(void */*pMsg*/)
     eprintf("TranslateMessage\n");
 #endif
 
-    // The game's PeekMessage active loop (loc_4121CB) exits if TranslateMessage returns 0.
+    // A game's PeekMessage loop may exit if TranslateMessage returns 0.
     // Real Windows TranslateMessage returns nonzero for keyboard messages (WM_KEYDOWN -> WM_CHAR).
-    // The game doesn't process WM_CHAR , but relies on nonzero return
-    // to keep the active loop alive. Return 1 to match.
+    // A game may ignore WM_CHAR and still rely on the nonzero return
+    // to keep its loop alive. Return 1 to match.
     return 1;
 }
 

@@ -1696,7 +1696,7 @@ uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpK
     const char *name;
 
     /* The path of the file is the name of the file in the game directory:
-     * the game asks for ".\\GAME.INI". */
+     * a game asks for ".\\NAME.INI". */
     if (lpFileName != NULL)
     {
         strncpy(filename_buf, lpFileName, sizeof(filename_buf) - 1);

@@ -154,8 +154,8 @@ def stage_directory(name, binaries, dlls, release_oses):
     shutil.rmtree(directory, ignore_errors=True)
     os.makedirs(directory)
     # The data first: a game may install a file of the same name as the program
-    # (the original's exe in another case), and the programs of
-    # the release must be the port's, not covered by it.
+    # (the original's exe in another case), and the programs of the release must
+    # be the port's, not covered by it.
     if os.path.isdir(PORTABLE_DIR):
         check_names(directory, port_names(binaries, dlls, release_oses))
         shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
