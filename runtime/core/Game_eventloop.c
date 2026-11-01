@@ -99,13 +99,15 @@ void Game_Event_Loop(void)
     uint32_t AppActive;
     int FlipActive, NumEvents, PumpEvents;
 
-    /* The close of the window arrives twice (SDL_WINDOWEVENT_CLOSE, then SDL_QUIT);
-     * only a repeat after a second means that the game does not stop: leave at once. */
+    /* The close of the window arrives twice (SDL_WINDOWEVENT_CLOSE, then SDL_QUIT),
+     * and the winapi message pump may have taken the first and set Thread_Exit: the
+     * time counts from the first request seen here.  Only a repeat after a second
+     * means that the game does not stop: leave at once. */
     uint32_t QuitTick = 0;
 #define REQUEST_PROGRAM_EXIT() \
     do { \
-        if (Thread_Exit && SDL_GetTicks() - QuitTick > 1000) exit(1); \
-        if (!Thread_Exit) QuitTick = SDL_GetTicks(); \
+        if (QuitTick == 0) QuitTick = SDL_GetTicks(); \
+        else if (SDL_GetTicks() - QuitTick > 1000) exit(1); \
         Thread_Exit = 1; \
         if (Game_FlipSem != NULL) SDL_SemPost(Game_FlipSem); \
     } while (0)
