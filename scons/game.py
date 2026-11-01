@@ -197,6 +197,7 @@ LLASM_INC_DIRS = [LLASM_SRC_DIR] + SDK_LLASM_DIRS + [LLASM_SUPPORT]
 
 vars = Variables('custom.py')
 vars.Add(BoolVariable('debug', 'Build with debug information', False))
+vars.Add(BoolVariable('gles', 'OpenGL ES on a desktop device, to test the path of the Android build', False))
 vars.Add(EnumVariable('device', 'Set target device', '',
                       allowed_values=('', ) + tuple(DEVICES),
                       ignorecase=2))
@@ -350,10 +351,14 @@ if CFG.get('llasm_flags', ''):
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')
                  if lib.strip()])
-if GL:
+GLES = GL and (device.endswith('android') or env['gles'])
+if GLES:
+    # OpenGL ES 3.0, linked directly: no glad, so what ES lacks does not compile
+    env.Append(LIBS=['GLESv3' if device.endswith('android') else 'GLESv2'],
+               CPPDEFINES=['GAME_GLES'])
+elif GL:
     # OpenGL: glad (runtime/core/gl/glad.c) loads it
-    env.Append(LIBS=['opengl32' if device.endswith('windows')
-                     else 'GLESv2' if device.endswith('android') else 'GL'])
+    env.Append(LIBS=['opengl32' if device.endswith('windows') else 'GL'])
 if D3D_GL:
     env.Append(CPPDEFINES=['GAME_D3D_GL'])
 
@@ -705,7 +710,8 @@ if want('obj'):
             for source in sorted(glob.glob(os.path.join(runtime_dir, sub, '*.c'))):
                 name = os.path.join(sub, os.path.basename(source))
                 if (not os.path.exists(os.path.join(ROOT, 'game', name))
-                        and os.path.basename(source) not in RUNTIME_SKIP):
+                        and os.path.basename(source) not in RUNTIME_SKIP
+                        and not (GLES and name == os.path.join('gl', 'glad.c'))):
                     if os.path.basename(source) == 'WinApi-stubs.c':
                         # one object per stub, in a library: only the stubs
                         # that the game does not define itself are linked

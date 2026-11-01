@@ -513,7 +513,6 @@ static uint32_t batch_n;
 static GLenum batch_mode;
 
 static const char draw_vs[] =
-    "#version 120\n"
     "uniform vec2 inv_size;\n"
     "attribute vec2 a_pos;\n"
     "attribute vec4 a_col;\n"
@@ -528,7 +527,6 @@ static const char draw_vs[] =
 
 /* the colour/alpha combine of glide2x.h, the numbers are GR_COLORCOMBINE_* */
 static const char draw_fs[] =
-    "#version 120\n"
     "uniform sampler2D u_tex;\n"
     "uniform vec2 u_texscale;\n"
     "uniform int u_cc;\n"
@@ -671,7 +669,7 @@ static void upload_texture(struct glide_texture *t)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (t->t_clamp == GR_TEXTURECLAMP_CLAMP) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (t->minfilter == GR_TEXTUREFILTER_BILINEAR) ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (t->magfilter == GR_TEXTUREFILTER_BILINEAR) ? GL_LINEAR : GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, t->width, t->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, t->argb);
+    Game_GlTexImageBgra(0, t->width, t->height, t->argb);
     t->gl_dirty = 0;
 }
 
@@ -823,7 +821,7 @@ static void shadow_from_gl(int pi)
     if (shadow_valid[pi]) return;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo[pi]);
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
-    glReadPixels(0, 0, scr_width, scr_height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, xfer);
+    Game_GlReadBgra(scr_width, scr_height, xfer);
     for (y = 0; y < scr_height; y++)
     {
         uint16_t *d = color_mem[pi] + y * scr_stride;
@@ -846,7 +844,7 @@ static void shadow_to_gl(int pi)
     }
     glBindTexture(GL_TEXTURE_2D, fbo_tex[pi]);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, scr_width, scr_height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, xfer);
+    Game_GlTexSubImageBgra(scr_width, scr_height, xfer);
     shadow_valid[pi] = 1;
     shadow_dirty[pi] = 0;
 }

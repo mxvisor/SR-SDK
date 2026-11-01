@@ -32,6 +32,10 @@
 #include "Game_defs.h"
 
 void TouchGamepad_Draw(SDL_Renderer *renderer);
+/* the renderer of the last Draw goes away: its glyphs with it */
+void TouchGamepad_ForgetRenderer(void);
+/* changes when a button does: for a caller that keeps the drawn picture */
+int  TouchGamepad_Stamp(void);
 int  TouchGamepad_Event(SDL_Event *event);
 /* the button `index`: 0 past the last one, otherwise *key is what it holds
  * down (SDLK_UNKNOWN: nothing); EmulateKey does not reach SDL's key state */

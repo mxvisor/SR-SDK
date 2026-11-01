@@ -67,6 +67,7 @@ static SDL_Renderer *gp_renderer;
 #endif
 
 static SDL_Texture *gp_glyph[128];
+static int gp_stamp;
 
 static void gp_ensure_layout(void)
 {
@@ -253,6 +254,17 @@ void TouchGamepad_Draw(SDL_Renderer *renderer)
     }
 }
 
+void TouchGamepad_ForgetRenderer(void)
+{
+    memset(gp_glyph, 0, sizeof(gp_glyph));
+    gp_renderer = NULL;
+}
+
+int TouchGamepad_Stamp(void)
+{
+    return gp_stamp;
+}
+
 static int gp_button_at(int x, int y)
 {
     int i;
@@ -282,12 +294,14 @@ static int gp_button_with_finger(Sint64 finger)
 static void gp_press(int idx, Sint64 finger)
 {
     gp_buttons[idx].finger = finger;
+    gp_stamp++;
     EmulateKey(SDL_KEYDOWN, gp_buttons[idx].key);
 }
 
 static void gp_release(int idx)
 {
     gp_buttons[idx].finger = -1;
+    gp_stamp++;
     EmulateKey(SDL_KEYUP, gp_buttons[idx].key);
 }
 
@@ -350,6 +364,15 @@ int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
 }
 
 #else /* !__ANDROID__ */
+
+void TouchGamepad_ForgetRenderer(void)
+{
+}
+
+int TouchGamepad_Stamp(void)
+{
+    return 0;
+}
 
 void TouchGamepad_Draw(SDL_Renderer *renderer)
 {

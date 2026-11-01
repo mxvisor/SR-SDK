@@ -26,9 +26,9 @@
  * pre-transformed (D3D screen space, y down, z 0..1, rhw = 1/w): an identity
  * ortho projection puts screen row 0 in the first row of the FBO's memory, so
  * the colour read back into the guest's surface needs no flipping and 2D the
- * guest blits into that memory stays under the 3D.  The fixed pipeline of the
- * compatibility profile does the rest: rhw is the clip w (perspective texture),
- * the texture environment the blend mode, glBlendFunc the alpha blend.
+ * guest blits into that memory stays under the 3D.  One shader does the rest
+ * (OpenGL ES has no fixed pipeline): rhw divides the texture coordinates per
+ * fragment, u_mode is the blend mode, glBlendFunc the alpha blend.
  *
  * Compromises: the depth attachment is 24 bit, not the guest's 16; the depth
  * of the guest's Z-buffer is neither uploaded nor read back (a scene starts
@@ -83,6 +83,52 @@ static int present_w = 0, present_h = 0;
 
 static uint32_t gl_state[MAX_GL_STATES];
 
+static GLuint draw_prog = 0;
+static GLint u_scale, u_mode, u_alphatest;
+
+/* what a primitive call gives is one glDrawArrays */
+typedef struct {
+    float x, y, z;
+    float s, t, q;
+    uint8_t r, g, b, a;
+} gl_vertex;
+static gl_vertex *batch = NULL;
+static uint32_t batch_n = 0, batch_max = 0;
+
+static const char draw_vs[] =
+    "uniform vec2 u_scale;\n"
+    "attribute vec3 a_pos;\n"
+    "attribute vec3 a_stq;\n"
+    "attribute vec4 a_col;\n"
+    "varying vec3 v_stq;\n"
+    "varying vec4 v_col;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(a_pos.xy * u_scale - 1.0, a_pos.z * 2.0 - 1.0, 1.0);\n"
+    "    v_stq = a_stq;\n"
+    "    v_col = a_col;\n"
+    "}\n";
+
+/* u_mode: 0 no texture, 1 the texel, 2 DECALALPHA, 3 MODULATEALPHA, 4 MODULATE
+ * (keeps the texel's alpha, so the colour key still tests as 0) */
+static const char draw_fs[] =
+    "uniform sampler2D u_tex;\n"
+    "uniform int u_mode;\n"
+    "uniform int u_alphatest;\n"
+    "varying vec3 v_stq;\n"
+    "varying vec4 v_col;\n"
+    "void main() {\n"
+    "    vec4 c = v_col;\n"
+    "    if (u_mode != 0) {\n"
+    "        vec4 t = texture2D(u_tex, v_stq.xy / v_stq.z);\n"
+    "        if (u_mode == 1) c = t;\n"
+    "        else if (u_mode == 2) c = vec4(mix(v_col.rgb, t.rgb, t.a), t.a);\n"
+    "        else if (u_mode == 3) c = t * v_col;\n"
+    "        else c = vec4(t.rgb * v_col.rgb, t.a);\n"
+    "    }\n"
+    "    if (u_alphatest != 0 && c.a <= 0.5) discard;\n"
+    "    gl_FragColor = c;\n"
+    "}\n";
+
 /* the texture of a surface, and of it with the colour key in the alpha */
 typedef struct {
     const struct IDirectDrawSurface_c *surface;
@@ -100,7 +146,13 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
     {
         gl_context = Game_GlCreateContext(gl_window, Display_VSync);
         if (gl_context == NULL) return 0;
+        draw_prog = Game_GlProgram(draw_vs, draw_fs, "a_pos", "a_stq", "a_col", "Game_D3dGL");
+        if (draw_prog == 0) return 0;
+        u_scale = glGetUniformLocation(draw_prog, "u_scale");
+        u_mode = glGetUniformLocation(draw_prog, "u_mode");
+        u_alphatest = glGetUniformLocation(draw_prog, "u_alphatest");
     }
+    if (draw_prog == 0) return 0;
     return 1;
 }
 
@@ -215,7 +267,7 @@ static void scene_upload(struct IDirectDrawSurface_c *target)
     if (buf == NULL) return;
     surface_to_bgra(target, buf, 0);
     glBindTexture(GL_TEXTURE_2D, scene_tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, scene_w, scene_h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+    Game_GlTexSubImageBgra(scene_w, scene_h, buf);
     free(buf);
 }
 
@@ -237,9 +289,7 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_ALPHA_TEST);
     glDisable(GL_CULL_FACE);
-    glDisable(GL_TEXTURE_2D);
     glDepthMask(GL_FALSE);
 
     /* the guest's picture (its clears and 2D blits) under whatever comes */
@@ -247,11 +297,6 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
 
     /* screen row 0 of the D3D target is the first row of the FBO's memory */
     glViewport(0, 0, scene_w, scene_h);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0.0, (GLdouble)scene_w, 0.0, (GLdouble)scene_h, -1.0, 1.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
 
     glEnable(GL_DEPTH_TEST);
     glClearDepth(1.0);
@@ -456,7 +501,7 @@ static GLuint gl_texture_of(const struct IDirectDrawSurface_c *s, int keyed)
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             }
-            glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)lv->width, (GLsizei)lv->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+            Game_GlTexImageBgra(level, (int)lv->width, (int)lv->height, buf);
 
             /* the keyed texture: with the key in the alpha when the level has one,
              * the plain pixels otherwise (a keyed draw of a keyless level) */
@@ -467,7 +512,7 @@ static GLuint gl_texture_of(const struct IDirectDrawSurface_c *s, int keyed)
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             }
-            glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)lv->width, (GLsizei)lv->height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+            Game_GlTexImageBgra(level, (int)lv->width, (int)lv->height, buf);
         }
         glBindTexture(GL_TEXTURE_2D, e->plain);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
@@ -546,81 +591,62 @@ static void gl_apply_draw_state(int textured)
     /* the culling of the software rasteriser is kept on the CPU, y down */
     glDisable(GL_CULL_FACE);
 
-    glShadeModel((gl_state[RS_SHADEMODE] == 1) ? GL_FLAT : GL_SMOOTH);
-
+    glUseProgram(draw_prog);
+    glUniform2f(u_scale, 2.0f / (float)scene_w, 2.0f / (float)scene_h);
     if (textured)
     {
-        glEnable(GL_TEXTURE_2D);
-        /* the software rasteriser's blend of the texel and the vertex:
-         * MODULATE keeps the texel's alpha (not the vertex's, so the colour
-         * key of the keyed texture still tests as 0), MODULATEALPHA multiplies
-         * it, DECALALPHA mixes the colour by the texel's alpha */
+        int mode;
+
         switch (gl_state[RS_TEXTUREMAPBLEND])
         {
-            case 1: case 7: glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE); break;
-            case 3:
-                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-                break;
-            case 4:
-                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-                break;
-            default:
-                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-                glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-                glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-                break;
+            case 1: case 7: mode = 1; break;
+            case 3: mode = 2; break;
+            case 4: mode = 3; break;
+            default: mode = 4; break;
         }
-        if (gl_state[RS_COLORKEYENABLE] != 0)
-        {
-            glEnable(GL_ALPHA_TEST);
-            glAlphaFunc(GL_GREATER, 0.5f);
-        }
-        else
-        {
-            glDisable(GL_ALPHA_TEST);
-        }
+        glUniform1i(u_mode, mode);
+        glUniform1i(u_alphatest, gl_state[RS_COLORKEYENABLE] != 0);
     }
     else
     {
-        glDisable(GL_TEXTURE_2D);
-        glDisable(GL_ALPHA_TEST);
+        glUniform1i(u_mode, 0);
+        glUniform1i(u_alphatest, 0);
     }
 }
 
-static void gl_vertex(const d3dgl_vert *v, int persp, const d3dgl_vert *flatfrom)
+static void gl_put(const d3dgl_vert *v, float s_coord, float t_coord, float q, const d3dgl_vert *colour, int alpha)
 {
-    /* glOrtho(0,W,0,H,-1,1) maps eye z to the depth (1 - eye z) / 2: eye z =
-     * 1 - 2*guest_z puts the guest's 0 (near) at depth 0 and 1 (far) at the
-     * cleared depth 1, as the software rasteriser's z_test() (the naive
-     * 2*guest_z - 1 is the inverted mapping: eye z = +1 is the near plane
-     * when the ortho near is -1) */
-    if (flatfrom != NULL) glColor4ub((GLubyte)flatfrom->r, (GLubyte)flatfrom->g, (GLubyte)flatfrom->b, (GLubyte)flatfrom->a);
-    else glColor4ub((GLubyte)v->r, (GLubyte)v->g, (GLubyte)v->b, (GLubyte)v->a);
-    if (persp) glTexCoord4f(v->u * v->rhw, v->v * v->rhw, 0.0f, v->rhw);
-    else glTexCoord2f(v->u, v->v);
-    glVertex3f(v->x, v->y, 1.0f - 2.0f * v->z);
+    gl_vertex *o;
+
+    if (batch_n == batch_max)
+    {
+        uint32_t max = batch_max ? batch_max * 2 : 4096;
+        gl_vertex *grown = (gl_vertex *)realloc(batch, max * sizeof(*batch));
+        if (grown == NULL) return;
+        batch = grown;
+        batch_max = max;
+    }
+    o = &batch[batch_n++];
+    /* the guest's z 0 (near) at depth 0 and 1 (far) at the cleared depth 1, as
+     * the software rasteriser's z_test() */
+    o->x = v->x;
+    o->y = v->y;
+    o->z = v->z;
+    o->s = s_coord;
+    o->t = t_coord;
+    o->q = q;
+    o->r = (uint8_t)colour->r;
+    o->g = (uint8_t)colour->g;
+    o->b = (uint8_t)colour->b;
+    o->a = (uint8_t)alpha;
+}
+
+static void gl_vertex_of(const d3dgl_vert *v, int persp, const d3dgl_vert *flatfrom)
+{
+    const d3dgl_vert *colour = (flatfrom != NULL) ? flatfrom : v;
+
+    if (persp) gl_put(v, v->u * v->rhw, v->v * v->rhw, v->rhw, colour, colour->a);
+    else gl_put(v, v->u, v->v, 1.0f, colour, colour->a);
 }
 
 static void gl_triangle(const d3dgl_vert *v0, const d3dgl_vert *v1, const d3dgl_vert *v2, int textured, int flat)
@@ -635,11 +661,9 @@ static void gl_triangle(const d3dgl_vert *v0, const d3dgl_vert *v1, const d3dgl_
     persp = textured && (gl_state[RS_TEXTUREPERSPECTIVE] != 0) &&
             (v0->rhw > 0.0f) && (v1->rhw > 0.0f) && (v2->rhw > 0.0f);
 
-    glBegin(GL_TRIANGLES);
-    gl_vertex(v0, persp, flat ? v0 : NULL);
-    gl_vertex(v1, persp, flat ? v0 : NULL);
-    gl_vertex(v2, persp, flat ? v0 : NULL);
-    glEnd();
+    gl_vertex_of(v0, persp, flat ? v0 : NULL);
+    gl_vertex_of(v1, persp, flat ? v0 : NULL);
+    gl_vertex_of(v2, persp, flat ? v0 : NULL);
 }
 
 static const d3dgl_vert *gl_ith(const d3dgl_vert *verts, uint32_t nverts, const uint16_t *index, uint32_t i)
@@ -729,22 +753,33 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
     else
     {
         /* lines: the colour of each vertex, untextured, as in software */
-        glBegin((type == 3) ? GL_LINE_STRIP : GL_LINES);
         for (i = 0; i < (int)n; i++)
         {
             const d3dgl_vert *v = gl_ith(verts, nverts, index, (uint32_t)i);
-            glColor4ub((GLubyte)v->r, (GLubyte)v->g, (GLubyte)v->b, 255);
-            glVertex3f(v->x, v->y, 1.0f - 2.0f * v->z);
+            gl_put(v, 0.0f, 0.0f, 1.0f, v, 255);
         }
-        glEnd();
     }
 
+    if (batch_n != 0)
+    {
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].x);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].s);
+        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), &batch[0].r);
+        glDrawArrays((type >= 4) ? GL_TRIANGLES : ((type == 3) ? GL_LINE_STRIP : GL_LINES), 0, (GLsizei)batch_n);
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
+        glDisableVertexAttribArray(2);
+        batch_n = 0;
+    }
+
+    glUseProgram(0);
     glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_ALPHA_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
-    glDisable(GL_TEXTURE_2D);
 }
 
 /* ---- the image of the target's memory on the window ---- */
@@ -768,12 +803,12 @@ void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, present_w, present_h, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        Game_GlTexImageBgra(0, present_w, present_h, NULL);
     }
 
     Winapi_SurfaceToBgra(target, present_buf, present_w * 4);
     glBindTexture(GL_TEXTURE_2D, present_tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, present_w, present_h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, present_buf);
+    Game_GlTexSubImageBgra(present_w, present_h, present_buf);
     Game_GlPresentTexture(window, present_tex, present_w, present_h, 1, Display_ScalingQuality != 0);
 }
 
@@ -804,6 +839,8 @@ void Winapi_D3dGLShutdown(void)
     scene_target = NULL;
     if (gl_context != NULL)
     {
+        if (draw_prog != 0) glDeleteProgram(draw_prog);
+        draw_prog = 0;
         SDL_GL_DeleteContext(gl_context);
         gl_context = NULL;
     }

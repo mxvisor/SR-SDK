@@ -24,11 +24,23 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <SDL.h>
-#include <glad/glad.h>
 #include "Game_gl.h"
+#include "Game_hooks.h"
+
+#if defined(__ANDROID__) && GAME_WINAPI_TOUCH_GAMEPAD
+#include "touchgamepad.h"
+#define GL_TOUCH_GAMEPAD 1
+#endif
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
+
+#if defined(GAME_GLES)
+#define SHADER_HEADER "#version 100\nprecision highp float;\n"
+#else
+#define SHADER_HEADER "#version 120\n"
+#endif
 
 
 SDL_GLContext Game_GlCreateContext(SDL_Window *window, int vsync)
@@ -42,22 +54,93 @@ SDL_GLContext Game_GlCreateContext(SDL_Window *window, int vsync)
         eprintf("Game_Gl: SDL_GL_CreateContext: %s\n", SDL_GetError());
         return NULL;
     }
+#if !defined(GAME_GLES)
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress) || !GLAD_GL_VERSION_2_0 || !GLAD_GL_ARB_framebuffer_object)
     {
         eprintf("Game_Gl: OpenGL 2.0 with frame buffer objects is needed\n");
         SDL_GL_DeleteContext(context);
         return NULL;
     }
+#endif
     SDL_GL_SetSwapInterval(vsync ? 1 : 0);
     return context;
 }
 
+#if defined(GAME_GLES)
+
+/* ES has no BGRA that every device takes, and an FBO's texture cannot swizzle
+ * (what is drawn into it is RGBA): the channels are swapped here */
+static void swap_red_blue(uint32_t *dst, const uint32_t *src, size_t count)
+{
+    size_t i;
+
+    for (i = 0; i < count; i++)
+    {
+        uint32_t c = src[i];
+        dst[i] = (c & 0xff00ff00u) | ((c >> 16) & 0xffu) | ((c & 0xffu) << 16);
+    }
+}
+
+static const void *rgba_of(const void *pixels, int width, int height)
+{
+    static uint32_t *scratch;
+    static size_t scratch_count;
+    size_t count = (size_t)width * height;
+
+    if (pixels == NULL) return NULL;
+    if (count > scratch_count)
+    {
+        free(scratch);
+        scratch = (uint32_t *)malloc(count * 4);
+        scratch_count = (scratch != NULL) ? count : 0;
+        if (scratch == NULL) return NULL;
+    }
+    swap_red_blue(scratch, (const uint32_t *)pixels, count);
+    return scratch;
+}
+
+void Game_GlTexImageBgra(GLint level, int width, int height, const void *pixels)
+{
+    glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba_of(pixels, width, height));
+}
+
+void Game_GlTexSubImageBgra(int width, int height, const void *pixels)
+{
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba_of(pixels, width, height));
+}
+
+void Game_GlReadBgra(int width, int height, void *pixels)
+{
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    swap_red_blue((uint32_t *)pixels, (const uint32_t *)pixels, (size_t)width * height);
+}
+
+#else
+
+void Game_GlTexImageBgra(GLint level, int width, int height, const void *pixels)
+{
+    glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
+}
+
+void Game_GlTexSubImageBgra(int width, int height, const void *pixels)
+{
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
+}
+
+void Game_GlReadBgra(int width, int height, void *pixels)
+{
+    glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
+}
+
+#endif
+
 GLuint Game_GlCompileShader(GLenum type, const char *src, const char *tag)
 {
     GLuint sh = glCreateShader(type);
+    const char *parts[2] = { SHADER_HEADER, src };
     GLint ok = 0;
 
-    glShaderSource(sh, 1, &src, NULL);
+    glShaderSource(sh, 2, parts, NULL);
     glCompileShader(sh);
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
     if (!ok)
@@ -107,7 +190,7 @@ int Game_GlFboCreate(GLuint *fbo, GLuint *tex, int width, int height,
     glGenFramebuffers(1, fbo);
     glGenTextures(1, tex);
     glBindTexture(GL_TEXTURE_2D, *tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    Game_GlTexImageBgra(0, width, height, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -148,7 +231,6 @@ void Game_GlFboDelete(GLuint *fbo, GLuint *tex, int with_depth, GLuint *depth)
  * is first used in (a new context invalidates the old programs) */
 
 static const char present_vs[] =
-    "#version 120\n"
     "attribute vec2 a_pos;\n"
     "attribute vec2 a_uv;\n"
     "varying vec2 v_uv;\n"
@@ -158,12 +240,103 @@ static const char present_vs[] =
     "}\n";
 
 static const char present_fs[] =
-    "#version 120\n"
     "uniform sampler2D u_tex;\n"
     "varying vec2 v_uv;\n"
     "void main() {\n"
     "    gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0);\n"
     "}\n";
+
+#if defined(GL_TOUCH_GAMEPAD)
+
+/* The buttons of the touch gamepad over the picture. touchgamepad.c draws with
+ * an SDL_Renderer and a GL window has none: it draws into a surface the size
+ * of the window, by SDL's software renderer, and the surface is a texture over
+ * the window, loaded again only when a button changes. Blending over the
+ * surface's clear alpha leaves premultiplied colour. */
+
+static const char overlay_fs[] =
+    "uniform sampler2D u_tex;\n"
+    "varying vec2 v_uv;\n"
+    "void main() {\n"
+    "    gl_FragColor = texture2D(u_tex, v_uv);\n"
+    "}\n";
+
+static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext context)
+{
+    static const float uv[8] = { 0.0f, 1.0f,  1.0f, 1.0f,  0.0f, 0.0f,  1.0f, 0.0f };
+    static SDL_Surface *surface;
+    static SDL_Renderer *renderer;
+    static GLuint prog, tex;
+    static GLint u_tex;
+    static SDL_GLContext prog_context;
+    static int drawn_stamp;
+    int new_texture = 0;
+
+    if (prog_context != context)
+    {
+        prog = Game_GlProgram(present_vs, overlay_fs, "a_pos", "a_uv", NULL, "Game_Gl overlay");
+        u_tex = (prog != 0) ? glGetUniformLocation(prog, "u_tex") : 0;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        prog_context = context;
+        new_texture = 1;
+    }
+    if (prog == 0) return;
+
+    if ((surface == NULL) || (surface->w != ww) || (surface->h != wh))
+    {
+        TouchGamepad_ForgetRenderer();
+        if (renderer != NULL) SDL_DestroyRenderer(renderer);
+        if (surface != NULL) SDL_FreeSurface(surface);
+        renderer = NULL;
+        surface = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ARGB8888);
+        if (surface != NULL) renderer = SDL_CreateSoftwareRenderer(surface);
+        if (renderer == NULL)
+        {
+            eprintf("Game_Gl: the touch gamepad's surface: %s\n", SDL_GetError());
+            if (surface != NULL) SDL_FreeSurface(surface);
+            surface = NULL;
+            return;
+        }
+        new_texture = 1;
+    }
+
+    if (new_texture || (drawn_stamp != TouchGamepad_Stamp()))
+    {
+        drawn_stamp = TouchGamepad_Stamp();
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+        SDL_RenderClear(renderer);
+        TouchGamepad_Draw(renderer);
+        SDL_RenderFlush(renderer);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        if (new_texture) Game_GlTexImageBgra(0, ww, wh, surface->pixels);
+        else Game_GlTexSubImageBgra(ww, wh, surface->pixels);
+    }
+
+    glViewport(0, 0, ww, wh);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glUniform1i(u_tex, 0);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glUseProgram(0);
+    glDisable(GL_BLEND);
+}
+
+#endif
 
 void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
                            int width, int height, int origin_upper_left,
@@ -235,5 +408,8 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
     glDisableVertexAttribArray(1);
     glUseProgram(0);
 
+#if defined(GL_TOUCH_GAMEPAD)
+    present_overlay(ww, wh, pos, prog_context);
+#endif
     SDL_GL_SwapWindow(window);
 }

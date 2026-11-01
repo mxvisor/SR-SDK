@@ -26,19 +26,36 @@
  * an SDL window, shader programs, frame buffer objects, and the image of a
  * texture scaled to the window. A game enables this module with opengl=yes,
  * glide=yes or d3d_gl=yes in game.cfg. The window is not made here: a win32
- * game gets one from Winapi_ScreenOpenGL, others draw in Game_Window. */
+ * game gets one from Winapi_ScreenOpenGL, others draw in Game_Window.
+ *
+ * GAME_GLES is the Android build (OpenGL ES 3.0, no glad, its header); gles=yes
+ * of scons makes the same on a desktop. What differs is kept here: the pixels
+ * go through Game_GlTexImageBgra and its kin, and a shader has no #version. */
 
 #ifndef GAME_GL_H
 #define GAME_GL_H
 
 #include <SDL.h>
+#if defined(GAME_GLES)
+#include <GLES3/gl3.h>
+#define glClearDepth glClearDepthf
+#else
 #include <glad/glad.h>
+#endif
 
 /* SDL_GL_CreateContext, then glad; GL 2.0 with frame buffer objects is
  * needed. NULL and a message if any of it is missing. */
 SDL_GLContext Game_GlCreateContext(SDL_Window *window, int vsync);
 
-/* glCreateShader/glCompileShader; tag names the shader in the error message */
+/* The bound texture, RGBA8, from rows of 0xAARRGGBB (pixels may be NULL). */
+void Game_GlTexImageBgra(GLint level, int width, int height, const void *pixels);
+void Game_GlTexSubImageBgra(int width, int height, const void *pixels);
+/* the bound frame buffer into rows of 0xAARRGGBB */
+void Game_GlReadBgra(int width, int height, void *pixels);
+
+/* glCreateShader/glCompileShader; the source has no #version: GLSL 1.20 or
+ * GLSL ES 1.00, the common part of the two (attribute, varying, texture2D,
+ * gl_FragColor). tag names the shader in the error message */
 GLuint Game_GlCompileShader(GLenum type, const char *src, const char *tag);
 
 /* a program of a vertex and a fragment shader; the attributes are bound to

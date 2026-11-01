@@ -2156,8 +2156,14 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
         dd_spare_window = NULL;
     }
 
+#if defined(GAME_GLES)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     dd_gl_window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height, SDL_WINDOW_OPENGL | ((Display_Resizable && (Display_Mode == 0))?SDL_WINDOW_RESIZABLE:0) | ((Display_Mode == 1)?SDL_WINDOW_FULLSCREEN_DESKTOP:0) | ((Display_Mode == 2)?SDL_WINDOW_FULLSCREEN:0) | SDL_WINDOW_HIDDEN);
