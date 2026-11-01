@@ -121,6 +121,21 @@ int Game_AudioInit(void)
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return -1;
     }
+    /* SDL_mixer lets the device change the rate and the channels (Android's
+     * often runs at 48 kHz): what is mixed has to be made for what was opened. */
+    {
+        int rate = 0, channels = 0;
+        Uint16 format = 0;
+
+        if (Mix_QuerySpec(&rate, &format, &channels) != 0)
+        {
+            Game_AudioRate = rate;
+            Game_AudioChannels = (unsigned int)channels;
+            Game_AudioFormat = format;
+        }
+        fprintf(stderr, GAME_NAME ": audio %i Hz, %i channels, format %x, %i samples\n",
+                rate, channels, (unsigned int)format, Game_AudioBufferSize);
+    }
     audio_open = 1;
     return 0;
 }
