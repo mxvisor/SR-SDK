@@ -57,6 +57,7 @@
 #endif
 #include <pthread.h>
 #if defined(__ANDROID__)
+#include "Game_android.h"
 #include "Game_hooks.h"
 #ifndef GAME_GUEST_LOW_MEMORY
 #define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
@@ -1324,17 +1325,11 @@ void Game_MemorySetGuestNext(uint64_t offset)
 int initialize_pointer_offset(void)
 {
 #if defined(__ANDROID__)
-    /* ART reserves the low 4 GB for itself (dalvik non-moving space,
-     * LinearAlloc, boot image) and loads the .so inside it, so there is no
-     * clean 2 GB guest region below the image -- map_memory_32bit's hole
-     * search finds nothing.  Reserve one high, out of ART's reach, and let
-     * map_memory_32bit carve the guest arenas out of it. */
-    guest_region_size = UINT64_C(0x80000000);
-    guest_region_base = (uint64_t)(uintptr_t)mmap(NULL, (size_t)guest_region_size,
-                                                  PROT_NONE,
-                                                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
-                                                  -1, 0);
-    if (guest_region_base == (uint64_t)(uintptr_t)MAP_FAILED)
+    /* ART takes the low 4 GB for itself, and mmap(NULL) lands wherever it
+     * likes: a device put the image 4.8 GB above it, and code pointers lost
+     * their top bits.  The block below the image is reserved before the image
+     * is loaded; map_memory_32bit carves the guest arenas out of it. */
+    if (!Game_AndroidGuestRegion(&guest_region_base, &guest_region_size))
     {
         guest_region_base = 0;
         return 4;
@@ -1345,6 +1340,11 @@ int initialize_pointer_offset(void)
     guest_region_next = GAME_GUEST_LOW_MEMORY();
     pointer_offset = guest_region_base;
     pointer_reserved_length = 0;
+    if (Game_AndroidCheckImageReach(pointer_offset, guest_region_size) != 0)
+    {
+        guest_region_base = 0;
+        return 5;
+    }
     if (ptr_initialize_pointers != NULL)
     {
         ptr_initialize_pointers(pointer_offset);

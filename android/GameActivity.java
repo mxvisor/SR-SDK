@@ -29,6 +29,7 @@ import android.content.res.AssetManager;
 import android.os.Bundle;
 import android.util.Log;
 
+import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 
 import java.io.File;
@@ -142,6 +143,24 @@ public class GameActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "c++_shared", "SDL2", "SDL2_mixer", "main" };
+    }
+
+    private static native String nativeLoadMain(String path);
+
+    /* libmain.so goes where its code pointers reach the guest's memory, see
+     * gameloader.c; SDL's own dlopen of it then finds it loaded. */
+    @Override
+    public void loadLibraries() {
+        System.loadLibrary("gameloader");
+        for (String library : getLibraries()) {
+            if (!library.equals("main")) {
+                SDL.loadLibrary(library, this);
+            }
+        }
+        String error = nativeLoadMain(getApplicationInfo().nativeLibraryDir + "/libmain.so");
+        if (error != null) {
+            throw new UnsatisfiedLinkError(error);
+        }
     }
 
     private void prepareData() throws IOException {

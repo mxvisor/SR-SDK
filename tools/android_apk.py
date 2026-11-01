@@ -30,7 +30,7 @@
 # (dist_name= of game.cfg, default the program's name).
 #
 # 1. SDL2 and SDL2_mixer for arm64, by tools/android_sdl.sh, unless there;
-# 2. libmain.so, by scons device=arm64-android;
+# 2. libmain.so, by scons device=arm64-android (libgameloader.so, which loads it, here);
 # 3. <build>/android/jniLibs/ and assets/game/: the .so files and the data;
 # 4. <build>/android/project/: SDL's android-project of the same SDL release,
 #    with android/app.gradle, android/GameActivity.java, the game's name from
@@ -148,6 +148,10 @@ def main():
     os.makedirs(jni)
     ndk_lib = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', 'linux-x86_64',
                            'sysroot', 'usr', 'lib', 'aarch64-linux-android')
+    clang = os.path.join(ndk, 'toolchains', 'llvm', 'prebuilt', 'linux-x86_64',
+                         'bin', 'aarch64-linux-android21-clang')
+    run([clang, '-shared', '-fPIC', '-O2', '-Wall', '-o', os.path.join(jni, 'libgameloader.so'),
+         os.path.join(SDK_ROOT, 'android', 'gameloader.c'), '-ldl'], env=env)
     for library in (os.path.join(build, 'bin', 'arm64-android', 'libmain.so'),
                     os.path.join(sysroot, 'lib', 'libSDL2.so'),
                     os.path.join(sysroot, 'lib', 'libSDL2_mixer.so'),

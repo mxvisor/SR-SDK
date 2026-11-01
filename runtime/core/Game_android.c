@@ -26,6 +26,8 @@
 
 #if defined(__ANDROID__)
 
+#include <inttypes.h>
+#include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,6 +101,104 @@ void Game_AndroidSetup(void)
         snprintf(path, sizeof(path), "%s/write", base);
         setenv(GAME_ENV("WRITE_ROOT"), path, 1);
     }
+}
+
+struct image_range
+{
+    uintptr_t inside, start, end;
+};
+
+static int find_image(struct dl_phdr_info *info, size_t size, void *data)
+{
+    struct image_range *image = (struct image_range *)data;
+    uintptr_t start = UINTPTR_MAX, end = 0;
+    int index;
+
+    (void)size;
+    for (index = 0; index < info->dlpi_phnum; index++)
+    {
+        const ElfW(Phdr) *header = &info->dlpi_phdr[index];
+        uintptr_t first = info->dlpi_addr + header->p_vaddr;
+
+        if (header->p_type != PT_LOAD) continue;
+        if (first < start) start = first;
+        if (first + header->p_memsz > end) end = first + header->p_memsz;
+    }
+    if (image->inside < start || image->inside >= end) return 0;
+    image->start = start;
+    image->end = end;
+    return 1;
+}
+
+static FILE *open_external(const char *name, const char *mode)
+{
+    char path[4096];
+    const char *external = SDL_AndroidGetExternalStoragePath();
+
+    if (external == NULL) return NULL;
+    snprintf(path, sizeof(path), "%s/%s", external, name);
+    return fopen(path, mode);
+}
+
+/* What a report from a device needs, without another run. */
+static void save_memory_map(void)
+{
+    char buf[4096];
+    size_t got;
+    FILE *maps = fopen("/proc/self/maps", "r");
+    FILE *file = open_external("maps.txt", "w");
+
+    if (maps != NULL && file != NULL)
+    {
+        while ((got = fread(buf, 1, sizeof(buf), maps)) > 0) fwrite(buf, 1, got, file);
+    }
+    if (file != NULL) fclose(file);
+    if (maps != NULL) fclose(maps);
+}
+
+static int get_image(struct image_range *image)
+{
+    image->inside = (uintptr_t)&get_image;
+    if (dl_iterate_phdr(find_image, image)) return 1;
+    fprintf(stderr, "Could not find the image of the program\n");
+    return 0;
+}
+
+/* android/gameloader.c reserved it, right below the image. */
+int Game_AndroidGuestRegion(uint64_t *base, uint64_t *size)
+{
+    const char *value = getenv("SR_SDK_GUEST_REGION");
+
+    if (value == NULL) return 0;
+    *base = strtoull(value, NULL, 16);
+    *size = UINT64_C(0x80000000);
+    return 1;
+}
+
+int Game_AndroidCheckImageReach(uint64_t offset, uint64_t size)
+{
+    struct image_range image;
+    char line[256];
+    int reach;
+    FILE *file;
+
+    if (!get_image(&image)) return 1;
+
+    reach = image.start >= offset && image.end - offset <= UINT64_C(0x100000000);
+    snprintf(line, sizeof(line),
+             "native image 0x%" PRIxPTR "-0x%" PRIxPTR " pointer_offset 0x%" PRIx64 " size 0x%" PRIx64 " distance %" PRId64 " %s\n",
+             image.start, image.end, offset, size, (int64_t)(image.start - offset),
+             reach ? "in reach" : "OUT OF REACH of 32-bit code pointers");
+
+    fputs(line, stderr);
+    file = open_external("startup.txt", "a");
+    if (file != NULL)
+    {
+        fputs(line, file);
+        fclose(file);
+    }
+    save_memory_map();
+    return reach ? 0 : 1;
 }
 
 #endif
