@@ -192,16 +192,6 @@ void x86_deinit_malloc(void)
     #define UNLOCK_MUTEX pthread_mutex_unlock(&mutex);
 #endif
 
-/* GAME_MEM_LOG=1: every guest allocation and free on stderr (the Android port
- * writes stderr to game.log), to find what overruns a heap block. */
-static void mem_log(const char *op, unsigned int size, const void *ptr)
-{
-    static int on = -1;
-
-    if (on < 0) on = (getenv("GAME_MEM_LOG") != NULL);
-    if (on) fprintf(stderr, "mem: %s %u %p\n", op, size, ptr);
-}
-
 static memblock_t *get_free_block(heapblock_t *heapblock, int32_t offset)
 {
     memblock_t *freeblock;
@@ -321,7 +311,6 @@ void *x86_malloc(unsigned int size)
         heapblock_t *heapblock;
         memblock_t *largestblock, *freeblock, *prevblock;
 
-        mem_log("malloc", size, NULL);
         if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
         {
             errno = ENOMEM;
@@ -480,7 +469,6 @@ void x86_free(void *ptr)
             return;
         }
 
-        mem_log("free", 0, ptr);
         allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
 
         LOCK_MUTEX
@@ -754,7 +742,6 @@ void *x86_calloc(unsigned int nmemb, unsigned int size)
             }
         }
 
-        mem_log("calloc", nmemb * size, NULL);
         ptr = x86_malloc(nmemb * size);
         if (ptr != NULL)
         {
@@ -784,7 +771,6 @@ void *x86_realloc(void *ptr, unsigned int size)
             return x86_malloc(size);
         }
 
-        mem_log("realloc", size, ptr);
 
         if (size == 0)
         {
