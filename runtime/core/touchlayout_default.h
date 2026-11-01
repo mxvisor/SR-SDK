@@ -24,12 +24,13 @@
 
 /* The on-screen gamepad layout a game gets unless it has its own
  * game/Game_touchlayout.h (see touchgamepad.c): a D-pad on the left, four
- * action buttons and Esc on the right. */
+ * action buttons and Esc on the right, Y and N (many games ask before they
+ * quit) in the top left corner. */
 
 /* The keys the buttons send: the arrows steer
  * and accelerate/brake, Space is the handbrake, Enter/Esc are the menus. */
 
-#define GP_NBUTTONS 9
+#define GP_NBUTTONS 11
 
 static GPButton gp_buttons[GP_NBUTTONS] = {
     {0,0,0,0, SDLK_UP,      1, NULL,   GP_LIGHT, -1},
@@ -41,6 +42,8 @@ static GPButton gp_buttons[GP_NBUTTONS] = {
     {0,0,0,0, SDLK_ESCAPE,  0, "ESC",  GP_RED, -1},   /* menu */
     {0,0,0,0, SDLK_LCTRL,   0, "CTRL", GP_GREY, -1},
     {0,0,0,0, SDLK_ESCAPE,  0, "ESC",  GP_RED, -1},
+    {0,0,0,0, SDLK_y,       0, "Y",    GP_GREY, -1},
+    {0,0,0,0, SDLK_n,       0, "N",    GP_GREY, -1},
 };
 
 static void gp_layout(int W, int H)
@@ -90,5 +93,12 @@ static void gp_layout(int W, int H)
     gp_buttons[8].h = (S * 2) / 3;
     gp_buttons[8].x = W - m - S;
     gp_buttons[8].y = m;
+
+    /* Y and N above the left of the D-pad */
+    gp_buttons[9].w = gp_buttons[10].w = S;
+    gp_buttons[9].h = gp_buttons[10].h = (S * 2) / 5;
+    gp_buttons[9].x = gp_buttons[10].x = m;
+    gp_buttons[9].y = m;
+    gp_buttons[10].y = m + (S * 2) / 5 + gap;
 }
 
