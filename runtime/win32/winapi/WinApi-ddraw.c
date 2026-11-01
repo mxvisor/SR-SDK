@@ -39,6 +39,14 @@
 #include "WinApi-guest.h"
 #include "Game_defs.h"
 #include "Game_thread.h"
+#include "touchgamepad.h"
+
+/* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android every mode fills a
+ * 4:3 display, as on the monitor of the game's time (320x200 is not 4:3 in
+ * pixels), and the on-screen gamepad is drawn over the picture (default 0) */
+#ifndef GAME_WINAPI_TOUCH_GAMEPAD
+#define GAME_WINAPI_TOUCH_GAMEPAD 0
+#endif
 
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -445,6 +453,32 @@ static void CountFrame(void)
     }
 }
 
+#if GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__)
+static void CopyToDisplay(struct IDirectDraw_c *dd)
+{
+    SDL_Rect picture;
+    int w, h;
+
+    if (SDL_GetRendererOutputSize(dd->Renderer, &w, &h) == 0)
+    {
+        picture.w = (w * 3 > h * 4) ? h * 4 / 3 : w;
+        picture.h = (w * 3 > h * 4) ? h : w * 3 / 4;
+        picture.x = (w - picture.w) / 2;
+        picture.y = (h - picture.h) / 2;
+
+        SDL_SetRenderDrawColor(dd->Renderer, 0, 0, 0, 255);
+        SDL_RenderClear(dd->Renderer);
+        SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, &picture);
+        TouchGamepad_Draw(dd->Renderer);
+    }
+}
+#else
+static void CopyToDisplay(struct IDirectDraw_c *dd)
+{
+    SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, NULL);
+}
+#endif
+
 static void Present(struct IDirectDraw_c *dd)
 {
     struct IDirectDrawSurface_c *prim;
@@ -469,7 +503,7 @@ static void Present(struct IDirectDraw_c *dd)
 
     SDL_UnlockTexture(dd->Texture);
 
-    SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, NULL);
+    CopyToDisplay(dd);
     SDL_RenderPresent(dd->Renderer);
 }
 
@@ -1314,10 +1348,14 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
     }
 #endif
 
+    /* a logical size would also make SDL move the touches into the picture,
+     * away from the buttons: CopyToDisplay scales by itself */
+#if !(GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__))
     if (0 != SDL_RenderSetLogicalSize(lpThis->Renderer, dwWidth, dwHeight))
     {
         return DDERR_UNSUPPORTEDMODE;
     }
+#endif
 
     if (lpThis->Texture != NULL)
     {

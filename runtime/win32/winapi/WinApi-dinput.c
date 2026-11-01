@@ -16,6 +16,7 @@
 #include "Game_hooks.h"
 #include "Game_keys.h"
 #include "Game_memory.h"
+#include "touchgamepad.h"
 
 /* the clock of the guest (timeGetTime, GetTickCount): the time of a data record is read
    against it, not against SDL's */
@@ -318,10 +319,16 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
     if (d->kind == DEV_KEYBOARD)
     {
         int n = 0, sc;
+        SDL_Keycode held;
         const uint8_t *keys = SDL_GetKeyboardState(&n);
         if (a1 < 256) return DIERR_INVALIDPARAM;
         for (sc = 0; sc < n; sc++)
             if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) { uint8_t dik = Game_PcScancode((SDL_Scancode)sc); if (dik) out[dik] = 0x80; }
+        for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)
+        {
+            uint8_t dik = Game_PcScancode(SDL_GetScancodeFromKey(held));
+            if (dik) out[dik] = 0x80;
+        }
     }
     else if (d->kind == DEV_MOUSE)
     {
