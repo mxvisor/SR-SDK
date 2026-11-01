@@ -150,6 +150,18 @@ static int ScaledWidth, ScaledHeight;
  * draws into: Game_TextureData, Render_Width x Render_Height 32-bit pixels. */
 int Game_Display_Create(void)
 {
+#if defined(GAME_WINAPI) && defined(__ANDROID__)
+    /* Android has one window, and a Win32 game opens its own: nothing here
+     * may take it (Game_Display_Flip draws nothing without a renderer). */
+    Game_TextureData = calloc(1024 * 768, Display_Bitsperpixel / 8);
+    if (Game_TextureData == NULL)
+    {
+        SDL_OutOfMemory();
+        return -1;
+    }
+    return 0;
+#endif
+
     Game_Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                    Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG);
     if (Game_Window == NULL) return -1;
@@ -261,6 +273,6 @@ void Game_Display_Flip(void)
     SDL_SetRenderDrawColor(Game_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(Game_Renderer);
     SDL_RenderCopy(Game_Renderer, source, NULL, &picture);
-    TouchGamepad_Draw();
+    TouchGamepad_Draw(Game_Renderer);
     SDL_RenderPresent(Game_Renderer);
 }

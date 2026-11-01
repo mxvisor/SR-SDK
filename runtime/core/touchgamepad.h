@@ -31,7 +31,10 @@
 
 #include "Game_defs.h"
 
-void TouchGamepad_Draw(void);
+void TouchGamepad_Draw(SDL_Renderer *renderer);
 int  TouchGamepad_Event(SDL_Event *event);
+/* the button `index`: 0 past the last one, otherwise *key is what it holds
+ * down (SDLK_UNKNOWN: nothing); EmulateKey does not reach SDL's key state */
+int  TouchGamepad_HeldKey(int index, SDL_Keycode *key);
 
 #endif /* _TOUCHGAMEPAD_H_INCLUDED_ */

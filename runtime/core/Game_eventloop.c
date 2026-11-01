@@ -93,6 +93,10 @@ int Game_QuitRequested;
  * takes the answer away, and the guest's thread, which opens the game's window,
  * waits for ever.  The pump stays off while another thread does that. */
 static SDL_mutex *Game_PumpMutex;
+/* On Android the pump also parks the program on a pause and hands the GL
+ * context over, which works on the thread that has the context: the guest's
+ * thread draws there, and the message functions pump on it, so this one must
+ * not (the surface would die under the renderer: black screen on resume). */
 
 void Game_ShowWindow(SDL_Window *window)
 {
@@ -212,9 +216,11 @@ void Game_Event_Loop(void)
             if (PumpEvents)
             {
                 PumpEvents = 0;
+#if !(defined(GAME_WINAPI) && defined(__ANDROID__))
                 if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
                 SDL_PumpEvents();
                 if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+#endif
             }
             else
             {

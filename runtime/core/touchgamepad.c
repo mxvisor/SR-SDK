@@ -48,6 +48,7 @@ typedef struct {
 } GPButton;
 
 static int gp_W, gp_H;
+static SDL_Renderer *gp_renderer;
 
 #define GP_GREY   150, 150, 160
 #define GP_LIGHT  170, 170, 180
@@ -71,8 +72,7 @@ static void gp_ensure_layout(void)
 {
     int W, H;
 
-    if (Game_Renderer == NULL) return;
-    if (SDL_GetRendererOutputSize(Game_Renderer, &W, &H) != 0) return;
+    if (SDL_GetRendererOutputSize(gp_renderer, &W, &H) != 0) return;
     if (W == gp_W && H == gp_H) return;
     gp_layout(W, H);
     gp_W = W;
@@ -91,7 +91,7 @@ static SDL_Texture *gp_glyph_texture(int chr)
     if (gp_glyph[chr] != NULL) return gp_glyph[chr];
 
     idx = vkfont_chr_index[chr];
-    if (idx < 0 || Game_Renderer == NULL) return NULL;
+    if (idx < 0) return NULL;
 
     surf = SDL_CreateRGBSurface(0, vkfont_chr_width_pixels, vkfont_chr_height,
                                 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
@@ -120,7 +120,7 @@ static SDL_Texture *gp_glyph_texture(int chr)
         src += vkfont_chr_width_bytes;
     }
 
-    tex = SDL_CreateTextureFromSurface(Game_Renderer, surf);
+    tex = SDL_CreateTextureFromSurface(gp_renderer, surf);
     SDL_FreeSurface(surf);
     if (tex != NULL) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
     gp_glyph[chr] = tex;
@@ -157,7 +157,7 @@ static void gp_draw_text(const char *str, int cx, int cy, int maxw, int maxh)
         dst.y = (int)y0;
         dst.w = (int)(cw + 0.5f);
         dst.h = (int)(chh + 0.5f);
-        SDL_RenderCopy(Game_Renderer, tex, NULL, &dst);
+        SDL_RenderCopy(gp_renderer, tex, NULL, &dst);
     }
 }
 
@@ -190,7 +190,7 @@ static void gp_fill_triangle(int x0, int y0, int x1, int y1, int x2, int y2)
 
         xleft = (int)(xa < xb ? xa : xb);
         xright = (int)(xa < xb ? xb : xa);
-        SDL_RenderDrawLine(Game_Renderer, xleft, y, xright, y);
+        SDL_RenderDrawLine(gp_renderer, xleft, y, xright, y);
     }
 }
 
@@ -219,32 +219,33 @@ static void gp_draw_button(GPButton *btn)
     rect.w = btn->w;
     rect.h = btn->h;
 
-    SDL_SetRenderDrawBlendMode(Game_Renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(Game_Renderer, r, g, b, a);
-    SDL_RenderFillRect(Game_Renderer, &rect);
+    SDL_SetRenderDrawBlendMode(gp_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(gp_renderer, r, g, b, a);
+    SDL_RenderFillRect(gp_renderer, &rect);
 
-    SDL_SetRenderDrawColor(Game_Renderer, 255, 255, 255, active ? 230 : 140);
-    SDL_RenderDrawRect(Game_Renderer, &rect);
+    SDL_SetRenderDrawColor(gp_renderer, 255, 255, 255, active ? 230 : 140);
+    SDL_RenderDrawRect(gp_renderer, &rect);
 
     if (btn->arrow)
     {
-        SDL_SetRenderDrawColor(Game_Renderer, 255, 255, 255, active ? 255 : 200);
+        SDL_SetRenderDrawColor(gp_renderer, 255, 255, 255, active ? 255 : 200);
         gp_draw_arrow(btn->arrow, btn->x, btn->y, btn->w, btn->h);
     }
     else if (btn->label != NULL)
     {
-        SDL_SetRenderDrawColor(Game_Renderer, 255, 255, 255, 255);
+        SDL_SetRenderDrawColor(gp_renderer, 255, 255, 255, 255);
         gp_draw_text(btn->label, btn->x + btn->w / 2, btn->y + btn->h / 2,
                      btn->w * 4 / 5, btn->h * 3 / 4);
     }
 }
 
-void TouchGamepad_Draw(void)
+void TouchGamepad_Draw(SDL_Renderer *renderer)
 {
     int i;
 
+    if (renderer == NULL) return;
+    gp_renderer = renderer;
     gp_ensure_layout();
-    if (Game_Renderer == NULL) return;
 
     for (i = 0; i < GP_NBUTTONS; i++)
     {
@@ -295,8 +296,6 @@ int TouchGamepad_Event(SDL_Event *event)
     int x, y, idx, cur;
     Sint64 finger;
 
-    gp_ensure_layout();
-
     switch (event->type)
     {
         case SDL_FINGERDOWN:
@@ -343,15 +342,30 @@ int TouchGamepad_Event(SDL_Event *event)
     return 1;
 }
 
+int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
+{
+    if (index < 0 || index >= GP_NBUTTONS) return 0;
+    *key = (gp_buttons[index].finger >= 0) ? gp_buttons[index].key : SDLK_UNKNOWN;
+    return 1;
+}
+
 #else /* !__ANDROID__ */
 
-void TouchGamepad_Draw(void)
+void TouchGamepad_Draw(SDL_Renderer *renderer)
 {
+    (void)renderer;
 }
 
 int TouchGamepad_Event(SDL_Event *event)
 {
     (void)event;
+    return 0;
+}
+
+int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
+{
+    (void)index;
+    (void)key;
     return 0;
 }
 

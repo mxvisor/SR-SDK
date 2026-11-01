@@ -64,6 +64,12 @@
 #ifndef GAME_WINAPI_ACTIVATE_APP_ON_IDLE
 #define GAME_WINAPI_ACTIVATE_APP_ON_IDLE 0
 #endif
+/* GAME_WINAPI_TOUCH_GAMEPAD 1: the game draws the on-screen gamepad
+ * (touchgamepad.h) over its picture, and the touches are the gamepad's, not
+ * the mouse's (default 0) */
+#ifndef GAME_WINAPI_TOUCH_GAMEPAD
+#define GAME_WINAPI_TOUCH_GAMEPAD 0
+#endif
 /* GAME_WINAPI_COMMAND_ON_IDLE: the command id the program gets when the user
  * picks the first item of its menu (the game asks "start a new game?" and
  * then starts the level); 0 = no such command */
@@ -88,6 +94,8 @@ static int post_command_redraw = 0;
 #endif
 #include "WinApi.h"
 #include "WinApi-winmm.h"
+#include "touchgamepad.h"
+#include "Game_keys.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -1787,6 +1795,9 @@ static int find_event(SDL_Event *event, int remove, int wait)
         case SDL_FINGERDOWN:
         case SDL_FINGERUP:
             // finger touch event
+#if GAME_WINAPI_TOUCH_GAMEPAD
+            if (TouchGamepad_Event(event)) break;
+#endif
             if (mouse_renderer != NULL)
             {
                 if (!virtual_keyboard_state)
@@ -2978,32 +2989,40 @@ int16_t CCALL GetKeyState_c(int32_t nVirtKey)
 /* 256 bytes: the high bit of the byte of a virtual key is set while the key is
  * down, the low bit of a toggle key while it is on.  The bytes are never left
  * unwritten, a game may poll them (to cancel a movie, for example). */
+static void key_state_set(uint8_t *state, SDL_Keycode key)
+{
+    if (key >= 'a' && key <= 'z') state[key - 'a' + 'A'] = 0x80;
+    else if (key >= '0' && key <= '9') state[key] = 0x80;
+    else if (key == SDLK_SPACE) state[0x20] = 0x80;
+    else if (key == SDLK_RETURN) state[0x0D] = 0x80;
+    else if (key == SDLK_ESCAPE) state[0x1B] = 0x80;
+    else if (key == SDLK_BACKSPACE) state[0x08] = 0x80;
+    else if (key == SDLK_TAB) state[0x09] = 0x80;
+    else if (key == SDLK_LEFT) state[0x25] = 0x80;
+    else if (key == SDLK_UP) state[0x26] = 0x80;
+    else if (key == SDLK_RIGHT) state[0x27] = 0x80;
+    else if (key == SDLK_DOWN) state[0x28] = 0x80;
+}
+
 uint32_t CCALL GetKeyboardState_c(void *lpKeyState)
 {
     uint8_t *state = (uint8_t *)lpKeyState;
     const uint8_t *keys;
     SDL_Keymod mods = SDL_GetModState();
+    SDL_Keycode held;
     int count = 0, sc;
 
     if (state == NULL) return 0;
+    Game_AutoKeysStart();
     memset(state, 0, 256);
     keys = SDL_GetKeyboardState(&count);
     for (sc = 0; sc < count; sc++)
     {
-        SDL_Keycode key;
-        if (!keys[sc]) continue;
-        key = SDL_GetKeyFromScancode((SDL_Scancode)sc);
-        if (key >= 'a' && key <= 'z') state[key - 'a' + 'A'] = 0x80;
-        else if (key >= '0' && key <= '9') state[key] = 0x80;
-        else if (key == SDLK_SPACE) state[0x20] = 0x80;
-        else if (key == SDLK_RETURN) state[0x0D] = 0x80;
-        else if (key == SDLK_ESCAPE) state[0x1B] = 0x80;
-        else if (key == SDLK_BACKSPACE) state[0x08] = 0x80;
-        else if (key == SDLK_TAB) state[0x09] = 0x80;
-        else if (key == SDLK_LEFT) state[0x25] = 0x80;
-        else if (key == SDLK_UP) state[0x26] = 0x80;
-        else if (key == SDLK_RIGHT) state[0x27] = 0x80;
-        else if (key == SDLK_DOWN) state[0x28] = 0x80;
+        if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) key_state_set(state, SDL_GetKeyFromScancode((SDL_Scancode)sc));
+    }
+    for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)
+    {
+        key_state_set(state, held);
     }
     if (mods & KMOD_SHIFT) state[0x10] = 0x80;
     if (mods & KMOD_CTRL) state[0x11] = 0x80;
