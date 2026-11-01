@@ -88,6 +88,26 @@ int Game_QueueKeyboardEvent(const SDL_Event *event)
 /* the player closed the window: the game's stop is not an error to report */
 int Game_QuitRequested;
 
+/* SDL's X11 driver waits for the server's answer to showing or hiding a window by
+ * reading the connection itself.  A pump on the event loop's thread at that moment
+ * takes the answer away, and the guest's thread, which opens the game's window,
+ * waits for ever.  The pump stays off while another thread does that. */
+static SDL_mutex *Game_PumpMutex;
+
+void Game_ShowWindow(SDL_Window *window)
+{
+    if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
+    SDL_ShowWindow(window);
+    if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+}
+
+void Game_HideWindow(SDL_Window *window)
+{
+    if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
+    SDL_HideWindow(window);
+    if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+}
+
 void Game_Event_Loop(void)
 {
     SDL_Thread *MainThread;
@@ -119,6 +139,8 @@ void Game_Event_Loop(void)
     Game_TimerTick = 0;
     Game_TimerRun = 0;
     Game_VSyncTick = 0;
+
+    Game_PumpMutex = SDL_CreateMutex();
 
     Game_FlipSem = SDL_CreateSemaphore(0);
     if (Game_FlipSem == NULL)
@@ -190,7 +212,9 @@ void Game_Event_Loop(void)
             if (PumpEvents)
             {
                 PumpEvents = 0;
+                if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
                 SDL_PumpEvents();
+                if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
             }
             else
             {

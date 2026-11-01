@@ -30,5 +30,8 @@ NORETURN void Game_StopMain(void);
 int Game_MainThread(void *data);
 int Game_TimerThread(void *data);
 int Game_FlipThread(void *data);
+/* SDL_ShowWindow and SDL_HideWindow for a thread that is not the event loop's */
+void Game_ShowWindow(struct SDL_Window *window);
+void Game_HideWindow(struct SDL_Window *window);
 
 #endif /* _GAME_THREAD_H_INCLUDED_ */

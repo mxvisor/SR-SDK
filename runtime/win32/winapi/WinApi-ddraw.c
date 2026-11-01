@@ -37,6 +37,8 @@
 #include "WinApi-game.h"
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
+#include "Game_defs.h"
+#include "Game_thread.h"
 
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -816,7 +818,7 @@ uint32_t CCALL IDirectDraw_Release_c(struct IDirectDraw_c *lpThis)
         if (winapi_dd_screen == lpThis) winapi_dd_screen = NULL;
         if (lpThis->Window != NULL)
         {
-            SDL_HideWindow(lpThis->Window);
+            Game_HideWindow(lpThis->Window);
         }
         if (lpThis->Texture != NULL)
         {
@@ -1244,7 +1246,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
     {
         /* the device is drawn with OpenGL: an OpenGL window without an SDL
          * renderer, Present shows the primary through WinApi-d3d.c */
-        SDL_ShowWindow(lpThis->Window);
+        Game_ShowWindow(lpThis->Window);
         winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
 
         /* The window was just shown; a real Windows would send WM_ACTIVATEAPP */
@@ -1272,7 +1274,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
             return DDERR_UNSUPPORTEDMODE;
         }
 
-        SDL_ShowWindow(lpThis->Window);
+        Game_ShowWindow(lpThis->Window);
         winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
     }
 
@@ -1292,7 +1294,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
             return DDERR_UNSUPPORTEDMODE;
         }
 
-        SDL_ShowWindow(lpThis->Window);
+        Game_ShowWindow(lpThis->Window);
         winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
     }
 
@@ -2127,7 +2129,7 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
         return NULL;
     }
 
-    SDL_ShowWindow(dd_gl_window);
+    Game_ShowWindow(dd_gl_window);
     winapi_dd_window_id = SDL_GetWindowID(dd_gl_window);
     Winapi_PostActivateApp(1);
     return dd_gl_window;
@@ -2139,6 +2141,6 @@ void Winapi_ScreenCloseGL(void)
     {
         /* hidden, not destroyed, as in IDirectDraw_Release; Winapi_DestroyDirectDrawWindow
          * and SDL_Quit take it down */
-        SDL_HideWindow(dd_gl_window);
+        Game_HideWindow(dd_gl_window);
     }
 }
