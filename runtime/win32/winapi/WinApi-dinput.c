@@ -241,6 +241,11 @@ static void mouse_init(void)
 {
     if (mouse_mutex != NULL) return;
     mouse_mutex = SDL_CreateMutex();
+#if GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__)
+    /* the touchpad is the mouse: SDL's own of a finger would click at once, on
+     * the gamepad's buttons too */
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
     SDL_AddEventWatch(mouse_event_watch, NULL);
 }
 

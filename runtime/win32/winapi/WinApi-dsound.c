@@ -35,6 +35,7 @@
 #include "WinApi-config.h"
 #include "Game-Memory.h"
 #include "Game_sound.h"
+#include "Game_hooks.h"
 #ifdef USE_SPEEXDSP_RESAMPLER
 #include <speex/speex_resampler.h>
 #endif
@@ -1827,7 +1828,13 @@ uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer
 
     if (pdwCurrentPlayCursor != NULL)
     {
+#ifdef GAME_DSOUND_CURSOR_BEHIND_MS
+        /* a game that keeps its own mix a fixed way ahead of the play cursor
+         * writes that much closer to what is really playing */
+        *pdwCurrentPlayCursor = (lpThis->read_offset + lpThis->size - (((uint32_t)lpThis->freq * GAME_DSOUND_CURSOR_BEHIND_MS / 1000) << lpThis->sample_size_shift)) % lpThis->size;
+#else
         *pdwCurrentPlayCursor = lpThis->read_offset;
+#endif
     }
 
     if (pdwCurrentWriteCursor != NULL)
