@@ -18,6 +18,12 @@
 #include "Game_memory.h"
 #include "touchgamepad.h"
 
+/* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android a finger away from
+ * the buttons is the mouse of a game that reads it here (default 0) */
+#ifndef GAME_WINAPI_TOUCH_GAMEPAD
+#define GAME_WINAPI_TOUCH_GAMEPAD 0
+#endif
+
 /* the clock of the guest (timeGetTime, GetTickCount): the time of a data record is read
    against it, not against SDL's */
 #ifdef _WIN32
@@ -111,9 +117,88 @@ static void mouse_queue_put(uint8_t ofs, uint32_t data, uint32_t time)
     mouse_head = (mouse_head + 1) % MOUSE_QUEUE_SIZE;
 }
 
+#if GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__)
+
+#define TOUCHPAD_NO_FINGER (-1)
+#define TOUCHPAD_TAP_MS 250     /* a finger on the glass this long at most is a click */
+#define TOUCHPAD_TAP_MOVE 0.02f /* and it moved this far at most (of the window) */
+#define TOUCHPAD_CLICK_MS 80    /* a game polling the state has to see the button */
+
+extern int winapi_get_dd_mode(int *width, int *height);
+
+static Sint64 touchpad_finger = TOUCHPAD_NO_FINGER;
+static uint32_t touchpad_down_time, touchpad_click_end;
+static float touchpad_moved, touchpad_rest_x, touchpad_rest_y;
+
+/* The game draws its own cursor from the mouse's motion and SDL's mouse of a
+ * finger is left out above: the free part of the screen is a touchpad, a drag
+ * moves the cursor and a tap clicks. */
+static void touchpad_event(const SDL_Event *event)
+{
+    float move_x, move_y;
+    int width = 640, height = 480, dx, dy;
+
+    switch (event->type)
+    {
+        case SDL_FINGERDOWN:
+            if (touchpad_finger != TOUCHPAD_NO_FINGER) return;
+            if (TouchGamepad_ButtonAt(event->tfinger.x, event->tfinger.y)) return;
+            touchpad_finger = event->tfinger.fingerId;
+            touchpad_down_time = Winapi_GetTicks();
+            touchpad_moved = 0.0f;
+            break;
+        case SDL_FINGERMOTION:
+            if (event->tfinger.fingerId != touchpad_finger) return;
+            touchpad_moved += SDL_fabsf(event->tfinger.dx) + SDL_fabsf(event->tfinger.dy);
+            winapi_get_dd_mode(&width, &height);
+            move_x = event->tfinger.dx * width * 1.5f + touchpad_rest_x;
+            move_y = event->tfinger.dy * height * 1.5f + touchpad_rest_y;
+            dx = (int)move_x;
+            dy = (int)move_y;
+            touchpad_rest_x = move_x - dx;
+            touchpad_rest_y = move_y - dy;
+            SDL_LockMutex(mouse_mutex);
+            mouse_dx += dx;
+            mouse_dy += dy;
+            if (dx) mouse_queue_put(0, (uint32_t)dx, Winapi_GetTicks()); /* DIMOFS_X */
+            if (dy) mouse_queue_put(4, (uint32_t)dy, Winapi_GetTicks()); /* DIMOFS_Y */
+            SDL_UnlockMutex(mouse_mutex);
+            break;
+        case SDL_FINGERUP:
+            if (event->tfinger.fingerId != touchpad_finger) return;
+            touchpad_finger = TOUCHPAD_NO_FINGER;
+            if ((Winapi_GetTicks() - touchpad_down_time > TOUCHPAD_TAP_MS) || (touchpad_moved > TOUCHPAD_TAP_MOVE)) return;
+            SDL_LockMutex(mouse_mutex);
+            mouse_buttons_down[0] = 0x80;
+            mouse_queue_put(12, 0x80, Winapi_GetTicks()); /* DIMOFS_BUTTON0 */
+            touchpad_click_end = Winapi_GetTicks() + TOUCHPAD_CLICK_MS;
+            SDL_UnlockMutex(mouse_mutex);
+            break;
+        default:
+            break;
+    }
+}
+
+/* mouse_mutex is held */
+static void touchpad_end_click(void)
+{
+    if ((touchpad_click_end == 0) || ((int32_t)(Winapi_GetTicks() - touchpad_click_end) < 0)) return;
+    touchpad_click_end = 0;
+    mouse_buttons_down[0] = 0;
+    mouse_queue_put(12, 0, Winapi_GetTicks()); /* DIMOFS_BUTTON0 */
+}
+
+#else
+
+#define touchpad_event(event)
+#define touchpad_end_click()
+
+#endif
+
 static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
+    touchpad_event(event);
     switch (event->type)
     {
         case SDL_MOUSEMOTION:
@@ -335,6 +420,7 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
         int32_t *axes = (int32_t *)out; /* DIMOUSESTATE: lX, lY, lZ, rgbButtons[4] */
         if (a1 < 16) return DIERR_INVALIDPARAM;
         SDL_LockMutex(mouse_mutex);
+        touchpad_end_click();
         axes[0] = mouse_dx;
         axes[1] = mouse_dy;
         axes[2] = mouse_dz;
@@ -376,6 +462,7 @@ uint32_t CCALL IDirectInputDevice_GetDeviceData_c(uint32_t a0, uint32_t a1, uint
     else if (d->kind == DEV_MOUSE && mouse_mutex != NULL)
     {
         SDL_LockMutex(mouse_mutex);
+        touchpad_end_click();
         tail = mouse_tail;
         while (n < capacity && tail != mouse_head)
         {

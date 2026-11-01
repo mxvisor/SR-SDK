@@ -356,6 +356,11 @@ int TouchGamepad_Event(SDL_Event *event)
     return 1;
 }
 
+int TouchGamepad_ButtonAt(float x, float y)
+{
+    return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
+}
+
 int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
 {
     if (index < 0 || index >= GP_NBUTTONS) return 0;
@@ -382,6 +387,13 @@ void TouchGamepad_Draw(SDL_Renderer *renderer)
 int TouchGamepad_Event(SDL_Event *event)
 {
     (void)event;
+    return 0;
+}
+
+int TouchGamepad_ButtonAt(float x, float y)
+{
+    (void)x;
+    (void)y;
     return 0;
 }
 

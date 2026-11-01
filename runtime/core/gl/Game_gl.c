@@ -362,6 +362,12 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
 
     SDL_GL_GetDrawableSize(window, &ww, &wh);
     if (ww < 1 || wh < 1) return;
+#if defined(GL_TOUCH_GAMEPAD)
+    /* as DirectDraw's CopyToDisplay: every mode fills a 4:3 display (640x400 is
+     * not 4:3 in pixels) */
+    width = 4;
+    height = 3;
+#endif
     if ((int64_t)ww * height > (int64_t)wh * width)
     {
         vh = wh;
