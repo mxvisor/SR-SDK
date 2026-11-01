@@ -198,8 +198,11 @@ linux_binary = program_nodes if (program_nodes is not None and device == LINUX_D
 windows_binary = File(os.path.join(WINDOWS_BIN_DIR, PROGRAM + '.exe'))
 dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS]
 data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
+release = release_files('linux') + release_files('windows')
+# scons compares the sources by their contents: the names are a source too, or a
+# renamed release file leaves the archive with the old name
+names = env.Value(' '.join(os.path.relpath(path, RELEASE_DIR) for path in release))
 archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
-                      linux_binary + [windows_binary] + dlls + data
-                      + release_files('linux') + release_files('windows'),
+                      linux_binary + [windows_binary] + dlls + data + release + [names],
                       pack_archive)
 env.Alias('portable', archive)
