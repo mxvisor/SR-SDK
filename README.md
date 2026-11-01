@@ -99,6 +99,7 @@ opengl=no               # the shared OpenGL module, runtime/core/gl (glad, conte
 glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide (implies opengl)
 d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl (implies opengl)
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
+llasm_flags=-guest-data-in-memory -pic  # more flags of llasm: the guest's data at its original addresses
 program=game                       # the port's name: build/bin/<device>/<program>, and
                                    # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)
@@ -225,6 +226,8 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_CD_OPTIONAL` | the game works without its disc: "no CD" is printed only when the CD trace is on |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
+| `GAME_KEY_FILTER(key)` | optional: non-zero for a key event (`const SDL_KeyboardEvent *`) the port takes for itself, a toggle key say |
+| `GAME_KEYBOARD_BLOCKED()`, `GAME_MOUSE_BLOCKED()` | optional: non-zero while the game reads keys or the mouse by itself |
 
 A DOS game (`runtime/dos`) also takes, all optional:
 
@@ -237,7 +240,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
 | `GAME_DOS_ENV` | without `GAME_RUNTIME_INIT`: the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
-| `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `"game.log"`) |
+| `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
@@ -254,17 +257,36 @@ of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows p
 a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
 
 A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and its settings file in
-`Game_config.c` (`--config-file=` or `GAME_CONFIG_FILENAME` in the game directory; `Sound`,
-`Music` and the keys of the display, audio and input). It says in `Game_hooks.h`:
-`GAME_CONFIG_FILENAME` (required), `GAME_LOG_FILE` and the optional `GAME_WIN_START()`, called
-once the winapi layer is up (a registry the game reads). The layer also takes, all optional:
-`GAME_WINAPI_KEY_MESSAGES` (0: the message pump does not deliver key events; default 1),
-`GAME_WINAPI_START_DIRECTORY` (the directory the game starts in, `"D:\\"` for the disc;
-default the process's own), `GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption)` (a button to
-answer a message box with without showing it; default 0). The game brings
-`WinApi-game.h`, the prototypes of the imports of its executable, and
+`Game_config.c` (`--config-file=`, else `<program>.cfg` in the game directory; `Sound`,
+`Music` and the keys of the display, audio and input). In `Game_hooks.h`, all optional:
+
+| Macro | Meaning |
+|---|---|
+| `GAME_CONFIG_FILENAME`, `GAME_LOG_FILE` | another name for the settings file or the log (default `<program>.cfg`, `<program>.log`) |
+| `GAME_WIN_START()` | called once the winapi layer is up (a registry the game reads) |
+| `GAME_WINAPI_CONFIG_FILE` | the file `ReadConfiguration` reads (default `<program>.cfg`) |
+| `GAME_WINAPI_KEY_MESSAGES` | 0: the message pump does not deliver key events (default 1) |
+| `GAME_WINAPI_START_DIRECTORY` | the directory the game starts in, `"D:\\"` for the disc (default the process's own) |
+| `GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption)` | a button to answer a message box with without showing it (default 0) |
+| `GAME_WINAPI_PAINT_WHEN_IDLE` | 1: the game draws in its window procedure and waits for the repaint request; the port makes the request when the program has no other message |
+| `GAME_WINAPI_ACTIVATE_APP_ON_IDLE` | 1: the port sends `WM_ACTIVATEAPP` with 0 and then with 1 when the program has no other message (the game makes its picture buffer on the first and draws on the second) |
+| `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
+| `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D` |
+| `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
+| `GAME_GUEST_LOW_MEMORY()` | how much of the guest's address space from `pointer_offset` up has to stay free of the host (default 1 MiB + 64 KiB) |
+| `GAME_PROC_LOOKUP(name)` | `GetProcAddress` asks the game first: the guest address of the procedure, or 0 for the layer's table |
+| `GAME_EXTRA_PROCS(X)` | more exports for the `GetProcAddress` table of the layer: `X(DirectInputCreateA) X(...)` |
+| `GAME_MODULE_PATH_SEP` | the path separator of `GetModuleFileNameA`, a string (default `"/"`) |
+
+The game brings `WinApi-game.h`, the prototypes of the imports of its executable, and
 `WinApi-game*.c`, their implementation, which `WinApi-guest.h` (calling back into the
-guest) completes.
+guest) completes. A window opened on a thread other than the event loop's is shown and
+hidden with `Game_ShowWindow` and `Game_HideWindow` (`Game_thread.h`): SDL's X11 driver
+waits for the server's answer on the connection the event loop pumps.
+
+The remaining `GAME_*` names of the runtime are not hooks: `GAME_D3D_GL`, `GAME_WINAPI` and
+`GAME_PROGRAM_NAME` come from `scons/game.py`, `GAME_CORE_CONSUMES_INPUT`, `GAME_DOS_ENTRY` and
+`GAME_ENTRY_IS_START` are derived from the platform, the others are include guards.
 
 On Android the game's `main` calls `Game_AndroidSetup()` (`Game_android.h`)
 first: it sends stdout and stderr to logcat and sets `GAME_ENV("DATA_DIR")`
