@@ -57,6 +57,11 @@ func SetPriorityClass_c *hProcess, fdwPriority
 func SetThreadPriority_c *hThread, nPriority
 funcv Sleep_c cMilliseconds
 func WriteFile_c *hFile, *lpBuffer, nNumberOfBytesToWrite, *lpNumberOfBytesWritten, *lpOverlapped
+func GetDiskFreeSpaceA_c *lpRootPathName, *lpSectorsPerCluster, *lpBytesPerSector, *lpNumberOfFreeClusters, *lpTotalNumberOfClusters
+func GetDriveTypeA_c *lpRootPathName
+func GetLogicalDrives_c
+func GetLogicalDriveStringsA_c nBufferLength, *lpBuffer
+func GetVolumeInformationA_c *lpRootPathName, *lpVolumeNameBuffer, nVolumeNameSize, *lpVolumeSerialNumber, *lpMaximumComponentLength, *lpFileSystemFlags, *lpFileSystemNameBuffer, nFileSystemNameSize
 
 proc Beep_asm2c public
 
@@ -489,3 +494,73 @@ proc WriteFile_asm2c public
 
 endp ; end procedure WriteFile_asm2c
 
+
+proc GetDiskFreeSpaceA_asm2c public
+
+; [esp + 5*4] = LPDWORD lpTotalNumberOfClusters
+; [esp + 4*4] = LPDWORD lpNumberOfFreeClusters
+; [esp + 3*4] = LPDWORD lpBytesPerSector
+; [esp + 2*4] = LPDWORD lpSectorsPerCluster
+; [esp +   4] = LPCSTR  lpRootPathName
+; [esp      ] = return address
+
+        Call_Asm_Stack5 GetDiskFreeSpaceA_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure GetDiskFreeSpaceA_asm2c
+
+
+proc GetDriveTypeA_asm2c public
+
+; [esp +   4] = LPCSTR lpRootPathName
+; [esp      ] = return address
+
+        Call_Asm_Stack1 GetDriveTypeA_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure GetDriveTypeA_asm2c
+
+
+proc GetLogicalDrives_asm2c public
+
+; [esp      ] = return address
+
+        Call_Asm_Stack0 GetLogicalDrives_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure GetLogicalDrives_asm2c
+
+
+proc GetLogicalDriveStringsA_asm2c public
+
+; [esp + 2*4] = LPSTR lpBuffer
+; [esp +   4] = DWORD nBufferLength
+; [esp      ] = return address
+
+        Call_Asm_Stack2 GetLogicalDriveStringsA_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure GetLogicalDriveStringsA_asm2c
+
+
+proc GetVolumeInformationA_asm2c public
+
+; [esp + 8*4] = DWORD   nFileSystemNameSize
+; [esp + 7*4] = LPSTR   lpFileSystemNameBuffer
+; [esp + 6*4] = LPDWORD lpFileSystemFlags
+; [esp + 5*4] = LPDWORD lpMaximumComponentLength
+; [esp + 4*4] = LPDWORD lpVolumeSerialNumber
+; [esp + 3*4] = DWORD   nVolumeNameSize
+; [esp + 2*4] = LPSTR   lpVolumeNameBuffer
+; [esp +   4] = LPCSTR  lpRootPathName
+; [esp      ] = return address
+
+        Call_Asm_Stack8 GetVolumeInformationA_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure GetVolumeInformationA_asm2c

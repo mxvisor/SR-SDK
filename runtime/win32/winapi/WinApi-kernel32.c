@@ -224,6 +224,114 @@ char Winapi_CdDriveLetter(void)
     return letter;
 }
 
+/* The drives the game sees: C: is the hard disk, the CD drive (Winapi_CdDriveLetter)
+ * holds the port's disc when there is one. Games look for their disc on every
+ * CD-ROM drive and by its volume label. */
+
+/* the drive of a root path ("D:\\"), C for the current one; 0 for a drive that is not there */
+static char drive_of_root(const char *root)
+{
+    char drive;
+
+    if (root == NULL) return 'C';
+    if (root[0] == 0 || root[1] != ':') return 0;
+    drive = (char)toupper((unsigned char)root[0]);
+    if (drive == 'C') return 'C';
+    if (drive == Winapi_CdDriveLetter() && Game_CdPresent()) return drive;
+    return 0;
+}
+
+/* the volume label of the disc: the volume identifier of the image's PVD; a copy
+ * of the disc in a directory has GAME_CD_VOLUME_LABEL */
+static void cd_volume_label(char *label, size_t size)
+{
+    uint8_t sector[GAME_CD_SECTOR_DATA];
+    size_t length;
+
+#ifdef GAME_CD_VOLUME_LABEL
+    snprintf(label, size, "%s", GAME_CD_VOLUME_LABEL);
+#else
+    label[0] = 0;
+#endif
+    if (Game_CdDiscDir()[0] != 0 || Game_CdReadSector(16, sector) != 0 ||
+        memcmp(sector + 1, "CD001", 5) != 0)
+    {
+        return;
+    }
+    length = 32;
+    while (length != 0 && sector[40 + length - 1] == ' ') length--;
+    if (length >= size) length = size - 1;
+    memcpy(label, sector + 40, length);
+    label[length] = 0;
+}
+
+uint32_t CCALL GetDriveTypeA_c(const char *lpRootPathName)
+{
+    switch (drive_of_root(lpRootPathName))
+    {
+        case 0: return 1;       /* DRIVE_NO_ROOT_DIR */
+        case 'C': return 3;     /* DRIVE_FIXED */
+        default: return 5;      /* DRIVE_CDROM */
+    }
+}
+
+uint32_t CCALL GetLogicalDrives_c(void)
+{
+    uint32_t mask = 1u << ('C' - 'A');
+
+    if (Game_CdPresent()) mask |= 1u << (Winapi_CdDriveLetter() - 'A');
+    return mask;
+}
+
+uint32_t CCALL GetLogicalDriveStringsA_c(uint32_t nBufferLength, char *lpBuffer)
+{
+    char drives[] = "C:\\\0D:\\\0";
+    uint32_t length = Game_CdPresent() ? 8 : 4;
+
+    drives[4] = Winapi_CdDriveLetter();
+    drives[length] = 0;
+    /* the strings and the final empty one; without room: the size needed */
+    if (lpBuffer == NULL || nBufferLength < length + 1) return length + 1;
+    memcpy(lpBuffer, drives, length + 1);
+    return length;
+}
+
+uint32_t CCALL GetVolumeInformationA_c(const char *lpRootPathName, char *lpVolumeNameBuffer, uint32_t nVolumeNameSize, uint32_t *lpVolumeSerialNumber, uint32_t *lpMaximumComponentLength, uint32_t *lpFileSystemFlags, char *lpFileSystemNameBuffer, uint32_t nFileSystemNameSize)
+{
+    char drive = drive_of_root(lpRootPathName);
+    char label[33];
+
+    if (drive == 0)
+    {
+        Winapi_SetLastError(ERROR_PATH_NOT_FOUND);
+        return 0;
+    }
+    if (drive == 'C') label[0] = 0;
+    else cd_volume_label(label, sizeof(label));
+
+    if (lpVolumeNameBuffer != NULL && nVolumeNameSize != 0) snprintf(lpVolumeNameBuffer, nVolumeNameSize, "%s", label);
+#ifndef GAME_CD_VOLUME_SERIAL
+#define GAME_CD_VOLUME_SERIAL 0x0000CD01u
+#endif
+    if (lpVolumeSerialNumber != NULL) *lpVolumeSerialNumber = (drive != 'C') ? GAME_CD_VOLUME_SERIAL : 0x12345678u;
+    if (lpMaximumComponentLength != NULL) *lpMaximumComponentLength = (drive != 'C') ? 110 : 255;
+    /* CDFS: FILE_UNICODE_ON_DISK; FAT32: FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES */
+    if (lpFileSystemFlags != NULL) *lpFileSystemFlags = (drive != 'C') ? 0x00000004u : 0x00000003u;
+    if (lpFileSystemNameBuffer != NULL && nFileSystemNameSize != 0) snprintf(lpFileSystemNameBuffer, nFileSystemNameSize, "%s", (drive != 'C') ? "CDFS" : "FAT32");
+    return 1;
+}
+
+/* a big, empty fixed disk */
+uint32_t CCALL GetDiskFreeSpaceA_c(const char *lpRootPathName, uint32_t *lpSectorsPerCluster, uint32_t *lpBytesPerSector, uint32_t *lpNumberOfFreeClusters, uint32_t *lpTotalNumberOfClusters)
+{
+    (void)lpRootPathName;
+    if (lpSectorsPerCluster != NULL) *lpSectorsPerCluster = 8;
+    if (lpBytesPerSector != NULL) *lpBytesPerSector = 512;
+    if (lpNumberOfFreeClusters != NULL) *lpNumberOfFreeClusters = 0x40000;
+    if (lpTotalNumberOfClusters != NULL) *lpTotalNumberOfClusters = 0x80000;
+    return 1;
+}
+
 /* The game asks for its files on the CD (D:\\...): they are in the directory
  * of the copy of the disc, when the port runs from one */
 static int is_d_drive_path(const char *path)

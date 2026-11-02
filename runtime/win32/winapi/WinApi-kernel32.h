@@ -77,6 +77,12 @@ unsigned int CCALL Winapi_GetTicks(void);
 int Winapi_ThreadsRunning(void);
 /* the letter of the CD drive (the disc, an image or a copy): D, or E when the port is on D: */
 char Winapi_CdDriveLetter(void);
+/* the drives: C: and the CD drive (GAME_CD_VOLUME_LABEL, GAME_CD_VOLUME_SERIAL) */
+uint32_t CCALL GetDriveTypeA_c(const char *lpRootPathName);
+uint32_t CCALL GetLogicalDrives_c(void);
+uint32_t CCALL GetLogicalDriveStringsA_c(uint32_t nBufferLength, char *lpBuffer);
+uint32_t CCALL GetVolumeInformationA_c(const char *lpRootPathName, char *lpVolumeNameBuffer, uint32_t nVolumeNameSize, uint32_t *lpVolumeSerialNumber, uint32_t *lpMaximumComponentLength, uint32_t *lpFileSystemFlags, char *lpFileSystemNameBuffer, uint32_t nFileSystemNameSize);
+uint32_t CCALL GetDiskFreeSpaceA_c(const char *lpRootPathName, uint32_t *lpSectorsPerCluster, uint32_t *lpBytesPerSector, uint32_t *lpNumberOfFreeClusters, uint32_t *lpTotalNumberOfClusters);
 /* the start of Winapi_GetTicks (Linux) */
 void Winapi_InitTicks(void);
 

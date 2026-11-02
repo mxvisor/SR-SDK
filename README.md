@@ -267,6 +267,8 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 | `GAME_WINAPI_CONFIG_FILE` | the file `ReadConfiguration` reads (default `<program>.cfg`) |
 | `GAME_WINAPI_KEY_MESSAGES` | 0: the message pump does not deliver key events (default 1) |
 | `GAME_WINAPI_START_DIRECTORY` | the directory the game starts in, `"D:\\"` for the disc (default the process's own) |
+| `GAME_CD_VOLUME_LABEL` | the volume label of a copy of the disc in a directory (an image gives its own; default empty) |
+| `GAME_CD_VOLUME_SERIAL` | the serial number of the disc's volume (default `0x0000CD01`) |
 | `GAME_WINAPI_MESSAGEBOX_ANSWER(text, caption)` | a button to answer a message box with without showing it (default 0) |
 | `GAME_WINAPI_PAINT_WHEN_IDLE` | 1: the game draws in its window procedure and waits for the repaint request; the port makes the request when the program has no other message |
 | `GAME_WINAPI_ACTIVATE_APP_ON_IDLE` | 1: the port sends `WM_ACTIVATEAPP` with 0 and then with 1 when the program has no other message (the game makes its picture buffer on the first and draws on the second) |
