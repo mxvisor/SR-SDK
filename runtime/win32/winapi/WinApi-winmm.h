@@ -46,7 +46,10 @@ uint32_t CCALL timeGetDevCaps_c(void *ptc, uint32_t cbtc);
 uint32_t CCALL joyGetNumDevs_c(void);
 uint32_t CCALL joyGetDevCapsA_c(uint32_t id, uint32_t pjc, uint32_t cbjc);
 uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji);
+uint32_t CCALL joyGetPos_c(uint32_t id, uint32_t pji);
 uint32_t CCALL joyConfigChanged_c(uint32_t flags);
+uint32_t CCALL midiOutGetNumDevs_c(void);
+uint32_t CCALL waveOutGetNumDevs_c(void);
 
 #ifdef __cplusplus
 }

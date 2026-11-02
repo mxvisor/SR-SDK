@@ -2986,8 +2986,9 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
 
 uint32_t CCALL AdjustWindowRectEx_c(void */*lpRect*/, uint32_t /*dwStyle*/, uint32_t /*bMenu*/, uint32_t /*dwExStyle*/)
 {
-    eprintf("Unimplemented: %s\n", "AdjustWindowRectEx");
-    exit(1);
+    /* the port's window has no frame, title bar or menu bar of its own: the
+     * window's rectangle is its client rectangle (see AdjustWindowRect_c) */
+    return 1;
 //    return AdjustWindowRectEx((LPRECT)lpRect, dwStyle, bMenu, dwExStyle);
 }
 

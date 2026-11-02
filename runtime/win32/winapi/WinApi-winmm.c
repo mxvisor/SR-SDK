@@ -207,8 +207,28 @@ uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji)
     return JOYERR_UNPLUGGED_c;
 }
 
+/* (a game that polls it every tick walked its hero by itself on the JOYINFO
+ * that a success left unwritten) */
+uint32_t CCALL joyGetPos_c(uint32_t id, uint32_t pji)
+{
+    (void)id; (void)pji;
+    return JOYERR_UNPLUGGED_c;
+}
+
 uint32_t CCALL joyConfigChanged_c(uint32_t flags)
 {
     (void)flags;
     return 0;
+}
+
+/* One MIDI and one wave output device: a game that counts them keeps its music
+ * and sound on (it plays them through its own drivers or the layer's stubs) */
+uint32_t CCALL midiOutGetNumDevs_c(void)
+{
+    return 1;
+}
+
+uint32_t CCALL waveOutGetNumDevs_c(void)
+{
+    return 1;
 }

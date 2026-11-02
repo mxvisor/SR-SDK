@@ -639,15 +639,6 @@ uint32_t CCALL GetLastError_c(void)
 }
 #endif
 
-#ifdef STUB_GetMenu
-uint32_t CCALL GetMenu_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("GetMenu");
-    return 0;
-}
-#endif
-
 #ifdef STUB_GetProfileStringA
 uint32_t CCALL GetProfileStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
 {
@@ -843,6 +834,15 @@ uint32_t CCALL LCMapStringW_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
     GAME_STUBLOG("LCMapStringW");
     return 0;
+}
+#endif
+
+#ifdef STUB_LoadAcceleratorsA
+uint32_t CCALL LoadAcceleratorsA_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("LoadAcceleratorsA");
+    return 0; /* no table: TranslateAcceleratorA translates nothing */
 }
 #endif
 
@@ -1266,6 +1266,15 @@ uint32_t CCALL WaitForInputIdle_c(uint32_t a0, uint32_t a1)
     (void)a0; (void)a1;
     GAME_STUBLOG("WaitForInputIdle");
     return 0;
+}
+#endif
+
+#ifdef STUB_WinHelpA
+uint32_t CCALL WinHelpA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("WinHelpA");
+    return 0; /* no help viewer */
 }
 #endif
 

@@ -70,6 +70,30 @@ uint32_t CCALL UpdateWindow_c(void *hWnd);
 uint32_t CCALL ValidateRect_c(void *hWnd, const void *lpRect);
 uint32_t CCALL WaitMessage_c(void);
 
+/* WinApi-window.c: the desktop, the frame, the minimized state and the menus
+ * (the guest's raw arguments; the menus are read from the EXE's RT_MENU) */
+uint32_t CCALL GetDesktopWindow_c(void);
+uint32_t CCALL AdjustWindowRect_c(uint32_t lpRect, uint32_t dwStyle, uint32_t bMenu);
+uint32_t CCALL IsIconic_c(uint32_t hWnd);
+uint32_t CCALL GetLastActivePopup_c(uint32_t hWnd);
+uint32_t CCALL LoadMenuA_c(uint32_t hInstance, uint32_t lpMenuName);
+uint32_t CCALL DestroyMenu_c(uint32_t hMenu);
+uint32_t CCALL SetMenu_c(uint32_t hWnd, uint32_t hMenu);
+uint32_t CCALL GetMenu_c(uint32_t hWnd);
+uint32_t CCALL DrawMenuBar_c(uint32_t hWnd);
+uint32_t CCALL GetSubMenu_c(uint32_t hMenu, uint32_t nPos);
+uint32_t CCALL GetMenuItemCount_c(uint32_t hMenu);
+uint32_t CCALL GetMenuItemID_c(uint32_t hMenu, uint32_t nPos);
+uint32_t CCALL GetMenuState_c(uint32_t hMenu, uint32_t uId, uint32_t uFlags);
+uint32_t CCALL CheckMenuItem_c(uint32_t hMenu, uint32_t uIDCheckItem, uint32_t uCheck);
+uint32_t CCALL EnableMenuItem_c(uint32_t hMenu, uint32_t uIDEnableItem, uint32_t uEnable);
+uint32_t CCALL RemoveMenu_c(uint32_t hMenu, uint32_t uPosition, uint32_t uFlags);
+uint32_t CCALL DeleteMenu_c(uint32_t hMenu, uint32_t uPosition, uint32_t uFlags);
+uint32_t CCALL InsertMenuA_c(uint32_t hMenu, uint32_t uPosition, uint32_t uFlags, uint32_t uIDNewItem, uint32_t lpNewItem);
+/* for an overlay that shows the menu: the item at pos (0: none); text is NULL
+ * for a separator, flags are MF_*, id is the command or the popup's handle */
+int Winapi_MenuItem(uint32_t hMenu, unsigned int pos, uint32_t *flags, uint32_t *id, const char **text);
+
 #ifdef __cplusplus
 }
 #endif

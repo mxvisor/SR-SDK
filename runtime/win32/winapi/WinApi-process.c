@@ -248,6 +248,27 @@ uint32_t CCALL GetProcAddress_c(uint32_t a0, uint32_t a1)
     return 0;
 }
 
+/* ------------------------------------------------------------------ ole32 */
+
+/* COM is there, but no class is registered: a game falls back to its own code */
+uint32_t CCALL CoInitialize_c(uint32_t a0)
+{
+    (void)a0;
+    return 0;                                       /* S_OK */
+}
+
+uint32_t CCALL CoUninitialize_c(void)
+{
+    return 0;
+}
+
+uint32_t CCALL CoCreateInstance_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    if (a4 != 0) *(uint32_t *)GUEST_MEM(a4) = 0;    /* *ppv */
+    return 0x80040154u;                             /* REGDB_E_CLASSNOTREG */
+}
+
 /* ------------------------------------------------------------- exceptions */
 
 static uint32_t winapi_prev_filter;
@@ -539,6 +560,7 @@ uint32_t CCALL IsValidLocale_c(uint32_t a0, uint32_t a1)
 }
 
 uint32_t CCALL GetUserDefaultLCID_c(void) { return 0x0409; } /* en-US */
+uint32_t CCALL GetUserDefaultLangID_c(void) { return 0x0409; }
 
 uint32_t CCALL GetCPInfo_c(uint32_t /*a0*/, uint32_t a1)
 {
@@ -612,6 +634,46 @@ uint32_t CCALL lstrcpyA_c(uint32_t a0, uint32_t a1)
     const char *src = (const char *)GUEST_MEM(a1);
     strcpy(dst, src);
     return a0;
+}
+
+uint32_t CCALL lstrcatA_c(uint32_t a0, uint32_t a1)
+{
+    if (a0 == 0 || a1 == 0) return 0;
+    strcat((char *)GUEST_MEM(a0), (const char *)GUEST_MEM(a1));
+    return a0;
+}
+
+/* lstrcmpA/lstrcmpiA: -1, 0 or 1, by the bytes (Windows sorts by the locale's
+ * word sort; the games compare names and keys, where the two agree) */
+static uint32_t compare_strings(uint32_t a0, uint32_t a1, int ignore_case)
+{
+    const unsigned char *s1 = (const unsigned char *)GUEST_MEM(a0);
+    const unsigned char *s2 = (const unsigned char *)GUEST_MEM(a1);
+    int c1, c2;
+
+    if (s1 == NULL) s1 = (const unsigned char *)"";
+    if (s2 == NULL) s2 = (const unsigned char *)"";
+    do
+    {
+        c1 = *s1++;
+        c2 = *s2++;
+        if (ignore_case)
+        {
+            if (c1 >= 'A' && c1 <= 'Z') c1 += 'a' - 'A';
+            if (c2 >= 'A' && c2 <= 'Z') c2 += 'a' - 'A';
+        }
+    } while (c1 == c2 && c1 != 0);
+    return (c1 < c2) ? 0xffffffffu : (c1 > c2) ? 1 : 0;
+}
+
+uint32_t CCALL lstrcmpA_c(uint32_t a0, uint32_t a1)
+{
+    return compare_strings(a0, a1, 0);
+}
+
+uint32_t CCALL lstrcmpiA_c(uint32_t a0, uint32_t a1)
+{
+    return compare_strings(a0, a1, 1);
 }
 
 uint32_t CCALL OutputDebugStringA_c(uint32_t a0)
