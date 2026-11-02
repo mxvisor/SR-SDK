@@ -26,6 +26,8 @@
 #if !defined(_GAME_PORTCONFIG_H_INCLUDED_)
 #define _GAME_PORTCONFIG_H_INCLUDED_
 
+/* --config-file=FILE out of argv; returns the new argc */
+int Game_ReadArgs(int argc, char *argv[]);
 void Game_ReadConfig(void);
 
 #endif /* _GAME_PORTCONFIG_H_INCLUDED_ */

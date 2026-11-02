@@ -77,26 +77,6 @@ extern "C"
 void Winapi_EarlyWindow(uint32_t width, uint32_t height);
 #endif
 
-/* The port's own options, as in SR's ports: --config-file=FILE.  They are taken out
- * of argv, which goes on to the game's switch parser (/D, /T, ...). */
-static int Game_ReadArgs(int argc, char *argv[])
-{
-    int count = 1;
-
-    Game_ConfigFilename[0] = 0;
-    for (int index = 1; index < argc; index++)
-    {
-        if (strncmp(argv[index], "--config-file=", 14) == 0)
-        {
-            if (strlen(argv[index] + 14) < sizeof(Game_ConfigFilename)) strcpy(Game_ConfigFilename, argv[index] + 14);
-            continue;
-        }
-        argv[count++] = argv[index];
-    }
-    argv[count] = NULL;
-    return count;
-}
-
 /* Under Wine SDL's default renderer is Direct3D 11 (then 9), which a prefix with DXVK
  * runs through Vulkan: on some drivers the device creation hangs in the kernel.  The
  * port draws with OpenGL or with SDL's software path, so the renderer is OpenGL

@@ -27,8 +27,11 @@
  * allocator, the DOS runtime) and the end, and on Windows the log file of a
  * program without a console and a report of a crash (Game_log.c).  The game's own parts come through Game_hooks.h, all
  * optional:
- *   GAME_ARGS(argc, argv)    takes the port's own options out of argv, returns the new argc
- *   GAME_CONFIG()            reads the port's configuration, after the options
+ *   GAME_ARGS(argc, argv)    takes the port's own options out of argv, returns the new argc (default
+ *                            Game_ReadArgs: --config-file=)
+ *   GAME_CONFIG()            reads the port's configuration, after the options (default
+ *                            Game_ReadConfig: <program>.cfg)
+ *   GAME_CONFIG_KEY(key, value)  a key of the settings file that is the game's: nonzero if it took it
  *   GAME_RUNTIME_INIT()      the game's runtime, after the guest allocator; nonzero: failed
  *   GAME_RUNTIME_DEINIT()    its end
  *   GAME_DOS_ENV             without GAME_RUNTIME_INIT: the variables of the environment, "NAME=VALUE" strings
@@ -54,6 +57,7 @@
 #include "input.h"
 #include "main.h"
 #include "Game_hooks.h"
+#include "Game_config.h"
 #include "Game_log.h"
 #include "Game_cdrom.h"
 #include "Game_dosmem.h"
@@ -159,6 +163,8 @@ static int Game_Run(int argc, char *argv[])
 {
 #ifdef GAME_ARGS
     argc = GAME_ARGS(argc, argv);
+#else
+    argc = Game_ReadArgs(argc, argv);
 #endif
 
     Game_Sound = 1;
@@ -166,6 +172,8 @@ static int Game_Run(int argc, char *argv[])
 
 #ifdef GAME_CONFIG
     GAME_CONFIG();
+#else
+    Game_ReadConfig();
 #endif
 
     Init_Display();

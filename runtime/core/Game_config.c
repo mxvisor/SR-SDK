@@ -23,8 +23,8 @@
  *
  */
 
-/* The port's settings, the Game_config.c of SR's ports with only this port's keys.
- * The file is the one --config-file= names (Game_winmain.c), else
+/* The port's settings of a DOS or a Win32 game, the Game_config.c of SR's ports with only
+ * this port's keys.  The file is the one --config-file= names (Game_ReadArgs), else
  * <program>.cfg of the game directory (GAME_PROGRAM_NAME of scons/game.py); a
  * game names another file with GAME_CONFIG_FILENAME (Game_hooks.h).  Without
  * the file everything stays as Init_Display/Init_Audio/Init_Input set it.  The
@@ -36,12 +36,14 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_config.h"
+#ifdef GAME_WINAPI
 #include "WinApi-d3d.h"
+#endif
 #include "main.h"
 #include "display.h"
 #include "audio.h"
 #include "input.h"
-#include "Game_runtime.h"
+#include "Game_vfs.h"
 #include "Game_hooks.h"
 
 /* the program's name is the port's namespace in the game directory: the
@@ -81,6 +83,26 @@ static void read_on_off(const char *param, uint32_t *value)
     }
 }
 
+/* The port's own options, as in SR's ports: --config-file=FILE.  They are taken out
+ * of argv, which goes on to the game's switch parser (/D, /T, ...). */
+int Game_ReadArgs(int argc, char *argv[])
+{
+    int count = 1;
+
+    Game_ConfigFilename[0] = 0;
+    for (int index = 1; index < argc; index++)
+    {
+        if (strncmp(argv[index], "--config-file=", 14) == 0)
+        {
+            if (strlen(argv[index] + 14) < sizeof(Game_ConfigFilename)) strcpy(Game_ConfigFilename, argv[index] + 14);
+            continue;
+        }
+        argv[count++] = argv[index];
+    }
+    argv[count] = NULL;
+    return count;
+}
+
 void Game_ReadConfig(void)
 {
     char filename[4096];
@@ -109,8 +131,17 @@ void Game_ReadConfig(void)
         if (Game_ConfigFilename[0] != 0)
         {
             fprintf(stderr, GAME_NAME ": could not open config file: %s\n", filename);
+            return;
         }
-        return;
+        // else the write root, where the port keeps what it writes
+        {
+            const char *write_root = Game_WriteRoot();
+
+            if (write_root == NULL) return;
+            if (snprintf(filename, sizeof(filename), "%s/%s", write_root, GAME_CONFIG_FILENAME) >= (int)sizeof(filename)) return;
+            f = fopen(filename, "rt");
+            if (f == NULL) return;
+        }
     }
 
     fprintf(stderr, GAME_NAME ": using config file: %s\n", filename);
@@ -148,17 +179,24 @@ void Game_ReadConfig(void)
         if (Config_Audio(str, param)) continue;
         if (Config_Input(str, param)) continue;
 
+#ifdef GAME_CONFIG_KEY
+        // the game's own keys: nonzero if it took this one
+        if (GAME_CONFIG_KEY(str, param)) continue;
+#endif
+
         if ( strcasecmp(str, "Sound") == 0 ) // str equals "Sound"
         {
             // digital sound
             read_on_off(param, &Game_Sound);
         }
+#ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
         {
             // direct3d (OpenGL), software (Direct3D, the software rasteriser) or off;
             // <GAME>_D3D and <GAME>_D3D_GL win (WinApi-d3d.c)
             if (!Winapi_Direct3DSetMode(param)) fprintf(stderr, GAME_NAME ": unknown 3D mode: %s\n", param);
         }
+#endif
         else if ( strcasecmp(str, "Music") == 0 ) // str equals "Music"
         {
             // the CD's music; <GAME>_NOMUSIC wins (Game_music.c)

@@ -236,8 +236,9 @@ A DOS game (`runtime/dos`) also takes, all optional:
 |---|---|
 | `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_start_`, the program's entry point, which SR exports by itself; `c_main_` is the game's C `main` named by `main_` in `global_aliases.sci`, for a port that skips the startup code |
 | `GAME_PROGRAM_MEMORY`, `GAME_PROGRAM_STACK` | `Game-asm.c`, a game started at its entry point: the size of the program's memory block (default 64 MiB, less if the guest window has no room) and of the stack in it (1 MiB); the startup code grows its heap in the block with INT 21h AH=4Ah |
-| `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` |
-| `GAME_CONFIG()` | the port's configuration, read after the options |
+| `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` (default `Game_ReadArgs`: `--config-file=`) |
+| `GAME_CONFIG()` | the port's configuration, read after the options (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
+| `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
 | `GAME_DOS_ENV` | without `GAME_RUNTIME_INIT`: the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
@@ -258,7 +259,7 @@ of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows p
 a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
 
 A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and its settings file in
-`Game_config.c` (`--config-file=`, else `<program>.cfg` in the game directory; `Sound`,
+`runtime/core/Game_config.c` (`--config-file=`, else `<program>.cfg` in the game directory; `Sound`,
 `Music` and the keys of the display, audio and input). In `Game_hooks.h`, all optional:
 
 | Macro | Meaning |
