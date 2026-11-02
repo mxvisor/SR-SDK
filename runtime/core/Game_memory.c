@@ -59,17 +59,24 @@
 #if defined(__ANDROID__)
 #include "Game_android.h"
 #include "Game_hooks.h"
+#endif
+#ifdef __linux__
+#include <linux/prctl.h>
+#include <sys/prctl.h>
+#endif
+#endif
+
+#if defined(_WIN32) || defined(__ANDROID__)
+/* Game_hooks.h may set GAME_GUEST_LOW_MEMORY(): how much of the guest's
+ * address space from pointer_offset up the program wants to be free of
+ * the host (Windows: below the image of the host). The default is the
+ * low megabyte of the guest and the 64 KB after it. */
 #if defined(GAME_GUEST_DATA_IN_MEMORY) && !defined(GAME_GUEST_LOW_MEMORY)
 #include "Game_guestdata.h"
 #define GAME_GUEST_LOW_MEMORY() Game_GuestLowMemory()
 #endif
 #ifndef GAME_GUEST_LOW_MEMORY
 #define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
-#endif
-#endif
-#ifdef __linux__
-#include <linux/prctl.h>
-#include <sys/prctl.h>
 #endif
 #endif
 
@@ -119,19 +126,6 @@ extern "C" void (*ptr_initialize_pointers)(uint64_t pointer_offset);
 
 uint64_t pointer_offset;
 
-#ifdef _WIN32
-/* Game_hooks.h may set GAME_GUEST_LOW_MEMORY(): how much of the guest's
- * address space from pointer_offset up the program wants to be free of
- * the host (Windows: below the image of the host). The default is the
- * low megabyte of the guest and the 64 KB after it. */
-#if defined(GAME_GUEST_DATA_IN_MEMORY) && !defined(GAME_GUEST_LOW_MEMORY)
-#include "Game_guestdata.h"
-#define GAME_GUEST_LOW_MEMORY() Game_GuestLowMemory()
-#endif
-#ifndef GAME_GUEST_LOW_MEMORY
-#define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
-#endif
-#endif
 unsigned int pointer_reserved_length;
 #if defined(__ANDROID__)
 static uint64_t guest_region_base;
