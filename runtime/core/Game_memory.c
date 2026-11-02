@@ -1503,7 +1503,7 @@ int initialize_pointer_offset(void)
     FILE *f;
     long page_size;
     int num_matches, flags;
-    uintmax_t num0, num1, num2, min_length, free_offset, big_offset, big_cand;
+    uintmax_t num0, num1, num2, min_length, free_offset, big_offset, big_cand, big_cand2;
 
     pointer_offset = 0;
 
@@ -1542,13 +1542,21 @@ int initialize_pointer_offset(void)
     }
 
     num0 = free_offset = big_offset = 0;
-    big_cand = 0;
+    big_cand = big_cand2 = 0;
     if ((uintptr_t)info.dli_fbase > UINT64_C(0x80000000) + min_length)
     {
         // module loaded above 2GB: place the offset so that the module starts
-        // about 32MB below 2GB in guest space, keeping guest code addresses
-        // positive and inside the 2GB guest window
-        big_cand = (uintptr_t)info.dli_fbase - UINT64_C(0x7E000000);
+        // 1GB into the guest space (keeping guest code addresses positive and
+        // inside the 2GB guest window).  The room above the module is what a
+        // DOS program's memory is taken from, and the heap (brk) of a position
+        // independent executable begins right after it; with the module 32MB
+        // below the top of the window the heap left no 4MB there.  Where the
+        // gap for that does not fit, 32MB below the top.
+#ifndef GAME_GUEST_DATA_IN_MEMORY
+        // (a port with the game's data at its own addresses keeps the old place)
+        big_cand = (uintptr_t)info.dli_fbase - UINT64_C(0x40000000);
+#endif
+        big_cand2 = (uintptr_t)info.dli_fbase - UINT64_C(0x7E000000);
     }
     for (;;)
     {
@@ -1562,6 +1570,10 @@ int initialize_pointer_offset(void)
         {
             // the reservation for the candidate offset fits in this free gap
             big_offset = big_cand;
+        }
+        else if ((big_cand2 != 0) && (big_offset == 0 || big_offset == big_cand2) && (num0 <= big_cand2) && (big_cand2 + min_length <= num1))
+        {
+            big_offset = big_cand2;
         }
 
         if (num1 - num0 >= min_length)
