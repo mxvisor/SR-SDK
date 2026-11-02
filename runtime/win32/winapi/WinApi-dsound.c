@@ -106,6 +106,19 @@ struct IDirectSound_c {
     PTR32(void) lpVtbl;
     uint32_t RefCount;
     struct IDirectSoundBuffer_c *PrimaryBuffer;
+    float listener_position[3], listener_front[3], listener_top[3];
+    float rolloff_factor;
+};
+
+/* IDirectSound3DListener of a primary buffer or IDirectSound3DBuffer of a secondary
+ * one: it lives in the buffer and shares its reference count. */
+struct IDirectSound3D_c {
+    PTR32(void) lpVtbl;
+    struct IDirectSoundBuffer_c *owner;
+    uint8_t available;  /* DSBCAPS_CTRL3D */
+    uint32_t mode;
+    float position[3], min_distance, max_distance;
+    int32_t attenuation, pan;
 };
 
 struct IDirectSoundBuffer_c {
@@ -119,6 +132,7 @@ struct IDirectSoundBuffer_c {
     uint8_t silence;
     int32_t attenuation, pan;
     unsigned int left_volume, right_volume, conv_format;
+    struct IDirectSound3D_c Iface3D;
     union {
         struct {
             struct IDirectSoundBuffer_c *first;
@@ -168,6 +182,12 @@ typedef struct _dsbufferdesc {
 
 extern uint32_t IDirectSoundVtbl_asm2c;
 extern uint32_t IDirectSoundBufferVtbl_asm2c;
+extern uint32_t IDirectSound3DListenerVtbl_asm2c;
+extern uint32_t IDirectSound3DBufferVtbl_asm2c;
+
+static void Init3D(struct IDirectSoundBuffer_c *lpThis, uint32_t dwFlags);
+static void Update3D(struct IDirectSoundBuffer_c *lpThis);
+static uint32_t QueryInterface3D(struct IDirectSoundBuffer_c *lpThis, const void *riid, PTR32(void)* ppvObj);
 
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -313,8 +333,10 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
         if (same_format(PrimaryBuffer, buffer1) &&
             (PrimaryBuffer->attenuation == 0) &&
             (buffer1->attenuation == 0) &&
+            (buffer1->Iface3D.attenuation == 0) &&
             (PrimaryBuffer->pan == 0) &&
-            (buffer1->pan == 0)
+            (buffer1->pan == 0) &&
+            (buffer1->Iface3D.pan == 0)
            )
         {
             remaining1 = calc_remaining(buffer1, len, &remaining2);
@@ -1084,6 +1106,12 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *p
     lpDS_c->lpVtbl = &IDirectSoundVtbl_asm2c;
     lpDS_c->RefCount = 1;
     lpDS_c->PrimaryBuffer = NULL;
+    memset(lpDS_c->listener_position, 0, sizeof(lpDS_c->listener_position));
+    memset(lpDS_c->listener_front, 0, sizeof(lpDS_c->listener_front));
+    memset(lpDS_c->listener_top, 0, sizeof(lpDS_c->listener_top));
+    lpDS_c->listener_front[2] = 1.0f;
+    lpDS_c->listener_top[1] = 1.0f;
+    lpDS_c->rolloff_factor = 1.0f;
 
     *ppDS = lpDS_c;
 
@@ -1405,6 +1433,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
         lpDSB_c->pan = 0;
         lpDSB_c->left_volume = 0x10000;
         lpDSB_c->right_volume = 0x10000;
+        Init3D(lpDSB_c, pcDSBufferDesc->dwFlags);
 
         RecalculateConvFormat(lpDSB_c);
 
@@ -1490,6 +1519,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
         lpDSB_c->pan = 0;
         lpDSB_c->left_volume = 0x10000;
         lpDSB_c->right_volume = 0x10000;
+        Init3D(lpDSB_c, pcDSBufferDesc->dwFlags);
 
         lpDSB_c->next = NULL;
         lpDSB_c->prev = NULL;
@@ -1588,6 +1618,8 @@ uint32_t CCALL IDirectSound_DuplicateSoundBuffer_c(struct IDirectSound_c *lpThis
 #endif
     RecalculateConvFormat(lpDSB_c);
 
+    lpDSB_c->Iface3D.owner = lpDSB_c;
+
     *ppDSBufferDuplicate = lpDSB_c;
     return DS_OK;
 }
@@ -1598,7 +1630,8 @@ uint32_t CCALL IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis,
     eprintf("IDirectSound_SetCooperativeLevel: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x - ", (uintptr_t)lpThis, (uintptr_t)hwnd, dwLevel);
 #endif
 
-    if ((lpThis == NULL) || (hwnd == NULL))
+    /* hwnd only tells which window has the focus, and sound here does not follow it */
+    if (lpThis == NULL)
     {
 #ifdef DEBUG_DSOUND
         eprintf("error\n");
@@ -1640,10 +1673,10 @@ uint32_t CCALL IDirectSound_GetSpeakerConfig_c(struct IDirectSound_c */*lpThis*/
     exit(1);
 }
 
-uint32_t CCALL IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c */*lpThis*/, uint32_t /*dwSpeakerConfig*/)
+uint32_t CCALL IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t /*dwSpeakerConfig*/)
 {
-    eprintf("Unsupported method: %s\n", "IDirectSound_SetSpeakerConfig");
-    exit(1);
+    /* the output is what SDL opened, whatever the speakers are said to be */
+    return (lpThis != NULL) ? DS_OK : DSERR_INVALIDPARAM;
 }
 
 uint32_t CCALL IDirectSound_Initialize_c(struct IDirectSound_c */*lpThis*/, const void * /*pcGuidDevice*/)
@@ -1653,14 +1686,14 @@ uint32_t CCALL IDirectSound_Initialize_c(struct IDirectSound_c */*lpThis*/, cons
 }
 
 
-uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c */*lpThis*/, void * /*riid*/, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c *lpThis, void * riid, PTR32(void)* ppvObj)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_QueryInterface: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)riid, (uintptr_t)ppvObj);
 #endif
 
     if (ppvObj == NULL) return E_POINTER;
-    return E_NOINTERFACE;
+    return QueryInterface3D(lpThis, riid, ppvObj);
 }
 
 uint32_t CCALL IDirectSoundBuffer_AddRef_c(struct IDirectSoundBuffer_c *lpThis)
@@ -2008,6 +2041,8 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
         return DS_OK;
     }
 
+    Update3D(lpThis);
+
     PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
     Ds_LockDevice(PrimaryBuffer->device_id);
@@ -2235,14 +2270,16 @@ static void RecalculateVolume(struct IDirectSoundBuffer_c *lpThis)
 {
     int left_attenuation, right_attenuation, left_volume, right_volume;
 
-    left_attenuation = right_attenuation = lpThis->attenuation;
-    if (lpThis->pan > 0)
+    int pan = lpThis->pan + lpThis->Iface3D.pan;
+
+    left_attenuation = right_attenuation = lpThis->attenuation + lpThis->Iface3D.attenuation;
+    if (pan > 0)
     {
-        left_attenuation -= lpThis->pan;
+        left_attenuation -= pan;
     }
-    else if (lpThis->pan < 0)
+    else if (pan < 0)
     {
-        right_attenuation += lpThis->pan;
+        right_attenuation += pan;
     }
 
     left_volume = (int) (powf(2.0f, left_attenuation / 600.0f) * 65536.0f);
@@ -2436,3 +2473,274 @@ uint32_t CCALL IDirectSoundBuffer_Restore_c(struct IDirectSoundBuffer_c *lpThis)
 }
 
 
+/* DirectSound 3D, in software: the distance sets the volume and the side sets the pan.
+ * Doppler, cones and the velocities are accepted and left out. */
+
+#define DS3D_IMMEDIATE          0
+#define DS3DMODE_HEADRELATIVE   1
+#define DS3DMODE_DISABLE        2
+
+/* how far a sound at the very side of the listener is turned down in the other ear */
+#define DS3D_MAX_PAN            1500.0f
+
+typedef struct PACKED _ds3dlistener {
+    uint32_t dwSize;
+    float vPosition[3], vVelocity[3], vOrientFront[3], vOrientTop[3];
+    float flDistanceFactor, flRolloffFactor, flDopplerFactor;
+} ds3dlistener;
+
+typedef struct PACKED _ds3dbuffer {
+    uint32_t dwSize;
+    float vPosition[3], vVelocity[3];
+    uint32_t dwInsideConeAngle, dwOutsideConeAngle;
+    float vConeOrientation[3];
+    int32_t lConeOutsideVolume;
+    float flMinDistance, flMaxDistance;
+    uint32_t dwMode;
+} ds3dbuffer;
+
+static const uint8_t IID_IDirectSound3DListener_bytes[16] = { 0x84, 0xfa, 0x9a, 0x27, 0x81, 0x49, 0xce, 0x11, 0xa5, 0x21, 0x00, 0x20, 0xaf, 0x0b, 0xe5, 0x60 };
+static const uint8_t IID_IDirectSound3DBuffer_bytes[16] = { 0x86, 0xfa, 0x9a, 0x27, 0x81, 0x49, 0xce, 0x11, 0xa5, 0x21, 0x00, 0x20, 0xaf, 0x0b, 0xe5, 0x60 };
+
+static float GuestFloat(uint32_t value)
+{
+    float result;
+
+    memcpy(&result, &value, sizeof(result));
+    return result;
+}
+
+static void Init3D(struct IDirectSoundBuffer_c *lpThis, uint32_t dwFlags)
+{
+    struct IDirectSound3D_c *iface = &(lpThis->Iface3D);
+
+    iface->lpVtbl = (dwFlags & DSBCAPS_PRIMARYBUFFER) ? &IDirectSound3DListenerVtbl_asm2c : &IDirectSound3DBufferVtbl_asm2c;
+    iface->owner = lpThis;
+    iface->available = (dwFlags & DSBCAPS_CTRL3D) ? 1 : 0;
+    iface->mode = 0;
+    iface->position[0] = iface->position[1] = iface->position[2] = 0.0f;
+    iface->min_distance = 1.0f;
+    iface->max_distance = 1000000000.0f;
+    iface->attenuation = 0;
+    iface->pan = 0;
+}
+
+static void Update3D(struct IDirectSoundBuffer_c *lpThis)
+{
+    struct IDirectSound3D_c *iface = &(lpThis->Iface3D);
+    struct IDirectSound_c *ds = lpThis->DirectSound;
+    float relative[3], right[3], distance, right_length, clamped, gain;
+    int i;
+
+    if (lpThis->primary || !iface->available) return;
+
+    if (iface->mode == DS3DMODE_DISABLE)
+    {
+        iface->attenuation = 0;
+        iface->pan = 0;
+        RecalculateVolume(lpThis);
+        return;
+    }
+
+    for (i = 0; i < 3; i++)
+    {
+        relative[i] = iface->position[i];
+        if (iface->mode != DS3DMODE_HEADRELATIVE) relative[i] -= ds->listener_position[i];
+    }
+    distance = sqrtf(relative[0] * relative[0] + relative[1] * relative[1] + relative[2] * relative[2]);
+
+    clamped = distance;
+    if (clamped > iface->max_distance) clamped = iface->max_distance;
+    if (clamped < iface->min_distance) clamped = iface->min_distance;
+    gain = iface->min_distance / (iface->min_distance + ds->rolloff_factor * (clamped - iface->min_distance));
+    iface->attenuation = (gain > 0.00001f) ? (int32_t)(2000.0f * log10f(gain)) : -10000;
+
+    /* left-handed: top x front points to the right */
+    right[0] = ds->listener_top[1] * ds->listener_front[2] - ds->listener_top[2] * ds->listener_front[1];
+    right[1] = ds->listener_top[2] * ds->listener_front[0] - ds->listener_top[0] * ds->listener_front[2];
+    right[2] = ds->listener_top[0] * ds->listener_front[1] - ds->listener_top[1] * ds->listener_front[0];
+    right_length = sqrtf(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
+    if ((distance > 0.0f) && (right_length > 0.0f))
+    {
+        iface->pan = (int32_t)(DS3D_MAX_PAN * (relative[0] * right[0] + relative[1] * right[1] + relative[2] * right[2]) / (distance * right_length));
+    }
+    else
+    {
+        iface->pan = 0;
+    }
+
+    RecalculateVolume(lpThis);
+}
+
+static uint32_t QueryInterface3D(struct IDirectSoundBuffer_c *lpThis, const void *riid, PTR32(void)* ppvObj)
+{
+    if ((lpThis == NULL) || (riid == NULL) || !lpThis->Iface3D.available) return E_NOINTERFACE;
+    if (memcmp(riid, lpThis->primary ? IID_IDirectSound3DListener_bytes : IID_IDirectSound3DBuffer_bytes, 16) != 0) return E_NOINTERFACE;
+
+    lpThis->RefCount++;
+    *ppvObj = &(lpThis->Iface3D);
+    return DS_OK;
+}
+
+uint32_t CCALL IDirectSound3D_QueryInterface_c(struct IDirectSound3D_c *lpThis, void * riid, PTR32(void)* ppvObj)
+{
+    if (ppvObj == NULL) return E_POINTER;
+    return QueryInterface3D((lpThis != NULL) ? lpThis->owner : NULL, riid, ppvObj);
+}
+
+uint32_t CCALL IDirectSound3D_AddRef_c(struct IDirectSound3D_c *lpThis)
+{
+    return IDirectSoundBuffer_AddRef_c((lpThis != NULL) ? lpThis->owner : NULL);
+}
+
+uint32_t CCALL IDirectSound3D_Release_c(struct IDirectSound3D_c *lpThis)
+{
+    return IDirectSoundBuffer_Release_c((lpThis != NULL) ? lpThis->owner : NULL);
+}
+
+uint32_t CCALL IDirectSound3D_Ignored_c(void)
+{
+    return DS_OK;
+}
+
+uint32_t CCALL IDirectSound3D_Unsupported_c(void)
+{
+    return DSERR_UNSUPPORTED;
+}
+
+uint32_t CCALL IDirectSound3DListener_CommitDeferredSettings_c(struct IDirectSound3D_c *lpThis)
+{
+    struct IDirectSoundBuffer_c *PrimaryBuffer, *current;
+    unsigned int index;
+
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    PrimaryBuffer = lpThis->owner;
+
+    Ds_LockDevice(PrimaryBuffer->device_id);
+    current = PrimaryBuffer->first;
+    for (index = 0; index < PrimaryBuffer->num_channels; index++)
+    {
+        Update3D(current);
+        current = current->next;
+    }
+    Ds_UnlockDevice(PrimaryBuffer->device_id);
+
+    return DS_OK;
+}
+
+static uint32_t Listener_Applied(struct IDirectSound3D_c *lpThis, uint32_t dwApply)
+{
+    return (dwApply == DS3D_IMMEDIATE) ? IDirectSound3DListener_CommitDeferredSettings_c(lpThis) : DS_OK;
+}
+
+uint32_t CCALL IDirectSound3DListener_SetAllParameters_c(struct IDirectSound3D_c *lpThis, const ds3dlistener * pcListener, uint32_t dwApply)
+{
+    struct IDirectSound_c *ds;
+
+    if ((lpThis == NULL) || (pcListener == NULL) || (pcListener->dwSize < sizeof(ds3dlistener))) return DSERR_INVALIDPARAM;
+
+    ds = lpThis->owner->DirectSound;
+    memcpy(ds->listener_position, pcListener->vPosition, sizeof(ds->listener_position));
+    memcpy(ds->listener_front, pcListener->vOrientFront, sizeof(ds->listener_front));
+    memcpy(ds->listener_top, pcListener->vOrientTop, sizeof(ds->listener_top));
+    ds->rolloff_factor = pcListener->flRolloffFactor;
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DListener_SetOrientation_c(struct IDirectSound3D_c *lpThis, uint32_t xFront, uint32_t yFront, uint32_t zFront, uint32_t xTop, uint32_t yTop, uint32_t zTop, uint32_t dwApply)
+{
+    struct IDirectSound_c *ds;
+
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    ds = lpThis->owner->DirectSound;
+    ds->listener_front[0] = GuestFloat(xFront);
+    ds->listener_front[1] = GuestFloat(yFront);
+    ds->listener_front[2] = GuestFloat(zFront);
+    ds->listener_top[0] = GuestFloat(xTop);
+    ds->listener_top[1] = GuestFloat(yTop);
+    ds->listener_top[2] = GuestFloat(zTop);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DListener_SetPosition_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply)
+{
+    struct IDirectSound_c *ds;
+
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    ds = lpThis->owner->DirectSound;
+    ds->listener_position[0] = GuestFloat(x);
+    ds->listener_position[1] = GuestFloat(y);
+    ds->listener_position[2] = GuestFloat(z);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DListener_SetRolloffFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flRolloffFactor, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->owner->DirectSound->rolloff_factor = GuestFloat(flRolloffFactor);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+static uint32_t Buffer_Applied(struct IDirectSound3D_c *lpThis, uint32_t dwApply)
+{
+    if (dwApply == DS3D_IMMEDIATE) Update3D(lpThis->owner);
+    return DS_OK;
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetAllParameters_c(struct IDirectSound3D_c *lpThis, const ds3dbuffer * pcDs3dBuffer, uint32_t dwApply)
+{
+    if ((lpThis == NULL) || (pcDs3dBuffer == NULL) || (pcDs3dBuffer->dwSize < sizeof(ds3dbuffer))) return DSERR_INVALIDPARAM;
+
+    memcpy(lpThis->position, pcDs3dBuffer->vPosition, sizeof(lpThis->position));
+    lpThis->min_distance = pcDs3dBuffer->flMinDistance;
+    lpThis->max_distance = pcDs3dBuffer->flMaxDistance;
+    lpThis->mode = pcDs3dBuffer->dwMode;
+
+    return Buffer_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetMaxDistance_c(struct IDirectSound3D_c *lpThis, uint32_t flMaxDistance, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->max_distance = GuestFloat(flMaxDistance);
+
+    return Buffer_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetMinDistance_c(struct IDirectSound3D_c *lpThis, uint32_t flMinDistance, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->min_distance = GuestFloat(flMinDistance);
+
+    return Buffer_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetMode_c(struct IDirectSound3D_c *lpThis, uint32_t dwMode, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->mode = dwMode;
+
+    return Buffer_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetPosition_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->position[0] = GuestFloat(x);
+    lpThis->position[1] = GuestFloat(y);
+    lpThis->position[2] = GuestFloat(z);
+
+    return Buffer_Applied(lpThis, dwApply);
+}

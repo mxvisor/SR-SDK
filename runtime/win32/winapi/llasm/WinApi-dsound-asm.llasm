@@ -60,6 +60,24 @@ func IDirectSoundBuffer_Stop_c *lpThis
 func IDirectSoundBuffer_Unlock_c *lpThis, *pvAudioPtr1, dwAudioBytes1, *pvAudioPtr2, dwAudioBytes2
 func IDirectSoundBuffer_Restore_c *lpThis
 
+func IDirectSound3D_QueryInterface_c *lpThis, *riid, *ppvObj
+func IDirectSound3D_AddRef_c *lpThis
+func IDirectSound3D_Release_c *lpThis
+func IDirectSound3D_Ignored_c
+func IDirectSound3D_Unsupported_c
+
+func IDirectSound3DListener_SetAllParameters_c *lpThis, *pcListener, dwApply
+func IDirectSound3DListener_SetOrientation_c *lpThis, xFront, yFront, zFront, xTop, yTop, zTop, dwApply
+func IDirectSound3DListener_SetPosition_c *lpThis, x, y, z, dwApply
+func IDirectSound3DListener_SetRolloffFactor_c *lpThis, flRolloffFactor, dwApply
+func IDirectSound3DListener_CommitDeferredSettings_c *lpThis
+
+func IDirectSound3DBuffer_SetAllParameters_c *lpThis, *pcDs3dBuffer, dwApply
+func IDirectSound3DBuffer_SetMaxDistance_c *lpThis, flMaxDistance, dwApply
+func IDirectSound3DBuffer_SetMinDistance_c *lpThis, flMinDistance, dwApply
+func IDirectSound3DBuffer_SetMode_c *lpThis, dwMode, dwApply
+func IDirectSound3DBuffer_SetPosition_c *lpThis, x, y, z, dwApply
+
 proc DirectSoundCreate_asm2c public
 
 ; [esp + 3*4] = LPUNKNOWN pUnkOuter
@@ -505,6 +523,205 @@ endp ; end procedure IDirectSoundBuffer_Restore_asm2c
 
 
 
+proc IDirectSound3D_QueryInterface_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3D_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3D_QueryInterface_asm2c
+
+
+proc IDirectSound3D_AddRef_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack1 IDirectSound3D_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectSound3D_AddRef_asm2c
+
+
+proc IDirectSound3D_Release_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack1 IDirectSound3D_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectSound3D_Release_asm2c
+
+
+proc IDirectSound3D_Ignored3_asm2c public
+
+; the 3 arguments are not read
+
+        Call_Asm_Stack0 IDirectSound3D_Ignored_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3D_Ignored3_asm2c
+
+
+proc IDirectSound3D_Ignored4_asm2c public
+
+; the 4 arguments are not read
+
+        Call_Asm_Stack0 IDirectSound3D_Ignored_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectSound3D_Ignored4_asm2c
+
+
+proc IDirectSound3D_Ignored5_asm2c public
+
+; the 5 arguments are not read
+
+        Call_Asm_Stack0 IDirectSound3D_Ignored_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectSound3D_Ignored5_asm2c
+
+
+proc IDirectSound3D_Unsupported2_asm2c public
+
+; the 2 arguments are not read
+
+        Call_Asm_Stack0 IDirectSound3D_Unsupported_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectSound3D_Unsupported2_asm2c
+
+
+proc IDirectSound3D_Unsupported3_asm2c public
+
+; the 3 arguments are not read
+
+        Call_Asm_Stack0 IDirectSound3D_Unsupported_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3D_Unsupported3_asm2c
+
+
+proc IDirectSound3DListener_SetAllParameters_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DListener_SetAllParameters_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DListener_SetAllParameters_asm2c
+
+
+proc IDirectSound3DListener_SetOrientation_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack8 IDirectSound3DListener_SetOrientation_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure IDirectSound3DListener_SetOrientation_asm2c
+
+
+proc IDirectSound3DListener_SetPosition_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack5 IDirectSound3DListener_SetPosition_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectSound3DListener_SetPosition_asm2c
+
+
+proc IDirectSound3DListener_SetRolloffFactor_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DListener_SetRolloffFactor_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DListener_SetRolloffFactor_asm2c
+
+
+proc IDirectSound3DListener_CommitDeferredSettings_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack1 IDirectSound3DListener_CommitDeferredSettings_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectSound3DListener_CommitDeferredSettings_asm2c
+
+
+proc IDirectSound3DBuffer_SetAllParameters_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DBuffer_SetAllParameters_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DBuffer_SetAllParameters_asm2c
+
+
+proc IDirectSound3DBuffer_SetMaxDistance_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DBuffer_SetMaxDistance_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DBuffer_SetMaxDistance_asm2c
+
+
+proc IDirectSound3DBuffer_SetMinDistance_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DBuffer_SetMinDistance_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DBuffer_SetMinDistance_asm2c
+
+
+proc IDirectSound3DBuffer_SetMode_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack3 IDirectSound3DBuffer_SetMode_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectSound3DBuffer_SetMode_asm2c
+
+
+proc IDirectSound3DBuffer_SetPosition_asm2c public
+
+; all the arguments are on the stack
+
+        Call_Asm_Stack5 IDirectSound3DBuffer_SetPosition_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectSound3DBuffer_SetPosition_asm2c
+
+
+
 datasegment dsound_data constant
 
 dlabel IDirectSoundVtbl_asm2c global
@@ -542,5 +759,48 @@ daddr IDirectSoundBuffer_SetFrequency_asm2c
 daddr IDirectSoundBuffer_Stop_asm2c
 daddr IDirectSoundBuffer_Unlock_asm2c
 daddr IDirectSoundBuffer_Restore_asm2c
+
+dlabel IDirectSound3DListenerVtbl_asm2c global
+daddr IDirectSound3D_QueryInterface_asm2c
+daddr IDirectSound3D_AddRef_asm2c
+daddr IDirectSound3D_Release_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported3_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3DListener_SetAllParameters_asm2c
+daddr IDirectSound3D_Ignored3_asm2c
+daddr IDirectSound3D_Ignored3_asm2c
+daddr IDirectSound3DListener_SetOrientation_asm2c
+daddr IDirectSound3DListener_SetPosition_asm2c
+daddr IDirectSound3DListener_SetRolloffFactor_asm2c
+daddr IDirectSound3D_Ignored5_asm2c
+daddr IDirectSound3DListener_CommitDeferredSettings_asm2c
+
+dlabel IDirectSound3DBufferVtbl_asm2c global
+daddr IDirectSound3D_QueryInterface_asm2c
+daddr IDirectSound3D_AddRef_asm2c
+daddr IDirectSound3D_Release_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported3_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3D_Unsupported2_asm2c
+daddr IDirectSound3DBuffer_SetAllParameters_asm2c
+daddr IDirectSound3D_Ignored4_asm2c
+daddr IDirectSound3D_Ignored5_asm2c
+daddr IDirectSound3D_Ignored3_asm2c
+daddr IDirectSound3DBuffer_SetMaxDistance_asm2c
+daddr IDirectSound3DBuffer_SetMinDistance_asm2c
+daddr IDirectSound3DBuffer_SetMode_asm2c
+daddr IDirectSound3DBuffer_SetPosition_asm2c
+daddr IDirectSound3D_Ignored5_asm2c
 
 endd
