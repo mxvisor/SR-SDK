@@ -69,6 +69,8 @@ funcp MapViewOfFile_c *hFileMappingObject, dwDesiredAccess, dwFileOffsetHigh, dw
 func UnmapViewOfFile_c *lpBaseAddress
 funcp _lopen_c *lpPathName, iReadWrite
 func _lclose_c *hFile
+func GetPrivateProfileIntA_c *lpAppName, *lpKeyName, nDefault, *lpFileName
+func WritePrivateProfileStringA_c *lpAppName, *lpKeyName, *lpString, *lpFileName
 
 proc Beep_asm2c public
 
@@ -669,3 +671,33 @@ proc _lopen_asm2c public
         Call_Asm_Return 2
 
 endp ; end procedure _lopen_asm2c
+
+
+proc GetPrivateProfileIntA_asm2c public
+
+; [esp + 4*4] = LPCSTR lpFileName
+; [esp + 3*4] = INT    nDefault
+; [esp + 2*4] = LPCSTR lpKeyName
+; [esp +   4] = LPCSTR lpAppName
+; [esp      ] = return address
+
+        Call_Asm_Stack4 GetPrivateProfileIntA_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure GetPrivateProfileIntA_asm2c
+
+
+proc WritePrivateProfileStringA_asm2c public
+
+; [esp + 4*4] = LPCSTR lpFileName
+; [esp + 3*4] = LPCSTR lpString
+; [esp + 2*4] = LPCSTR lpKeyName
+; [esp +   4] = LPCSTR lpAppName
+; [esp      ] = return address
+
+        Call_Asm_Stack4 WritePrivateProfileStringA_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure WritePrivateProfileStringA_asm2c

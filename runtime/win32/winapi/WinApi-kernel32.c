@@ -2040,6 +2040,54 @@ uint32_t CCALL GetLastError_c(void)
     return Winapi_GetLastError();
 }
 
+/* The profiles (NAME.INI).  A game asks for ".\\NAME.INI" or for a path in its
+ * directory: the file is the name without the directory.  What
+ * WritePrivateProfileStringA writes is in the write root, and that copy is read
+ * before the game directory's own. */
+static const char *profile_name(const char *lpFileName)
+{
+    const char *name;
+
+    name = strrchr(lpFileName, '\\');
+    if (name == NULL) name = strrchr(lpFileName, '/');
+    return (name != NULL) ? (name + 1) : lpFileName;
+}
+
+/* the profile's path in the write root; 1 when the file is there */
+static int profile_write_path(const char *name, char *path, size_t size)
+{
+#ifdef _WIN32
+    snprintf(path, size, "%s\\%s", Game_WriteRoot(), name);
+    return _access(path, 0) == 0;
+#else
+    char found[MAX_PATH * 2];
+
+    snprintf(path, size, "%s/%s", Game_WriteRoot(), name);
+    if (strlen(path) >= sizeof(found) || !CLIB_FindFile(path, found)) return 0;
+    snprintf(path, size, "%s", found);
+    return 1;
+#endif
+}
+
+static FILE *open_profile(const char *name)
+{
+    char path[MAX_PATH * 2];
+
+    if (profile_write_path(name, path, sizeof(path)))
+    {
+        return fopen(path, "rb");
+    }
+#ifdef _WIN32
+    return fopen(name, "rb");
+#else
+    if (strlen(name) < sizeof(path) && CLIB_FindFile(name, path))
+    {
+        return fopen(path, "rb");
+    }
+    return NULL;
+#endif
+}
+
 uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName)
 {
     FILE *file;
@@ -2047,18 +2095,10 @@ uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpK
     size_t default_length, length;
     int items;
     char buf[8192];
-    char filename_buf[512];
-    const char *name;
 
-    /* The path of the file is the name of the file in the game directory:
-     * a game asks for ".\\NAME.INI". */
     if (lpFileName != NULL)
     {
-        strncpy(filename_buf, lpFileName, sizeof(filename_buf) - 1);
-        filename_buf[sizeof(filename_buf) - 1] = 0;
-        name = strrchr(filename_buf, '\\');
-        if (name == NULL) name = strrchr(filename_buf, '/');
-        lpFileName = (name != NULL) ? (name + 1) : filename_buf;
+        lpFileName = profile_name(lpFileName);
     }
 
 #ifdef DEBUG_KERNEL32
@@ -2083,18 +2123,7 @@ uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpK
         return 0;
     }
 
-    file = NULL;
-    if (lpFileName != NULL)
-    {
-#ifdef _WIN32
-        file = fopen(lpFileName, "rb");
-#else
-        if (CLIB_FindFile(lpFileName, buf))
-        {
-            file = fopen(buf, "rb");
-        }
-#endif
-    }
+    file = (lpFileName != NULL) ? open_profile(lpFileName) : NULL;
 
     if (file == NULL)
     {
@@ -2328,6 +2357,252 @@ uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpK
             return nSize - 1;
         }
     }
+}
+
+uint32_t CCALL GetPrivateProfileIntA_c(const char *lpAppName, const char *lpKeyName, int32_t nDefault, const char *lpFileName)
+{
+    char value[64];
+    const char *p;
+    uint32_t number, base, digit;
+    int negative;
+
+#ifdef DEBUG_KERNEL32
+    eprintf("GetPrivateProfileIntA: %s, %s, %i, %s\n", lpAppName, lpKeyName, nDefault, lpFileName);
+#endif
+
+    /* no key, or an empty value: the default */
+    if (GetPrivateProfileStringA_c(lpAppName, lpKeyName, "", value, sizeof(value), lpFileName) == 0)
+    {
+        return (uint32_t)nDefault;
+    }
+
+    /* as Windows: spaces, a sign, 0x, 0o or 0b, and the digits up to the first other character */
+    p = value;
+    while (*p == ' ' || *p == '\t') p++;
+    negative = (*p == '-');
+    if (*p == '-' || *p == '+') p++;
+    base = 10;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) base = 16;
+    else if (p[0] == '0' && (p[1] == 'o' || p[1] == 'O')) base = 8;
+    else if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B')) base = 2;
+    if (base != 10) p += 2;
+
+    number = 0;
+    for (;; p++)
+    {
+        if (*p >= '0' && *p <= '9') digit = (uint32_t)(*p - '0');
+        else if (*p >= 'a' && *p <= 'f') digit = (uint32_t)(*p - 'a' + 10);
+        else if (*p >= 'A' && *p <= 'F') digit = (uint32_t)(*p - 'A' + 10);
+        else break;
+        if (digit >= base) break;
+        number = number * base + digit;
+    }
+
+    return negative ? (0u - number) : number;
+}
+
+/* a line of a profile, without its end */
+typedef struct {
+    const char *text;
+    size_t length;
+} profile_line;
+
+static int profile_line_is_blank(const profile_line *line)
+{
+    size_t index;
+
+    for (index = 0; index < line->length; index++)
+    {
+        if (line->text[index] != ' ' && line->text[index] != '\t') return 0;
+    }
+    return 1;
+}
+
+/* "[name]"; any section with name NULL */
+static int profile_line_is_section(const profile_line *line, const char *name)
+{
+    size_t length;
+
+    if (line->length == 0 || line->text[0] != '[') return 0;
+    if (name == NULL) return 1;
+    length = strlen(name);
+    return line->length > length + 1 && strncasecmp(line->text + 1, name, length) == 0 && line->text[length + 1] == ']';
+}
+
+/* "key=value", spaces around the key */
+static int profile_line_is_key(const profile_line *line, const char *key)
+{
+    const char *text, *equals;
+    size_t length;
+
+    text = line->text;
+    equals = (const char *)memchr(text, '=', line->length);
+    length = (equals != NULL) ? (size_t)(equals - text) : line->length;
+    while (length != 0 && (text[length - 1] == ' ' || text[length - 1] == '\t')) length--;
+    while (length != 0 && (text[0] == ' ' || text[0] == '\t'))
+    {
+        text++;
+        length--;
+    }
+    return length != 0 && length == strlen(key) && strncasecmp(text, key, length) == 0;
+}
+
+/* The profile is read (the write root's copy, else the game's), changed and written
+ * whole into the write root, with CRLF as Windows writes it.  No key: the section
+ * goes; no string: the key goes; a new key ends its section, a new section the file. */
+uint32_t CCALL WritePrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpString, const char *lpFileName)
+{
+    const char *name;
+    char path[MAX_PATH * 2];
+    FILE *file;
+    char *text, *added, *p;
+    long text_size;
+    profile_line *lines;
+    size_t count, index, section, end, key;
+    int written;
+
+#ifdef DEBUG_KERNEL32
+    eprintf("WritePrivateProfileStringA: %s, %s, %s, %s\n", lpAppName, lpKeyName, lpString, lpFileName);
+#endif
+
+    if (lpAppName == NULL || lpFileName == NULL)
+    {
+        /* (NULL, NULL, NULL, file) writes the cached file: there is no cache */
+        if (lpAppName == NULL && lpKeyName == NULL && lpString == NULL) return 1;
+        Winapi_SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    name = profile_name(lpFileName);
+
+    text = NULL;
+    text_size = 0;
+    file = open_profile(name);
+    if (file != NULL)
+    {
+        if (fseek(file, 0, SEEK_END) == 0) text_size = ftell(file);
+        if (text_size < 0) text_size = 0;
+        rewind(file);
+        text = (char *)malloc((size_t)text_size + 1);
+        if (text != NULL) text_size = (long)fread(text, 1, (size_t)text_size, file);
+        fclose(file);
+    }
+
+    count = 1;
+    for (index = 0; index < (size_t)text_size; index++)
+    {
+        if (text[index] == '\n') count++;
+    }
+
+    /* room for a blank line, a section and a key */
+    lines = (profile_line *)malloc((count + 3) * sizeof(profile_line));
+    added = (char *)malloc(strlen(lpAppName) + ((lpKeyName != NULL) ? strlen(lpKeyName) : 0) + ((lpString != NULL) ? strlen(lpString) : 0) + 8);
+    if (lines == NULL || added == NULL || (file != NULL && text == NULL))
+    {
+        free(text);
+        free(lines);
+        free(added);
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+
+    count = 0;
+    p = text;
+    for (index = 0; text != NULL && index <= (size_t)text_size; index++)
+    {
+        if (index == (size_t)text_size || text[index] == '\n')
+        {
+            lines[count].text = p;
+            lines[count].length = (size_t)(text + index - p);
+            if (lines[count].length != 0 && p[lines[count].length - 1] == '\r') lines[count].length--;
+            if (index != (size_t)text_size || lines[count].length != 0) count++;
+            p = text + index + 1;
+        }
+    }
+
+    for (section = 0; section < count && !profile_line_is_section(&lines[section], lpAppName); section++);
+    for (end = section + 1; end < count && !profile_line_is_section(&lines[end], NULL); end++);
+
+    if (section == count)
+    {
+        if (lpKeyName == NULL || lpString == NULL)
+        {
+            /* nothing to remove */
+            free(text);
+            free(lines);
+            free(added);
+            return 1;
+        }
+
+        if (count != 0 && !profile_line_is_blank(&lines[count - 1]))
+        {
+            lines[count].text = "";
+            lines[count].length = 0;
+            count++;
+        }
+        lines[count].text = added;
+        lines[count].length = (size_t)sprintf(added, "[%s]", lpAppName);
+        count++;
+        lines[count].text = added + lines[count - 1].length + 1;
+        lines[count].length = (size_t)sprintf(added + lines[count - 1].length + 1, "%s=%s", lpKeyName, lpString);
+        count++;
+    }
+    else if (lpKeyName == NULL)
+    {
+        memmove(&lines[section], &lines[end], (count - end) * sizeof(profile_line));
+        count -= end - section;
+    }
+    else
+    {
+        for (key = section + 1; key < end && !profile_line_is_key(&lines[key], lpKeyName); key++);
+
+        if (lpString == NULL)
+        {
+            if (key < end)
+            {
+                memmove(&lines[key], &lines[key + 1], (count - key - 1) * sizeof(profile_line));
+                count--;
+            }
+        }
+        else
+        {
+            if (key == end)
+            {
+                /* after the last line of the section that is not blank */
+                while (key > section + 1 && profile_line_is_blank(&lines[key - 1])) key--;
+                memmove(&lines[key + 1], &lines[key], (count - key) * sizeof(profile_line));
+                count++;
+            }
+            lines[key].text = added;
+            lines[key].length = (size_t)sprintf(added, "%s=%s", lpKeyName, lpString);
+        }
+    }
+
+#ifdef _WIN32
+    CreateDirectoryA(Game_WriteRoot(), NULL);
+#else
+    mkdir(Game_WriteRoot(), 0777);
+#endif
+    profile_write_path(name, path, sizeof(path));
+    file = fopen(path, "wb");
+    written = (file != NULL);
+    for (index = 0; written && index < count; index++)
+    {
+        written = fwrite(lines[index].text, 1, lines[index].length, file) == lines[index].length &&
+                  fwrite("\r\n", 1, 2, file) == 2;
+    }
+    if (file != NULL && fclose(file) != 0) written = 0;
+
+    free(text);
+    free(lines);
+    free(added);
+
+    if (!written)
+    {
+        Winapi_SetLastError(ERROR_ACCESS_DENIED);
+        return 0;
+    }
+    return 1;
 }
 
 void CCALL InitializeCriticalSection_c(void *lpCriticalSection)

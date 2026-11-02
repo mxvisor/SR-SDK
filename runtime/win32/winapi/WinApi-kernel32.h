@@ -56,6 +56,9 @@ uint32_t CCALL GetCurrentThreadId_c(void);
 uint32_t CCALL GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char *lpBuffer, PTR32(char) *lpFilePart);
 uint32_t CCALL GetLastError_c(void);
 uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName);
+/* the profiles: the write root's copy is read first, and written */
+uint32_t CCALL GetPrivateProfileIntA_c(const char *lpAppName, const char *lpKeyName, int32_t nDefault, const char *lpFileName);
+uint32_t CCALL WritePrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpString, const char *lpFileName);
 void CCALL InitializeCriticalSection_c(void *lpCriticalSection);
 void CCALL LeaveCriticalSection_c(void *lpCriticalSection);
 uint32_t CCALL QueryPerformanceCounter_c(void *lpPerformanceCount);
