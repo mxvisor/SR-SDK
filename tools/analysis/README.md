@@ -9,6 +9,9 @@ paths of the game's files as arguments.
 | `lefixups.py` | the LE fixup records, by target range |
 | `sr_cov.py`, `sr_iterate.py` | code that SR still emits as data: candidates for `fixup_interpret_as_code.sci`, iterated until stable (`--exe NAME` names the game's executable) |
 | `pe_relocations.py` | PE base relocations rebuilt with Capstone for an executable that has none (`relocations.csv` of SRW); `--sci DIR` also writes the code, no-code and displaced-label lists SRW needs for tables in code |
+| `sr_cover.py` | the same for SRW (PE): grows `fixup_interpret_as_code.sci` from the code addresses the executable's relocations point at (`--repo`, `--module`, `--variant`; run in a `-recomp` directory) |
+| `retflags.py` | rets whose flags a caller reads after the call, from SR's `seg01_code.llinc`: `instruction_flags.sci` lines (direct calls only) |
+| `pe_imports.py`, `pe_exports.py`, `pe_callargs.py` | PE32 imports (dll, name, IAT slot, argc), DLL exports with the `ret N` of each, and the arg count of the import calls from the call sites |
 | `udump.c` | decodes a raw section with the udis86 build SR uses (build line in the header) |
 
 `tools/gen_import_shim.py` (the import shim) is in `tools/`. SRW passes the flags between regions itself; a game's `instruction_flags.sci` keeps only what it cannot derive (jump-table targets, flags a callee leaves).
