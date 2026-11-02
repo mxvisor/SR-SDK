@@ -151,6 +151,7 @@ typedef struct {
     int audio;
     int32_t index0;
     int32_t index1;
+    int32_t disc;           /* REM DISC: where the track is on the disc (a file of its own has INDEX 01 0), or -1 */
 } cue_track;
 
 typedef struct {
@@ -170,6 +171,7 @@ static int load_cue(const char *path)
     static cue_file files[GAME_CD_MAX_TRACKS];
     static cue_track parsed[GAME_CD_MAX_TRACKS];
     int file_count = 0, track_count = 0;
+    int32_t rem_leadout = -1;
     char line[1024];
 
     while (fgets(line, sizeof(line), cue) != NULL) {
@@ -210,6 +212,15 @@ static int load_cue(const char *path)
                                  strncasecmp(type, "MODE2", 5) == 0 ? 24 : 16;
             track->index0 = -1;
             track->index1 = -1;
+            track->disc = -1;
+        } else if (strncasecmp(p, "REM", 3) == 0) {
+            /* the table of contents of a disc whose tracks are files of their own (portable_cd.py) */
+            char what[16] = "", msf[32] = "";
+            int32_t frames;
+            if (sscanf(p + 3, "%15s %31s", what, msf) == 2 && parse_msf(msf, &frames)) {
+                if (strcasecmp(what, "DISC") == 0 && track_count > 0) parsed[track_count - 1].disc = frames;
+                else if (strcasecmp(what, "LEADOUT") == 0) rem_leadout = frames;
+            }
         } else if (strncasecmp(p, "INDEX", 5) == 0 && track_count > 0) {
             int index = -1;
             char msf[32] = "";
@@ -247,13 +258,14 @@ static int load_cue(const char *path)
         out->swap = file->swap;
         out->offset = file->compressed ? 0 : base + (int64_t)(track->index1 - track_start) * track->sector_bytes;
         out->start_frames = file->compressed ? track->index1 : 0;
-        out->index1 = track->index1;
-        toc_leadout = file->compressed ? track->index1 + 60 * 75
+        out->index1 = (file->compressed && track->disc >= 0) ? track->disc : track->index1;
+        toc_leadout = file->compressed ? out->index1 + 60 * 75
                                        : (int32_t)(file_size(file->path) / CD_RAW_SECTOR);
         out->sector_bytes = track->sector_bytes;
         out->data_header = track->data_header;
         snprintf(out->path, sizeof(out->path), "%s", file->path);
     }
+    if (rem_leadout >= 0) toc_leadout = rem_leadout;
     return 0;
 }
 

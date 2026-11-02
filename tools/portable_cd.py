@@ -316,6 +316,17 @@ def main():
     os.mkdir(music)
     audio = [(position, t) for position, t in enumerate(tracks) if t['mode'] == 'AUDIO']
     cue_lines = []
+    # where each track is on the disc, as a real disc's table of contents has it: the
+    # game finds a track by that address (a track file's own INDEX 01 is 0)
+    file_base, total = {}, 0
+    for track in tracks:
+        if track['path'] not in file_base:
+            file_base[track['path']] = total
+            total += os.path.getsize(track['path']) // RAW
+
+    def msf(frames):
+        return '%02d:%02d:%02d' % (frames // 4500, frames // 75 % 60, frames % 75)
+
     for position, track in audio:
         source_path, start, end = track_span(tracks, position)
         name = 'track%02d.%s' % (track['number'], audio_format)
@@ -329,8 +340,10 @@ def main():
                        + codec + [target], input=pcm, check=True)
         cue_lines += ['FILE "%s" %s' % (name, 'WAVE' if audio_format == 'wav' else audio_format.upper()),
                       '  TRACK %02d AUDIO' % track['number'],
-                      '    INDEX 01 00:00:00']
+                      '    INDEX 01 00:00:00',
+                      '    REM DISC %s' % msf(file_base[track['path']] + track['index1'])]
         print('track %2d: %6.1f s -> %s/%s' % (track['number'], (end - start) / RAW / 75, audio_dir, name))
+    cue_lines.append('REM LEADOUT %s' % msf(total))
     with open(os.path.join(music, audio_cue), 'w') as cue:
         cue.write('\n'.join(cue_lines) + '\n')
     print('%s/%s: %d tracks' % (audio_dir, audio_cue, len(audio)))
