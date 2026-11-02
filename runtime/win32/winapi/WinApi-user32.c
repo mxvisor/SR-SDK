@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <SDL.h>
 #include "WinApi-config.h"
-#include "VKfont.h"
+#include "VKfont2.h"
 #include "WinApi-guest.h"
 #include "WinApi-kernel32.h"
 #include "Game_memory.h"
