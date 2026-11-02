@@ -26,6 +26,8 @@
 #if !defined(_GAME_MEMORY_H_INCLUDED_)
 #define _GAME_MEMORY_H_INCLUDED_
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 
 int x86_init_malloc(void);
@@ -38,6 +40,11 @@ void *x86_realloc(void *ptr, unsigned int size);
 
 void *map_memory_32bit(unsigned int size, int only_address_space);
 void unmap_memory_32bit(void *mem, unsigned int size);
+/* size bytes at the highest free place of the guest's 2 GB that starts 64 KB
+ * or more above the guest address above (a DOS program's own memory) */
+void *map_memory_32bit_top(unsigned int size, uint32_t above);
+/* stderr: the guest window, what is where in it, and what was wanted of it */
+void Game_MemoryReport(const char *what, uint64_t wanted);
 
 #ifdef PTROFS_64BIT
 
@@ -58,19 +65,12 @@ int commit_guest_page0(void);
 
 #endif
 
-#include <stdint.h>
-
 #ifdef PTROFS_64BIT
 
 extern uint64_t pointer_offset;
 /* bytes at pointer_offset kept free for the guest's low memory (no access
- * until committed) */
+ * until committed; GAME_GUEST_LOW_MEMORY rounded up to 64 KB) */
 extern unsigned int pointer_reserved_length;
-#if defined(__ANDROID__)
-/* the first guest address the runtime may give to the game's heap; the game
- * maps its data below it and the allocator must not overwrite that data */
-void Game_MemorySetGuestNext(uint64_t offset);
-#endif
 
 /* guest flat address (32-bit) -> host pointer */
 #define GAME_GUEST32_TO_PTR(value) ((uintptr_t)(pointer_offset + (uint32_t)(value)))

@@ -160,28 +160,15 @@ extern "C" unsigned int Game_GuestLowMemory(void)
 
 extern "C" void Game_GuestDataStart(void)
 {
-    uint32_t range[2] = {0, 0};
     size_t size;
-
-    llasm_guest_data_range(range);
 
     /* The game was a 16-bit program in a 32-bit executable: it uses addresses
      * of the low memory of Windows 95 as well, so the low area of the guest's
      * address space is mapped (with zeros) and the data of the game is
-     * copied into it (llasm_copy_guest_data).  The whole gigabyte on Linux
-     * (the memory is not committed); on Windows and Android only the data and
-     * a margin: on Android the runtime has reserved the guest region and hands
-     * its arenas out of it, so a gigabyte mapping here would be overwritten by
-     * the first arenas. */
-#if defined(_WIN32) || defined(__ANDROID__)
+     * copied into it (llasm_copy_guest_data): the data and a margin, the low
+     * memory of the guest window (GAME_GUEST_LOW_MEMORY).  The guest's heap
+     * is above it from the start, so the mapping overwrites nothing. */
     size = (size_t)Game_GuestLowMemory();
-#else
-    size = 0x40000000;
-    if (range[1] > 0x40000000)
-    {
-        size = range[1];
-    }
-#endif
 
     if (map_guest_memory((uintptr_t)pointer_offset, size) != 0)
     {
@@ -189,9 +176,6 @@ extern "C" void Game_GuestDataStart(void)
         return;
     }
 
-#if defined(__ANDROID__)
-    Game_MemorySetGuestNext((uint64_t)size);
-#endif
     llasm_copy_guest_data(pointer_offset);
 }
 

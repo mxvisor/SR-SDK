@@ -199,6 +199,17 @@ Every build is position-independent (Linux and Android: PIE / `-fPIC`, llasm
 pointers are 32-bit offsets from a load-time base, never absolute host addresses,
 and there is no fixed-address mode.
 
+The base, `pointer_offset`, is the bottom of the guest window: the 2 GB the guest
+sees as its addresses 0 .. 2 GB, the same on Linux, Windows and Android
+(`runtime/core/Game_memory.c`). The window is reserved whole at the start (address
+space only, no memory), so nothing of the host's lands in it later. From the
+bottom: the guest's low memory (`GAME_GUEST_LOW_MEMORY()`: the DOS memory, the data
+of a `guest_data_in_memory` game), the guest's heap from the bottom up, the host's
+image at 64 MB (`android/gameloader.c` loads it there on Android), and a DOS
+program's own memory from the top down. What the host already had in the window
+(the image, the heap of `brk`) is left out. `SR_SDK_MEMORY_MAP=1` prints the map of
+the window at the start; a request that finds no room prints it as well.
+
 - every `.c` of `runtime/core/` and `runtime/<platform>/`, unless `game/` has
   a file with the same relative path: the game's file replaces it;
 - for the llasm backend, the `.c` of each `llasm_X.llinc` that the game's
@@ -285,7 +296,7 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 | `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D`; the log says which renderer runs |
 | `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
-| `GAME_GUEST_LOW_MEMORY()` | how much of the guest's address space from `pointer_offset` up has to stay free of the host (default 1 MiB + 64 KiB) |
+| `GAME_GUEST_LOW_MEMORY()` | the low memory of the guest window: how much of the guest's address space from `pointer_offset` up has to stay free of the host and of the guest's heap (default 1 MiB + 64 KiB, at most 64 MiB) |
 | `GAME_GUEST_PAGE0` | defined: the guest's page at address 0 reads as zeros and takes writes, as the DOS memory Windows 9x maps there |
 | `GAME_PROC_LOOKUP(name)` | `GetProcAddress` asks the game first: the guest address of the procedure, or 0 for the layer's table |
 | `GAME_EXTRA_PROCS(X)` | more exports for the `GetProcAddress` table of the layer: `X(DirectInputCreateA) X(...)` |

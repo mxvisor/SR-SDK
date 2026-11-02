@@ -48,9 +48,9 @@ static int pool_mapped;
 uint8_t *Game_DosMapLow(uint32_t address, uint32_t size)
 {
 #ifdef PTROFS_64BIT
-    /* initialize_pointer_offset keeps [0, 1 MiB + 64 KiB) of the guest
-     * address space free (reserved, no access); with pointer_offset == 0 there
-     * is nothing to commit and guest 0 is the host's. */
+    /* initialize_pointer_offset keeps the low memory of the guest window
+     * (pointer_reserved_length bytes) free (reserved, no access); with
+     * pointer_offset == 0 there is nothing to commit and guest 0 is the host's. */
     uint8_t *host;
     uint32_t end = (address + size + 0xfffu) & ~0xfffu;
 
@@ -158,47 +158,23 @@ uint32_t Game_DosMemFlat(uint32_t address)
 static uint8_t *program_block;
 static uint32_t program_size;
 
-/* [guest, guest + size) as memory, if nothing else is there */
-static uint8_t *map_at(uint32_t guest, uint32_t size)
-{
-    void *want = (void *)GAME_GUEST32_TO_PTR(guest);
-#if defined(_WIN32)
-    return (uint8_t *)VirtualAlloc(want, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-#else
-#ifndef MAP_FIXED_NOREPLACE
-#define MAP_FIXED_NOREPLACE 0
-#endif
-    void *mem = mmap(want, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
-    if (mem == MAP_FAILED) return NULL;
-    if (mem != want) {
-        munmap(mem, size);
-        return NULL;
-    }
-    return (uint8_t *)mem;
-#endif
-}
-
 uint32_t Game_DosProgramInit(uint32_t size, uint32_t stack_size, uint32_t above)
 {
     /* the guest window is 2 GiB (the code compares addresses as unsigned, the
      * game as signed): from its top down, the first free place above the
      * image, for the size asked or, if there is no room, half of it, down to
      * 4 MiB */
-    uint32_t guest;
-
     Game_DosProgramDeinit();
-    for (; size >= (4u << 20) && program_block == NULL; size >>= 1) {
-        for (guest = 0x80000000u - size; guest >= above + 0x10000u; guest -= 0x10000u) {
-            program_block = map_at(guest, size);
-            if (program_block != NULL) {
-                program_size = size;
-                break;
-            }
+    for (; size >= (4u << 20); size >>= 1) {
+        program_block = (uint8_t *)map_memory_32bit_top(size, above);
+        if (program_block != NULL) {
+            program_size = size;
+            break;
         }
-        if (program_block != NULL) break;
     }
     if (program_block == NULL) {
         fprintf(stderr, GAME_NAME ": no free memory between the program's image (%08x) and the top of the guest window\n", above);
+        Game_MemoryReport("the program's memory", 4u << 20);
         return 0;
     }
     return GAME_PTR_TO_GUEST32(program_block) + stack_size;
