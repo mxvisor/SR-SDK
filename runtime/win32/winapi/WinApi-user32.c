@@ -3118,6 +3118,36 @@ int16_t CCALL GetAsyncKeyState_c(int32_t vKey)
     return key_state_word(vKey, 0);
 }
 
+#if defined(GAME_WINDOW_WIDTH) && defined(GAME_WINDOW_HEIGHT)
+/* The window of a game that sizes its picture by a fixed display mode: the
+ * rectangle is the mode's size at the origin, whatever the host window is
+ * (the picture is scaled to it).  A RECT is four LONGs. */
+static uint32_t window_rect(uint32_t rect)
+{
+    if (rect != 0)
+    {
+        int32_t *r = (int32_t *)GAME_GUEST32_TO_PTR(rect);
+
+        r[0] = r[1] = 0;
+        r[2] = GAME_WINDOW_WIDTH;
+        r[3] = GAME_WINDOW_HEIGHT;
+    }
+    return 1;
+}
+
+uint32_t CCALL GetClientRect_c(uint32_t hwnd, uint32_t rect)
+{
+    (void)hwnd;
+    return window_rect(rect);
+}
+
+uint32_t CCALL GetWindowRect_c(uint32_t hwnd, uint32_t rect)
+{
+    (void)hwnd;
+    return window_rect(rect);
+}
+#endif
+
 uint32_t CCALL GetCursorPos_c(void *lpPoint)
 {
     int x, y;

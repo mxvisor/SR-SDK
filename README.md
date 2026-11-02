@@ -273,6 +273,7 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 | `GAME_WINAPI_PAINT_WHEN_IDLE` | 1: the game draws in its window procedure and waits for the repaint request; the port makes the request when the program has no other message |
 | `GAME_WINAPI_ACTIVATE_APP_ON_IDLE` | 1: the port sends `WM_ACTIVATEAPP` with 0 and then with 1 when the program has no other message (the game makes its picture buffer on the first and draws on the second) |
 | `GAME_WINAPI_WINDOW_MESSAGES` | 1: the game's message loop looks at the window of a message: input messages carry the window's handle, `PostMessageA` delivers the `WM_USER` range |
+| `GAME_WINDOW_WIDTH`, `GAME_WINDOW_HEIGHT` | both defined: `GetClientRect` and `GetWindowRect` give the game's window that size at the origin (the display mode it asks for; undefined: the stub, or the game's own function) |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |

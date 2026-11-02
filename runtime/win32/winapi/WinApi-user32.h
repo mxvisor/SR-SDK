@@ -43,6 +43,9 @@ uint32_t CCALL DestroyWindow_c(void *hWnd);
 uint32_t CCALL DispatchMessageA_c(void *lpMsg);
 int16_t CCALL GetAsyncKeyState_c(int32_t vKey);
 uint32_t CCALL GetCursorPos_c(void *lpPoint);
+/* defined with GAME_WINDOW_WIDTH and GAME_WINDOW_HEIGHT */
+uint32_t CCALL GetClientRect_c(uint32_t hwnd, uint32_t rect);
+uint32_t CCALL GetWindowRect_c(uint32_t hwnd, uint32_t rect);
 int16_t CCALL GetKeyState_c(int32_t nVirtKey);
 uint32_t CCALL GetKeyboardState_c(void *lpKeyState);
 uint32_t CCALL GetMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax);
