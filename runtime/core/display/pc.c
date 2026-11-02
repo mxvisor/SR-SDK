@@ -36,10 +36,20 @@
  * stays hidden, because shown it would be a second, black window that covers
  * the game and takes the mouse.
  *
- * A game with a display of its own (another renderer, labels over the picture)
- * has its own game/display/pc.c with Init_Display, Init_Display2,
- * Config_Display, Cleanup_Display, Set_Palette_Value, Game_Display_Create,
- * Game_Display_Destroy and Game_Display_Flip. */
+ * What a game adds comes through Game_hooks.h, all optional:
+ *   GAME_DISPLAY_INIT()                 after the defaults of Init_Display
+ *   GAME_DISPLAY_INIT2()                at the end of Init_Display2: it may change Render_Width and
+ *                                       Render_Height and Display_Flip_Procedure
+ *   GAME_DISPLAY_CLEANUP()              in Cleanup_Display
+ *   GAME_DISPLAY_WINDOW_FLAGS           more SDL_WINDOW_* flags of the window (SDL_WINDOW_OPENGL)
+ *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip: nonzero, the game showed
+ *                                       the frame itself (another renderer)
+ *   GAME_DISPLAY_OVERLAY(picture)       after the picture is drawn, before the touch gamepad
+ *                                       (picture: the SDL_Rect it is in)
+ *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the renderer goes
+ * A game with a display altogether its own has its own game/display/pc.c with
+ * Init_Display, Init_Display2, Config_Display, Cleanup_Display, Set_Palette_Value,
+ * Game_Display_Create, Game_Display_Destroy and Game_Display_Flip. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,10 +99,19 @@ static void Flip_8_to_32(const uint8_t *src, uint32_t *dst)
     }
 }
 
+/* the display colours as 32-bit pixels (Game_Palette is static here) */
+uint32_t *Game_GetPalette(void)
+{
+    return &Game_Palette[0].pix;
+}
+
 void Init_Display(void)
 {
     Display_FSType = 1;
     Display_Fullscreen = 0;
+#ifdef GAME_DISPLAY_INIT
+    GAME_DISPLAY_INIT();
+#endif
 }
 
 void Init_Display2(void)
@@ -121,6 +140,9 @@ void Init_Display2(void)
     Render_Width = 320;
     Render_Height = 200;
     Display_Flip_Procedure = (Game_Flip_Procedure) &Flip_8_to_32;
+#ifdef GAME_DISPLAY_INIT2
+    GAME_DISPLAY_INIT2();
+#endif
 }
 
 int Config_Display(char *str, char *param)
@@ -133,6 +155,9 @@ int Config_Display(char *str, char *param)
 
 void Cleanup_Display(void)
 {
+#ifdef GAME_DISPLAY_CLEANUP
+    GAME_DISPLAY_CLEANUP();
+#endif
 #if defined(GAME_WINAPI)
     Winapi_DestroyDirectDrawWindow();
 #endif
@@ -141,6 +166,9 @@ void Cleanup_Display(void)
 #define WINDOW_SHOWN_FLAG SDL_WINDOW_HIDDEN
 #else
 #define WINDOW_SHOWN_FLAG 0
+#endif
+#ifndef GAME_DISPLAY_WINDOW_FLAGS
+#define GAME_DISPLAY_WINDOW_FLAGS 0
 #endif
 
 /* Game_Texture[0] scaled up by whole pixels; see Game_Display_Flip. */
@@ -163,7 +191,7 @@ int Game_Display_Create(void)
 #endif
 
     Game_Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG);
+                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
     if (Game_Window == NULL) return -1;
     /* resizable; the picture keeps 4:3 inside whatever size the window gets */
     SDL_SetWindowMinimumSize(Game_Window, 320, 240);
@@ -178,7 +206,8 @@ int Game_Display_Create(void)
     SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
 
     /* sized for the largest mode, so a mode change never moves it under the flip thread */
-    Game_TextureData = calloc(1024 * 768, Display_Bitsperpixel / 8);
+    Game_TextureData = calloc((Render_Width * Render_Height > 1024 * 768) ? Render_Width * Render_Height : 1024 * 768,
+                              Display_Bitsperpixel / 8);
     if (Game_TextureData == NULL)
     {
         SDL_OutOfMemory();
@@ -190,6 +219,9 @@ int Game_Display_Create(void)
 
 void Game_Display_Destroy(void)
 {
+#ifdef GAME_DISPLAY_DESTROY
+    GAME_DISPLAY_DESTROY();
+#endif
     if (Game_ScaledTexture[0] != NULL) SDL_DestroyTexture(Game_ScaledTexture[0]);
     if (Game_Texture[0] != NULL) SDL_DestroyTexture(Game_Texture[0]);
     if (Game_Renderer != NULL) SDL_DestroyRenderer(Game_Renderer);
@@ -231,6 +263,9 @@ void Game_Display_Flip(void)
     SDL_Rect picture;
     int output_width, output_height;
 
+#ifdef GAME_DISPLAY_FLIP
+    if (GAME_DISPLAY_FLIP()) return;
+#endif
     if (Game_Renderer == NULL || Game_Texture[0] == NULL) return;
     /* the game changed video mode: a new texture of the new size */
     int texture_width, texture_height;
@@ -273,6 +308,9 @@ void Game_Display_Flip(void)
     SDL_SetRenderDrawColor(Game_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(Game_Renderer);
     SDL_RenderCopy(Game_Renderer, source, NULL, &picture);
+#ifdef GAME_DISPLAY_OVERLAY
+    GAME_DISPLAY_OVERLAY(&picture);
+#endif
     TouchGamepad_Draw(Game_Renderer);
     SDL_RenderPresent(Game_Renderer);
 }
