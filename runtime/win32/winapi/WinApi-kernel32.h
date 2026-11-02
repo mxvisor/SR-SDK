@@ -52,6 +52,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData);
 uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData);
 void * CCALL GetCurrentProcess_c(void);
 void * CCALL GetCurrentThread_c(void);
+uint32_t CCALL GetCurrentThreadId_c(void);
 uint32_t CCALL GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char *lpBuffer, PTR32(char) *lpFilePart);
 uint32_t CCALL GetLastError_c(void);
 uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName);
@@ -65,8 +66,15 @@ uint32_t CCALL SetFilePointer_c(void *hFile, uint32_t lDistanceToMove, uint32_t 
 uint32_t CCALL SetPriorityClass_c(void *hProcess, uint32_t fdwPriority);
 uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority);
 void CCALL Sleep_c(uint32_t cMilliseconds);
+uint32_t CCALL SleepEx_c(uint32_t dwMilliseconds, uint32_t bAlertable);
+uint32_t CCALL TlsAlloc_c(void);
+uint32_t CCALL TlsFree_c(uint32_t dwTlsIndex);
+uint32_t CCALL TlsGetValue_c(uint32_t dwTlsIndex);
+uint32_t CCALL TlsSetValue_c(uint32_t dwTlsIndex, uint32_t lpTlsValue);
 uint32_t CCALL WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesToWrite, uint32_t *lpNumberOfBytesWritten, void *lpOverlapped);
 unsigned int CCALL Winapi_GetTicks(void);
+/* the threads of the game that have not ended */
+int Winapi_ThreadsRunning(void);
 /* the letter of the CD drive (the disc, an image or a copy): D, or E when the port is on D: */
 char Winapi_CdDriveLetter(void);
 /* the start of Winapi_GetTicks (Linux) */

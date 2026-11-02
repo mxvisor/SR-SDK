@@ -37,6 +37,7 @@
  * An event is a flag that WaitForSingleObject polls. */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
 #include "WinApi.h"
@@ -70,6 +71,7 @@ void x86_deinitialize_cpu(void);
 struct winapi_thread {
     SDL_mutex *lock;
     SDL_cond *cond;
+    uint32_t id;            /* GetCurrentThreadId, and the target of PostThreadMessage */
     int refs;               /* the handle and the running thread */
     int suspend;            /* SuspendThread count */
     int32_t finished;
@@ -87,7 +89,21 @@ struct winapi_semaphore {
 };
 
 static THREAD_LOCAL struct winapi_thread *current_thread = NULL;
-static SDL_atomic_t next_thread_id = { 1 };
+static THREAD_LOCAL uint32_t current_thread_id = 1;  /* id 1 is the host's main thread */
+static SDL_atomic_t next_thread_id = { 2 };
+static SDL_atomic_t threads_running = { 0 };
+#define WINAPI_TLS_SLOTS 32
+static THREAD_LOCAL uint32_t tls_values[WINAPI_TLS_SLOTS];
+static SDL_atomic_t tls_used = { 0 };
+
+/* WINAPI_THREAD_LOG=1 logs the thread calls */
+static int thread_log(void)
+{
+    static int on = -1;
+
+    if (on < 0) on = (getenv("WINAPI_THREAD_LOG") != NULL);
+    return on;
+}
 
 static handle guest_handle(uint32_t value, handle_types type)
 {
@@ -112,11 +128,19 @@ static void thread_release(struct winapi_thread *t)
     free(t);
 }
 
+/* WinApi-user32.c: ends the game's main thread when the window was closed */
+void Winapi_StopMainIfExiting(void);
+
 void Winapi_ThreadCheckpoint(void)
 {
     struct winapi_thread *t = current_thread;
 
-    if (t == NULL) return;
+    if (t == NULL)
+    {
+        /* the game's main thread sleeping in its own loop: a close of the window ends it here */
+        Winapi_StopMainIfExiting();
+        return;
+    }
     SDL_LockMutex(t->lock);
     while (t->suspend > 0) SDL_CondWait(t->cond, t->lock);
     SDL_UnlockMutex(t->lock);
@@ -128,6 +152,7 @@ static int SDLCALL thread_main(void *data)
     uint32_t arg, code;
 
     current_thread = t;
+    current_thread_id = t->id;
     Winapi_ThreadCheckpoint();  /* CREATE_SUSPENDED */
 
     arg = t->param;
@@ -142,7 +167,13 @@ static int SDLCALL thread_main(void *data)
 
     current_thread = NULL;
     thread_release(t);
+    SDL_AtomicAdd(&threads_running, -1);
     return 0;
+}
+
+int Winapi_ThreadsRunning(void)
+{
+    return SDL_AtomicGet(&threads_running);
 }
 
 uint32_t CCALL CreateThread_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
@@ -173,10 +204,13 @@ uint32_t CCALL CreateThread_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
     h->oh.handle_type = HT_THREAD;
     h->oh.obj = t;
 
-    id = (uint32_t)SDL_AtomicAdd(&next_thread_id, 1) + 1;
+    id = (uint32_t)SDL_AtomicAdd(&next_thread_id, 1);
+    t->id = id;
+    SDL_AtomicAdd(&threads_running, 1);
     thread = SDL_CreateThread(thread_main, "guest", t);
     if (thread == NULL)
     {
+        SDL_AtomicAdd(&threads_running, -1);
         SDL_DestroyCond(t->cond);
         SDL_DestroyMutex(t->lock);
         free(t);
@@ -185,6 +219,8 @@ uint32_t CCALL CreateThread_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
     }
     SDL_DetachThread(thread);
 
+    if (thread_log())
+        fprintf(stderr, "CreateThread: start 0x%x param 0x%x suspended %u -> id %u\n", a2, a3, t->suspend, id);
     if (a5 != 0) *(uint32_t *)GAME_GUEST32_TO_PTR(a5) = id;
     return GAME_PTR_TO_GUEST32(h);
 }
@@ -213,6 +249,7 @@ uint32_t CCALL ResumeThread_c(uint32_t a0)
     t = (struct winapi_thread *)h->oh.obj;
     SDL_LockMutex(t->lock);
     prev = t->suspend;
+    if (thread_log()) fprintf(stderr, "ResumeThread: id %u suspend %d\n", t->id, prev);
     if (t->suspend > 0) t->suspend--;
     if (t->suspend == 0) SDL_CondBroadcast(t->cond);
     SDL_UnlockMutex(t->lock);
@@ -247,10 +284,76 @@ uint32_t CCALL GetThreadPriority_c(uint32_t a0)
     return (t != NULL) ? (uint32_t)t->priority : 0;
 }
 
+uint32_t CCALL GetCurrentThreadId_c(void)
+{
+    return current_thread_id;
+}
+
 uint32_t CCALL GetPriorityClass_c(uint32_t a0)
 {
     (void)a0;
     return NORMAL_PRIORITY_CLASS;
+}
+
+/* The guest is cooperative here: an alertable wait has no APCs to run, so it is
+ * a plain Sleep.  Return 0 (no APC was executed). */
+uint32_t CCALL SleepEx_c(uint32_t dwMilliseconds, uint32_t bAlertable)
+{
+    (void)bAlertable;
+    Winapi_ThreadCheckpoint();
+    SDL_Delay(dwMilliseconds);
+    return 0;
+}
+
+uint32_t CCALL TlsAlloc_c(void)
+{
+    int index;
+
+    for (index = 0; index < WINAPI_TLS_SLOTS; index++)
+    {
+        uint32_t bit = 1u << index;
+        int old = SDL_AtomicGet(&tls_used);
+
+        while (!(old & bit))
+        {
+            if (SDL_AtomicCAS(&tls_used, old, old | bit)) return (uint32_t)index;
+            old = SDL_AtomicGet(&tls_used);
+        }
+    }
+    return 0xffffffffu;     /* TLS_OUT_OF_INDEXES */
+}
+
+uint32_t CCALL TlsFree_c(uint32_t a0)
+{
+    uint32_t bit;
+    int old;
+
+    if (a0 >= WINAPI_TLS_SLOTS) return 0;
+    bit = 1u << a0;
+    old = SDL_AtomicGet(&tls_used);
+    while (old & bit)
+    {
+        if (SDL_AtomicCAS(&tls_used, old, old & ~bit))
+        {
+            tls_values[a0] = 0;
+            return 1;
+        }
+        old = SDL_AtomicGet(&tls_used);
+    }
+    return 0;
+}
+
+uint32_t CCALL TlsGetValue_c(uint32_t a0)
+{
+    if ((a0 >= WINAPI_TLS_SLOTS) || !(SDL_AtomicGet(&tls_used) & (1u << a0))) return 0;
+    return tls_values[a0];
+}
+
+uint32_t CCALL TlsSetValue_c(uint32_t a0, uint32_t a1)
+{
+    if ((a0 >= WINAPI_TLS_SLOTS) || !(SDL_AtomicGet(&tls_used) & (1u << a0))) return 0;
+    tls_values[a0] = a1;
+    return 1;
 }
 
 uint32_t CCALL CreateSemaphoreA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
@@ -398,6 +501,12 @@ uint32_t CCALL SetEvent_c(uint32_t a0)
     handle h = guest_handle(a0, HT_EVENT);
 
     if (h == NULL) return 0;
+    if (thread_log())
+    {
+        static int n;
+
+        if ((++n <= 10) || (n % 500 == 0)) fprintf(stderr, "SetEvent: 0x%x (call %d)\n", a0, n);
+    }
     h->eh.signaled = 1;
     return 1;
 }

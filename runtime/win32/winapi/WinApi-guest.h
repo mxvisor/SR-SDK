@@ -34,6 +34,12 @@ extern "C" {
 
 uint32_t CCALL Winapi_CallGuest(uint32_t func, unsigned int nargs, const uint32_t *args);
 
+/* A host pointer into the guest's memory mapping <-> the guest value of the
+ * same byte (a buffer a guest callback writes to).  A callback the guest passes is a host code
+ * pointer and goes to Winapi_CallGuest as it is. */
+uint32_t Winapi_HostToGuestPtr(void *p);
+void *Winapi_GuestToHostPtr(uint32_t p);
+
 /* Debug helper: read a 32-bit guest global. */
 uint32_t Winapi_ReadGuest32(uint32_t addr);
 

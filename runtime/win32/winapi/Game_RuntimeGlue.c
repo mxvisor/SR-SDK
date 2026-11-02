@@ -96,6 +96,25 @@ EXTERNC uint32_t CCALL Winapi_CallGuest(uint32_t func, unsigned int nargs, const
     return result;
 }
 
+/* A host pointer into the guest's memory mapping and the guest value of the
+ * same byte: a buffer of x86_malloc lies in the mapping, and a guest callback
+ * gets its guest value and writes through it. */
+EXTERNC uint32_t Winapi_HostToGuestPtr(void *p)
+{
+    _cpu *cpu = x86_initialize_cpu();
+
+    if (p == 0) return 0;
+    return PTR2REG(p);
+}
+
+EXTERNC void *Winapi_GuestToHostPtr(uint32_t p)
+{
+    _cpu *cpu = x86_initialize_cpu();
+
+    if (p == 0) return 0;
+    return REG2PTR(p);
+}
+
 EXTERNC uint32_t Winapi_ReadGuest32(uint32_t addr)
 {
     _cpu *cpu = x86_initialize_cpu();
