@@ -217,15 +217,6 @@ uint32_t CCALL CreateFileA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
 }
 #endif
 
-#ifdef STUB_CreateFileMappingA
-uint32_t CCALL CreateFileMappingA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
-    GAME_STUBLOG("CreateFileMappingA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_CreateProcessA
 uint32_t CCALL CreateProcessA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9)
 {
@@ -900,15 +891,6 @@ uint32_t CCALL LockResource_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_MapViewOfFile
-uint32_t CCALL MapViewOfFile_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("MapViewOfFile");
-    return 0;
-}
-#endif
-
 #ifdef STUB_MessageBeep
 uint32_t CCALL MessageBeep_c(uint32_t a0)
 {
@@ -1257,15 +1239,6 @@ uint32_t CCALL TranslateMessage_c(uint32_t a0)
     (void)a0;
     GAME_STUBLOG("TranslateMessage");
     return 0;
-}
-#endif
-
-#ifdef STUB_UnmapViewOfFile
-uint32_t CCALL UnmapViewOfFile_c(uint32_t a0)
-{
-    (void)a0;
-    GAME_STUBLOG("UnmapViewOfFile");
-    return 1; /* success */
 }
 #endif
 

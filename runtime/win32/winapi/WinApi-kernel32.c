@@ -58,6 +58,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <direct.h>
+#include <io.h>
 #else
 #define USE_OLD_GETTIME 0
 
@@ -593,48 +594,34 @@ http://xoomer.alice.it/acantato/dev/wildcard/wildmatch.html
 
 */
 
-static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char *filename)
+/* a time of the host's file system as a FILETIME, in UTC (the least significant bit is zero) */
+static void Conv_filetime(filetime *ft, time_t seconds, long nanoseconds)
 {
     int64_t dt_result;
 
+    dt_result = ((int64_t) seconds) * 10000000;
+    dt_result += (nanoseconds / 100) & ~1; // set least significant bit to zero to indicate system time
+    dt_result += EPOCH_TIME;
+
+    ft->dwLowDateTime = (uint32_t) dt_result;
+    ft->dwHighDateTime = (uint32_t) (dt_result >> 32);
+}
+
+#if defined(__APPLE__)
+#define STAT_NSEC(filestat, t) ((filestat)->st_##t##timensec)
+#else
+#define STAT_NSEC(filestat, t) ((filestat)->st_##t##tim.tv_nsec)
+#endif
+
+static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char *filename)
+{
     // file attributes
     buffer->dwFileAttributes = (S_ISDIR(filestat->st_mode))?FILE_ATTRIBUTE_DIRECTORY:FILE_ATTRIBUTE_NORMAL;
 
-    // file's creation time and date
-    dt_result = ((int64_t) filestat->st_ctime) * 10000000;
-#if defined(__APPLE__)
-    dt_result += (filestat->st_ctimensec / 100) & ~1; // set least significant bit to zero to indicate system time
-#else
-    dt_result += (filestat->st_ctim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
-#endif
-    dt_result += EPOCH_TIME;
-
-    buffer->ftCreationTime.dwLowDateTime = (uint32_t) dt_result;
-    buffer->ftCreationTime.dwHighDateTime = (uint32_t) (dt_result >> 32);
-
-    // file's last access time and date
-    dt_result = ((int64_t) filestat->st_atime) * 10000000;
-#if defined(__APPLE__)
-    dt_result += (filestat->st_atimensec / 100) & ~1; // set least significant bit to zero to indicate system time
-#else
-    dt_result += (filestat->st_atim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
-#endif
-    dt_result += EPOCH_TIME;
-
-    buffer->ftLastAccessTime.dwLowDateTime = (uint32_t) dt_result;
-    buffer->ftLastAccessTime.dwHighDateTime = (uint32_t) (dt_result >> 32);
-
-    // file's modification time and date
-    dt_result = ((int64_t) filestat->st_mtime) * 10000000;
-#if defined(__APPLE__)
-    dt_result += (filestat->st_mtimensec / 100) & ~1; // set least significant bit to zero to indicate system time
-#else
-    dt_result += (filestat->st_mtim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
-#endif
-    dt_result += EPOCH_TIME;
-
-    buffer->ftLastWriteTime.dwLowDateTime = (uint32_t) dt_result;
-    buffer->ftLastWriteTime.dwHighDateTime = (uint32_t) (dt_result >> 32);
+    // file's creation, last access and modification time and date
+    Conv_filetime(&buffer->ftCreationTime, filestat->st_ctime, STAT_NSEC(filestat, c));
+    Conv_filetime(&buffer->ftLastAccessTime, filestat->st_atime, STAT_NSEC(filestat, a));
+    Conv_filetime(&buffer->ftLastWriteTime, filestat->st_mtime, STAT_NSEC(filestat, m));
 
     // file size
     buffer->nFileSizeHigh = (uint32_t) (filestat->st_size >> 32);
@@ -687,6 +674,225 @@ uint32_t CCALL Beep_c(uint32_t dwFreq, uint32_t dwDuration)
 #endif
 }
 
+/* the host file of a file handle, NULL for any other handle */
+static FILE *file_of_handle(void *hFile)
+{
+    if (hFile == NULL || hFile == INVALID_HANDLE32_VALUE || ((handle)hFile)->handle_type != HT_FILE) return NULL;
+    return (FILE *)((handle)hFile)->fh.f;
+}
+
+/* the size of an open file, -1 on an error; the position stays */
+static int64_t file_size(FILE *f)
+{
+    off_t pos, size;
+
+    pos = ftello(f);
+    if (pos < 0 || fseeko(f, 0, SEEK_END) != 0) return -1;
+    size = ftello(f);
+    fseeko(f, pos, SEEK_SET);
+    return (int64_t)size;
+}
+
+uint32_t CCALL GetFileSize_c(void *hFile, uint32_t *lpFileSizeHigh)
+{
+    FILE *f;
+    int64_t size;
+
+    f = file_of_handle(hFile);
+    size = (f != NULL) ? file_size(f) : -1;
+    if (size < 0)
+    {
+        Winapi_SetLastError(ERROR_INVALID_HANDLE);
+        return 0xffffffffu;
+    }
+
+    if (lpFileSizeHigh != NULL) *lpFileSizeHigh = (uint32_t)((uint64_t)size >> 32);
+    /* a size with all the low bits set: the caller asks GetLastError */
+    if ((uint32_t)size == 0xffffffffu) Winapi_SetLastError(0);
+    return (uint32_t)size;
+}
+
+uint32_t CCALL GetFileTime_c(void *hFile, void *lpCreationTime, void *lpLastAccessTime, void *lpLastWriteTime)
+{
+    FILE *f;
+
+    f = file_of_handle(hFile);
+    if (f == NULL)
+    {
+        Winapi_SetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    fflush(f);
+
+#ifdef _WIN32
+    return GetFileTime((HANDLE)_get_osfhandle(_fileno(f)), (LPFILETIME)lpCreationTime, (LPFILETIME)lpLastAccessTime, (LPFILETIME)lpLastWriteTime) ? 1 : 0;
+#else
+    struct stat filestat;
+
+    if (fstat(fileno(f), &filestat) != 0)
+    {
+        Winapi_SetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    if (lpCreationTime != NULL) Conv_filetime((filetime *)lpCreationTime, filestat.st_ctime, STAT_NSEC(&filestat, c));
+    if (lpLastAccessTime != NULL) Conv_filetime((filetime *)lpLastAccessTime, filestat.st_atime, STAT_NSEC(&filestat, a));
+    if (lpLastWriteTime != NULL) Conv_filetime((filetime *)lpLastWriteTime, filestat.st_mtime, STAT_NSEC(&filestat, m));
+    return 1;
+#endif
+}
+
+/* The file mappings: CreateFileMappingA reads the file (or as much of it as the size asked)
+ * into a guest buffer, the views point into the buffer. Writes into a view do not reach the
+ * file. The buffer lives while the handle is open or a view of it is mapped. */
+static mapping_handle mappings;
+
+static void release_mapping(mapping_handle m)
+{
+    mapping_handle *link;
+
+    if (!m->closed || m->views != 0) return;
+
+    for (link = &mappings; *link != NULL; link = (mapping_handle *)&(*link)->next)
+    {
+        if (*link == m)
+        {
+            *link = (mapping_handle)m->next;
+            break;
+        }
+    }
+    if (m->data != NULL) x86_free(m->data);
+    x86_free(m);
+}
+
+void * CCALL CreateFileMappingA_c(void *hFile, void */*lpFileMappingAttributes*/, uint32_t /*flProtect*/, uint32_t dwMaximumSizeHigh, uint32_t dwMaximumSizeLow, const char */*lpName*/)
+{
+    FILE *f;
+    int64_t length;
+    uint32_t size;
+    void *data;
+    handle ret;
+
+    /* INVALID_HANDLE_VALUE: memory of the paging file, zeroed */
+    f = NULL;
+    length = 0;
+    if (hFile != INVALID_HANDLE32_VALUE)
+    {
+        f = file_of_handle(hFile);
+        length = (f != NULL) ? file_size(f) : -1;
+        if (length < 0)
+        {
+            Winapi_SetLastError(ERROR_INVALID_HANDLE);
+            return NULL;
+        }
+    }
+
+    if (dwMaximumSizeHigh != 0 || (dwMaximumSizeLow == 0 && length > 0xffffffffll))
+    {
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+    size = (dwMaximumSizeLow != 0) ? dwMaximumSizeLow : (uint32_t)length;
+    if (size == 0)
+    {
+        Winapi_SetLastError((f != NULL) ? ERROR_FILE_INVALID : ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
+    data = x86_malloc(size);
+    if (data == NULL)
+    {
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+    memset(data, 0, size);
+    if (f != NULL)
+    {
+        off_t pos = ftello(f);
+
+        fseeko(f, 0, SEEK_SET);
+        if (fread(data, 1, ((int64_t)size < length) ? size : (size_t)length, f) == 0 && ferror(f))
+        {
+            clearerr(f);
+        }
+        fseeko(f, pos, SEEK_SET);
+    }
+
+    ret = Winapi_AllocHandle();
+    if (ret == NULL)
+    {
+        x86_free(data);
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+    ret->mh.handle_type = HT_MAPPING;
+    ret->mh.data = data;
+    ret->mh.size = size;
+    ret->mh.views = 0;
+    ret->mh.closed = 0;
+    ret->mh.next = mappings;
+    mappings = &ret->mh;
+    return ret;
+}
+
+void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t /*dwDesiredAccess*/, uint32_t dwFileOffsetHigh, uint32_t dwFileOffsetLow, uint32_t dwNumberOfBytesToMap)
+{
+    mapping_handle m;
+
+    m = (mapping_handle)hFileMappingObject;
+    if (m == NULL || m == (mapping_handle)INVALID_HANDLE32_VALUE || m->handle_type != HT_MAPPING || m->closed)
+    {
+        Winapi_SetLastError(ERROR_INVALID_HANDLE);
+        return NULL;
+    }
+    if (dwFileOffsetHigh != 0 || dwFileOffsetLow >= m->size ||
+        dwNumberOfBytesToMap > m->size - dwFileOffsetLow)
+    {
+        Winapi_SetLastError(ERROR_ACCESS_DENIED);
+        return NULL;
+    }
+
+    m->views++;
+    return (uint8_t *)m->data + dwFileOffsetLow;
+}
+
+uint32_t CCALL UnmapViewOfFile_c(const void *lpBaseAddress)
+{
+    mapping_handle m;
+
+    for (m = mappings; m != NULL; m = (mapping_handle)m->next)
+    {
+        if (m->views != 0 && (const uint8_t *)lpBaseAddress >= (const uint8_t *)m->data &&
+            (const uint8_t *)lpBaseAddress < (const uint8_t *)m->data + m->size)
+        {
+            m->views--;
+            release_mapping(m);
+            return 1;
+        }
+    }
+
+    Winapi_SetLastError(ERROR_INVALID_PARAMETER);
+    return 0;
+}
+
+/* the files of 16-bit Windows: the HFILE is the handle of CreateFileA, HFILE_ERROR is
+ * INVALID_HANDLE_VALUE */
+void * CCALL _lopen_c(const char *lpPathName, uint32_t iReadWrite)
+{
+    static const uint32_t access[3] = { GENERIC_READ, GENERIC_WRITE, GENERIC_READ | GENERIC_WRITE };
+
+    if ((iReadWrite & 3) == 3)
+    {
+        Winapi_SetLastError(ERROR_INVALID_PARAMETER);
+        return INVALID_HANDLE32_VALUE;
+    }
+    return CreateFileA_c(lpPathName, access[iReadWrite & 3], 0, NULL, OPEN_EXISTING, 0, NULL);
+}
+
+uint32_t CCALL _lclose_c(void *hFile)
+{
+    return CloseHandle_c(hFile) ? 0 : 0xffffffffu;
+}
+
 uint32_t CCALL CloseHandle_c(void *hObject)
 {
 #ifdef DEBUG_KERNEL32
@@ -724,17 +930,10 @@ uint32_t CCALL CloseHandle_c(void *hObject)
 
             return 1;
         case HT_MAPPING:
-#define hMap ((mapping_handle)(void *)hObject)
-
-            if (hMap->data != NULL)
-            {
-                x86_free(hMap->data);
-            }
-
-            x86_free(hMap);
+            ((mapping_handle)hObject)->closed = 1;
+            release_mapping((mapping_handle)hObject);
 
             return 1;
-#undef hMap
         case HT_THREAD:
         case HT_SEMAPHORE:
             return Winapi_CloseObject((handle)hObject);

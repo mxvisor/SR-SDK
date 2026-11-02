@@ -62,6 +62,13 @@ func GetDriveTypeA_c *lpRootPathName
 func GetLogicalDrives_c
 func GetLogicalDriveStringsA_c nBufferLength, *lpBuffer
 func GetVolumeInformationA_c *lpRootPathName, *lpVolumeNameBuffer, nVolumeNameSize, *lpVolumeSerialNumber, *lpMaximumComponentLength, *lpFileSystemFlags, *lpFileSystemNameBuffer, nFileSystemNameSize
+func GetFileSize_c *hFile, *lpFileSizeHigh
+func GetFileTime_c *hFile, *lpCreationTime, *lpLastAccessTime, *lpLastWriteTime
+funcp CreateFileMappingA_c *hFile, *lpFileMappingAttributes, flProtect, dwMaximumSizeHigh, dwMaximumSizeLow, *lpName
+funcp MapViewOfFile_c *hFileMappingObject, dwDesiredAccess, dwFileOffsetHigh, dwFileOffsetLow, dwNumberOfBytesToMap
+func UnmapViewOfFile_c *lpBaseAddress
+funcp _lopen_c *lpPathName, iReadWrite
+func _lclose_c *hFile
 
 proc Beep_asm2c public
 
@@ -564,3 +571,101 @@ proc GetVolumeInformationA_asm2c public
         Call_Asm_Return 8
 
 endp ; end procedure GetVolumeInformationA_asm2c
+
+
+proc CreateFileMappingA_asm2c public
+
+; [esp + 6*4] = LPCSTR                lpName
+; [esp + 5*4] = DWORD                 dwMaximumSizeLow
+; [esp + 4*4] = DWORD                 dwMaximumSizeHigh
+; [esp + 3*4] = DWORD                 flProtect
+; [esp + 2*4] = LPSECURITY_ATTRIBUTES lpFileMappingAttributes
+; [esp +   4] = HANDLE                hFile
+; [esp      ] = return address
+
+        Call_Asm_Stack6 CreateFileMappingA_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure CreateFileMappingA_asm2c
+
+
+proc GetFileSize_asm2c public
+
+; [esp + 2*4] = LPDWORD lpFileSizeHigh
+; [esp +   4] = HANDLE  hFile
+; [esp      ] = return address
+
+        Call_Asm_Stack2 GetFileSize_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure GetFileSize_asm2c
+
+
+proc GetFileTime_asm2c public
+
+; [esp + 4*4] = LPFILETIME lpLastWriteTime
+; [esp + 3*4] = LPFILETIME lpLastAccessTime
+; [esp + 2*4] = LPFILETIME lpCreationTime
+; [esp +   4] = HANDLE     hFile
+; [esp      ] = return address
+
+        Call_Asm_Stack4 GetFileTime_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure GetFileTime_asm2c
+
+
+proc MapViewOfFile_asm2c public
+
+; [esp + 5*4] = SIZE_T dwNumberOfBytesToMap
+; [esp + 4*4] = DWORD  dwFileOffsetLow
+; [esp + 3*4] = DWORD  dwFileOffsetHigh
+; [esp + 2*4] = DWORD  dwDesiredAccess
+; [esp +   4] = HANDLE hFileMappingObject
+; [esp      ] = return address
+
+        Call_Asm_Stack5 MapViewOfFile_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure MapViewOfFile_asm2c
+
+
+proc UnmapViewOfFile_asm2c public
+
+; [esp +   4] = LPCVOID lpBaseAddress
+; [esp      ] = return address
+
+        Call_Asm_Stack1 UnmapViewOfFile_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure UnmapViewOfFile_asm2c
+
+
+proc _lclose_asm2c public
+
+; [esp +   4] = HFILE hFile
+; [esp      ] = return address
+
+        Call_Asm_Stack1 _lclose_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure _lclose_asm2c
+
+
+proc _lopen_asm2c public
+
+; [esp + 2*4] = int    iReadWrite
+; [esp +   4] = LPCSTR lpPathName
+; [esp      ] = return address
+
+        Call_Asm_Stack2 _lopen_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure _lopen_asm2c

@@ -51,6 +51,8 @@ while args:
 GAME = os.path.join(ROOT, 'game')
 TSV = os.path.join(ROOT, 'tools', 'import_args.tsv')
 TODAY = datetime.date.today().isoformat()
+# the game leaves out the SDK's winapi layer (the key, not a comment that names it)
+NO_WINAPI = re.search(r'^\s*winapi\s*=\s*no\s*$', open(os.path.join(GAME, 'game.cfg')).read(), re.M) is not None
 
 cfg = {}
 aliases = []
@@ -87,7 +89,7 @@ if cfg.get('handwritten') == 'skip':
     sdk = os.path.join(ROOT, 'SR-SDK', 'runtime', 'win32', 'winapi', 'llasm')
     for path in (glob.glob(os.path.join(GAME, 'llasm', 'WinApi-*-asm.llasm')) +
                  (glob.glob(os.path.join(sdk, '*-asm.llasm'))
-                  if 'winapi=no' not in open(os.path.join(GAME, 'game.cfg')).read() else [])):
+                  if not NO_WINAPI else [])):
         if os.path.abspath(path) == os.path.abspath(ASM):
             continue
         text = open(path, errors='replace').read()
@@ -102,7 +104,7 @@ else:
 # these parameters `*aN`, which llasm turns into host pointers.
 SDK_C = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'runtime', 'win32', 'winapi')
 sdk_protos = {}
-if 'winapi=no' not in open(os.path.join(GAME, 'game.cfg')).read():
+if not NO_WINAPI:
     for path in glob.glob(os.path.join(SDK_C, 'WinApi-*.c')):
         for m in re.finditer(r'^\w[\w \*]*?\bCCALL\s+(\w+_c)\s*\(([^)]*(?:\([^)]*\)[^)]*)*)\)\s*$',
                             open(path, errors='replace').read(), re.M):
@@ -206,7 +208,7 @@ if cfg.get('stubs') == 'yes':
         # WinApi-stubs.c), unless the game leaves the layer out
         sdk_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                                'runtime', 'win32', 'winapi')
-        use_sdk = 'winapi=no' not in open(os.path.join(GAME, 'game.cfg')).read()
+        use_sdk = not NO_WINAPI
         for path in glob.glob(os.path.join(GAME, '*.c')) + (glob.glob(os.path.join(sdk_dir, '*.c')) if use_sdk else []):
             implemented |= set(re.findall(r'^\w[\w \*]*?\bCCALL\s+(\w+_c)\s*\(',
                                           open(path, errors='replace').read(), re.M))

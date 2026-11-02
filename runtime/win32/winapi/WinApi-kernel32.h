@@ -83,6 +83,15 @@ uint32_t CCALL GetLogicalDrives_c(void);
 uint32_t CCALL GetLogicalDriveStringsA_c(uint32_t nBufferLength, char *lpBuffer);
 uint32_t CCALL GetVolumeInformationA_c(const char *lpRootPathName, char *lpVolumeNameBuffer, uint32_t nVolumeNameSize, uint32_t *lpVolumeSerialNumber, uint32_t *lpMaximumComponentLength, uint32_t *lpFileSystemFlags, char *lpFileSystemNameBuffer, uint32_t nFileSystemNameSize);
 uint32_t CCALL GetDiskFreeSpaceA_c(const char *lpRootPathName, uint32_t *lpSectorsPerCluster, uint32_t *lpBytesPerSector, uint32_t *lpNumberOfFreeClusters, uint32_t *lpTotalNumberOfClusters);
+/* the files: the size, the times, the mappings (a copy of the file in guest memory) and the
+ * HFILE functions */
+uint32_t CCALL GetFileSize_c(void *hFile, uint32_t *lpFileSizeHigh);
+uint32_t CCALL GetFileTime_c(void *hFile, void *lpCreationTime, void *lpLastAccessTime, void *lpLastWriteTime);
+void * CCALL CreateFileMappingA_c(void *hFile, void *lpFileMappingAttributes, uint32_t flProtect, uint32_t dwMaximumSizeHigh, uint32_t dwMaximumSizeLow, const char *lpName);
+void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t dwDesiredAccess, uint32_t dwFileOffsetHigh, uint32_t dwFileOffsetLow, uint32_t dwNumberOfBytesToMap);
+uint32_t CCALL UnmapViewOfFile_c(const void *lpBaseAddress);
+void * CCALL _lopen_c(const char *lpPathName, uint32_t iReadWrite);
+uint32_t CCALL _lclose_c(void *hFile);
 /* the start of Winapi_GetTicks (Linux) */
 void Winapi_InitTicks(void);
 

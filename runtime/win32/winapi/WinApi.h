@@ -95,6 +95,9 @@ WINAPI_STORAGE __declspec(thread) unsigned int Winapi_LastError;
 #ifndef ERROR_ALREADY_EXISTS
 #define ERROR_ALREADY_EXISTS 183
 #endif
+#ifndef ERROR_FILE_INVALID
+#define ERROR_FILE_INVALID 1006
+#endif
 #endif
 
 
@@ -144,11 +147,15 @@ typedef struct {
     void *obj;
 } T_object_handle, *object_handle;
 
-/* a memory-mapped file (created by the game's CreateFileMappingA): the whole file in a guest buffer */
+/* a memory-mapped file (CreateFileMappingA): the file in a guest buffer, which lives
+ * while the handle is open or a view of it is mapped (WinApi-kernel32.c) */
 typedef struct {
     handle_types handle_type;
     void *data;
     uint32_t size;
+    uint32_t views;
+    int closed;
+    void *next;
 } T_mapping_handle, *mapping_handle;
 
 typedef union {
