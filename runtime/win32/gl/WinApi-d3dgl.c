@@ -63,7 +63,8 @@
 #define RS_COLORKEYENABLE   41
 
 #define MAX_GL_STATES       64
-#define MAX_GL_TEXTURES     1024
+/* a game may load more than a thousand small textures */
+#define MAX_GL_TEXTURES     4096
 
 static SDL_GLContext gl_context = NULL;
 static SDL_Window *gl_window = NULL;

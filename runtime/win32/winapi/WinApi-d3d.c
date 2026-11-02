@@ -67,7 +67,8 @@
 
 #define MAX_STATES          64
 #define MAX_VIEWPORTS       8
-#define MAX_TEXTURES        1024
+/* a game may load more than a thousand small textures */
+#define MAX_TEXTURES        4096
 #define MAX_MATERIALS       64
 
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
