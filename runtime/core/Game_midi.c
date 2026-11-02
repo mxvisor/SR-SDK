@@ -40,6 +40,8 @@
 #include "tsf.h"
 #include "tml.h"
 
+extern "C" int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel);
+
 #define MIDI_LOG(...) do { if (getenv("GAME_MIDI_LOG") != NULL) fprintf(stderr, "midi: " __VA_ARGS__); } while (0)
 
 /* --- XMIDI to a standard MIDI file --- */
@@ -316,7 +318,7 @@ static void midi_dispatch(double until_ms)
         {
         case TML_NOTE_ON:
             if (m->velocity > 0)
-                tsf_channel_note_on(midi_synth, ch, m->key, m->velocity / 127.0f);
+                Game_TsfChannelNoteOn(midi_synth, ch, m->key, m->velocity / 127.0f);
             else
                 tsf_channel_note_off(midi_synth, ch, m->key);
             break;
@@ -427,6 +429,18 @@ static int midi_load_synth(void)
 
 int Game_MidiPlay(const uint8_t *midi, size_t length, int infinite)
 {
+    const char *dump = getenv("GAME_MIDI_DUMP");
+
+    if (dump != NULL && dump[0] != 0)
+    {
+        FILE *f = fopen(dump, "wb");     /* the song as a standard MIDI file, for debugging */
+
+        if (f != NULL)
+        {
+            fwrite(midi, 1, length, f);
+            fclose(f);
+        }
+    }
     if (midi_synth == NULL && !midi_load_synth()) return 0;
     Game_MidiStop();
 
