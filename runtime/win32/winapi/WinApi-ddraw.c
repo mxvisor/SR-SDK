@@ -1270,8 +1270,9 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
         return DDERR_UNSUPPORTEDMODE;
     }
 
-    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL() && (lpThis->Window == NULL))
+    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
     {
+        /* a new mode resizes the window of the last one */
         lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
         /* no OpenGL: Direct3D goes on with the software rasteriser */
         if (lpThis->Window == NULL) Winapi_Direct3DNoGL();
@@ -2144,14 +2145,12 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
 {
     if (dd_gl_window != NULL)
     {
-#ifdef GAME_EARLY_GL_WINDOW
-        /* the window of Winapi_EarlyWindow gets the size of the game's mode */
+        /* the window of Winapi_EarlyWindow or of the last mode gets the size of the game's mode */
         int w = 0, h = 0;
         SDL_GetWindowSize(dd_gl_window, &w, &h);
         if ((Display_Mode == 0) && ((uint32_t)w != ((Display_Width != 0)?Display_Width:width) || (uint32_t)h != ((Display_Height != 0)?Display_Height:height)))
             SDL_SetWindowSize(dd_gl_window, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height);
         Game_ShowWindow(dd_gl_window);
-#endif
         return dd_gl_window;
     }
 
