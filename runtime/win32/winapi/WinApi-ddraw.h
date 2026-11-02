@@ -145,6 +145,8 @@ void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int 
  * OpenGL, shown with the display settings of the game; null if it cannot be
  * made. Close hides it again. */
 struct SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height);
+/* GAME_EARLY_GL_WINDOW: the window of Direct3D on OpenGL, shown at the start of the program */
+void Winapi_EarlyWindow(uint32_t width, uint32_t height);
 void Winapi_ScreenCloseGL(void);
 
 #ifdef __cplusplus

@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <SDL.h>
 #ifdef _WIN32
@@ -64,6 +65,12 @@ void Game_SetMainArgs(int argc, char *argv[]);
 extern "C"
 #endif
 void Winapi_SetCommandLine(int argc, char *argv[]);
+#ifdef GAME_EARLY_GL_WINDOW
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_EarlyWindow(uint32_t width, uint32_t height);
+#endif
 
 /* The port's own options, as in SR's ports: --config-file=FILE.  They are taken out
  * of argv, which goes on to the game's switch parser (/D, /T, ...). */
@@ -166,6 +173,11 @@ static int Game_Run(int argc, char *argv[])
         return 1;
     }
 
+#ifdef GAME_EARLY_GL_WINDOW
+    /* Game_hooks.h: show the Direct3D window at once (see Winapi_EarlyWindow) */
+    Winapi_EarlyWindow(640, 480);
+#endif
+
 #ifdef GAME_WIN_START
     GAME_WIN_START();
 #endif
@@ -173,6 +185,14 @@ static int Game_Run(int argc, char *argv[])
     Game_SetMainArgs(argc, argv);
     Winapi_SetCommandLine(argc, argv);
     Game_Event_Loop();
+
+    /* The threads of the game still run on its memory: as with ExitProcess on Windows they
+     * end with the process, before that memory goes away under them. */
+    if (Winapi_ThreadsRunning() != 0)
+    {
+        fflush(NULL);
+        _exit(Game_ExitCode);
+    }
 
     Game_RuntimeDeinit();
 

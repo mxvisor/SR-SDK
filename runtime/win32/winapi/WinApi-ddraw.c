@@ -37,6 +37,7 @@
 #include "WinApi-game.h"
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
+#include "WinApi-d3d.h"
 #include "Game_defs.h"
 #include "Game_thread.h"
 #include "touchgamepad.h"
@@ -2141,7 +2142,18 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpTh
 
 SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
 {
-    if (dd_gl_window != NULL) return dd_gl_window;
+    if (dd_gl_window != NULL)
+    {
+#ifdef GAME_EARLY_GL_WINDOW
+        /* the window of Winapi_EarlyWindow gets the size of the game's mode */
+        int w = 0, h = 0;
+        SDL_GetWindowSize(dd_gl_window, &w, &h);
+        if ((Display_Mode == 0) && ((uint32_t)w != ((Display_Width != 0)?Display_Width:width) || (uint32_t)h != ((Display_Height != 0)?Display_Height:height)))
+            SDL_SetWindowSize(dd_gl_window, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height);
+        Game_ShowWindow(dd_gl_window);
+#endif
+        return dd_gl_window;
+    }
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO))
     {
@@ -2174,10 +2186,43 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
     }
 
     Game_ShowWindow(dd_gl_window);
+#ifdef GAME_EARLY_GL_WINDOW
+    SDL_RaiseWindow(dd_gl_window);
+#endif
     winapi_dd_window_id = SDL_GetWindowID(dd_gl_window);
     Winapi_PostActivateApp(1);
     return dd_gl_window;
 }
+
+#ifdef GAME_EARLY_GL_WINDOW
+/* The window at the start of the program, before the game's long loading: a desktop
+ * lets a window appear in front when it comes up right after the launch, not many seconds
+ * later.  It gets one black frame (a Wayland window is mapped by its first buffer).  The
+ * software renderer has a window of another kind: it gets none here. */
+void Winapi_EarlyWindow(uint32_t width, uint32_t height)
+{
+    SDL_Window *window;
+    SDL_GLContext context;
+    void (SDLCALL *clear_color)(float, float, float, float);
+    void (SDLCALL *clear)(unsigned int);
+
+    if (!Winapi_Direct3DEnabled() || !Winapi_Direct3DGL()) return;
+    window = Winapi_ScreenOpenGL(width, height);
+    if (window == NULL) return;
+    context = SDL_GL_CreateContext(window);
+    if (context == NULL) return;
+    clear_color = (void (SDLCALL *)(float, float, float, float))SDL_GL_GetProcAddress("glClearColor");
+    clear = (void (SDLCALL *)(unsigned int))SDL_GL_GetProcAddress("glClear");
+    if (clear_color != NULL && clear != NULL)
+    {
+        clear_color(0.0f, 0.0f, 0.0f, 1.0f);
+        clear(0x4000); /* GL_COLOR_BUFFER_BIT */
+    }
+    SDL_GL_SwapWindow(window);
+    SDL_GL_MakeCurrent(window, NULL);
+    SDL_GL_DeleteContext(context);
+}
+#endif
 
 void Winapi_ScreenCloseGL(void)
 {
