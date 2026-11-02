@@ -87,6 +87,9 @@ uint32_t CCALL IDirectSound3D_Unsupported_c(void);
 uint32_t CCALL IDirectSound3DListener_SetAllParameters_c(struct IDirectSound3D_c *lpThis, const struct _ds3dlistener * pcListener, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DListener_SetOrientation_c(struct IDirectSound3D_c *lpThis, uint32_t xFront, uint32_t yFront, uint32_t zFront, uint32_t xTop, uint32_t yTop, uint32_t zTop, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DListener_SetPosition_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply);
+uint32_t CCALL IDirectSound3DListener_SetVelocity_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply);
+uint32_t CCALL IDirectSound3DListener_SetDistanceFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flDistanceFactor, uint32_t dwApply);
+uint32_t CCALL IDirectSound3DListener_SetDopplerFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flDopplerFactor, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DListener_SetRolloffFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flRolloffFactor, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DListener_CommitDeferredSettings_c(struct IDirectSound3D_c *lpThis);
 
@@ -95,6 +98,7 @@ uint32_t CCALL IDirectSound3DBuffer_SetMaxDistance_c(struct IDirectSound3D_c *lp
 uint32_t CCALL IDirectSound3DBuffer_SetMinDistance_c(struct IDirectSound3D_c *lpThis, uint32_t flMinDistance, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DBuffer_SetMode_c(struct IDirectSound3D_c *lpThis, uint32_t dwMode, uint32_t dwApply);
 uint32_t CCALL IDirectSound3DBuffer_SetPosition_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply);
+uint32_t CCALL IDirectSound3DBuffer_SetVelocity_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply);
 
 #ifdef __cplusplus
 }

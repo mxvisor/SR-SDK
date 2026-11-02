@@ -106,8 +106,8 @@ struct IDirectSound_c {
     PTR32(void) lpVtbl;
     uint32_t RefCount;
     struct IDirectSoundBuffer_c *PrimaryBuffer;
-    float listener_position[3], listener_front[3], listener_top[3];
-    float rolloff_factor;
+    float listener_position[3], listener_velocity[3], listener_front[3], listener_top[3];
+    float distance_factor, rolloff_factor, doppler_factor;
 };
 
 /* IDirectSound3DListener of a primary buffer or IDirectSound3DBuffer of a secondary
@@ -117,7 +117,7 @@ struct IDirectSound3D_c {
     struct IDirectSoundBuffer_c *owner;
     uint8_t available;  /* DSBCAPS_CTRL3D */
     uint32_t mode;
-    float position[3], min_distance, max_distance;
+    float position[3], velocity[3], min_distance, max_distance;
     int32_t attenuation, pan;
 };
 
@@ -126,7 +126,7 @@ struct IDirectSoundBuffer_c {
     uint32_t RefCount;
     struct IDirectSound_c *DirectSound;
     uint8_t primary, status, looping, sample_size_shift;
-    int freq;
+    int freq, base_freq;    /* base_freq: what the program set, freq: with the Doppler shift */
     uint16_t format;
     uint8_t channels;
     uint8_t silence;
@@ -1107,11 +1107,14 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *p
     lpDS_c->RefCount = 1;
     lpDS_c->PrimaryBuffer = NULL;
     memset(lpDS_c->listener_position, 0, sizeof(lpDS_c->listener_position));
+    memset(lpDS_c->listener_velocity, 0, sizeof(lpDS_c->listener_velocity));
     memset(lpDS_c->listener_front, 0, sizeof(lpDS_c->listener_front));
     memset(lpDS_c->listener_top, 0, sizeof(lpDS_c->listener_top));
     lpDS_c->listener_front[2] = 1.0f;
     lpDS_c->listener_top[1] = 1.0f;
+    lpDS_c->distance_factor = 1.0f;
     lpDS_c->rolloff_factor = 1.0f;
+    lpDS_c->doppler_factor = 1.0f;
 
     *ppDS = lpDS_c;
 
@@ -1630,7 +1633,7 @@ uint32_t CCALL IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis,
     eprintf("IDirectSound_SetCooperativeLevel: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x - ", (uintptr_t)lpThis, (uintptr_t)hwnd, dwLevel);
 #endif
 
-    /* hwnd only tells which window has the focus, and sound here does not follow it */
+    (void)hwnd; /* it only tells which window has the focus, and sound here does not follow it */
     if (lpThis == NULL)
     {
 #ifdef DEBUG_DSOUND
@@ -1907,7 +1910,7 @@ uint32_t CCALL IDirectSoundBuffer_GetFrequency_c(struct IDirectSoundBuffer_c *lp
 {
     if ((lpThis == NULL) || (pdwFrequency == NULL)) return DSERR_INVALIDPARAM;
 
-    *pdwFrequency = (uint32_t)lpThis->freq;
+    *pdwFrequency = (uint32_t)lpThis->base_freq;
     return DS_OK;
 }
 
@@ -2350,13 +2353,13 @@ uint32_t CCALL IDirectSoundBuffer_SetFrequency_c(struct IDirectSoundBuffer_c *lp
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
         Ds_LockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
-        lpThis->freq = (int)dwFrequency;
+        lpThis->freq = lpThis->base_freq = (int)dwFrequency;
         lpThis->resample_freq = 0;
         Ds_UnlockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
     }
     else
     {
-        lpThis->freq = (int)dwFrequency;
+        lpThis->freq = lpThis->base_freq = (int)dwFrequency;
         lpThis->resample_freq = 0;
     }
     return DS_OK;
@@ -2473,8 +2476,8 @@ uint32_t CCALL IDirectSoundBuffer_Restore_c(struct IDirectSoundBuffer_c *lpThis)
 }
 
 
-/* DirectSound 3D, in software: the distance sets the volume and the side sets the pan.
- * Doppler, cones and the velocities are accepted and left out. */
+/* DirectSound 3D, in software: the distance sets the volume, the side sets the pan and
+ * the velocities set the Doppler shift. Sound cones are accepted and left out. */
 
 #define DS3D_IMMEDIATE          0
 #define DS3DMODE_HEADRELATIVE   1
@@ -2482,6 +2485,10 @@ uint32_t CCALL IDirectSoundBuffer_Restore_c(struct IDirectSoundBuffer_c *lpThis)
 
 /* how far a sound at the very side of the listener is turned down in the other ear */
 #define DS3D_MAX_PAN            1500.0f
+
+/* metres per second; the shift stays within an octave */
+#define DS3D_SPEED_OF_SOUND     343.0f
+#define DS3D_MAX_SHIFT          2.0f
 
 typedef struct PACKED _ds3dlistener {
     uint32_t dwSize;
@@ -2519,17 +2526,47 @@ static void Init3D(struct IDirectSoundBuffer_c *lpThis, uint32_t dwFlags)
     iface->available = (dwFlags & DSBCAPS_CTRL3D) ? 1 : 0;
     iface->mode = 0;
     iface->position[0] = iface->position[1] = iface->position[2] = 0.0f;
+    iface->velocity[0] = iface->velocity[1] = iface->velocity[2] = 0.0f;
     iface->min_distance = 1.0f;
     iface->max_distance = 1000000000.0f;
     iface->attenuation = 0;
     iface->pan = 0;
+    lpThis->base_freq = lpThis->freq;
+}
+
+/* A shift under 0.5 % cannot be heard, and each change makes the mixer set up its resampler again. */
+static void SetDopplerShift(struct IDirectSoundBuffer_c *lpThis, float shift)
+{
+    int freq = (int)(lpThis->base_freq * shift);
+
+    if (freq != lpThis->base_freq)
+    {
+        int difference = abs(freq - lpThis->freq);
+
+        if (difference * 200 < lpThis->base_freq) return;
+    }
+    if (freq == lpThis->freq) return;
+
+    Ds_LockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+    lpThis->freq = freq;
+    lpThis->resample_freq = 0;
+    Ds_UnlockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+}
+
+static float DopplerSpeed(const float *velocity, const float *relative, float distance, float factor)
+{
+    float speed = factor * (velocity[0] * relative[0] + velocity[1] * relative[1] + velocity[2] * relative[2]) / distance;
+
+    if (speed > DS3D_SPEED_OF_SOUND / 2.0f) return DS3D_SPEED_OF_SOUND / 2.0f;
+    if (speed < -DS3D_SPEED_OF_SOUND / 2.0f) return -DS3D_SPEED_OF_SOUND / 2.0f;
+    return speed;
 }
 
 static void Update3D(struct IDirectSoundBuffer_c *lpThis)
 {
     struct IDirectSound3D_c *iface = &(lpThis->Iface3D);
     struct IDirectSound_c *ds = lpThis->DirectSound;
-    float relative[3], right[3], distance, right_length, clamped, gain;
+    float relative[3], right[3], distance, right_length, clamped, gain, shift;
     int i;
 
     if (lpThis->primary || !iface->available) return;
@@ -2539,6 +2576,7 @@ static void Update3D(struct IDirectSoundBuffer_c *lpThis)
         iface->attenuation = 0;
         iface->pan = 0;
         RecalculateVolume(lpThis);
+        SetDopplerShift(lpThis, 1.0f);
         return;
     }
 
@@ -2570,6 +2608,19 @@ static void Update3D(struct IDirectSoundBuffer_c *lpThis)
     }
 
     RecalculateVolume(lpThis);
+
+    /* positive: the listener moves to the sound, the sound moves away from the listener */
+    shift = 1.0f;
+    if ((distance > 0.0f) && (ds->doppler_factor > 0.0f))
+    {
+        float factor = ds->doppler_factor * ds->distance_factor;
+        float listener_speed = (iface->mode == DS3DMODE_HEADRELATIVE) ? 0.0f : DopplerSpeed(ds->listener_velocity, relative, distance, factor);
+
+        shift = (DS3D_SPEED_OF_SOUND + listener_speed) / (DS3D_SPEED_OF_SOUND + DopplerSpeed(iface->velocity, relative, distance, factor));
+        if (shift > DS3D_MAX_SHIFT) shift = DS3D_MAX_SHIFT;
+        if (shift < 1.0f / DS3D_MAX_SHIFT) shift = 1.0f / DS3D_MAX_SHIFT;
+    }
+    SetDopplerShift(lpThis, shift);
 }
 
 static uint32_t QueryInterface3D(struct IDirectSoundBuffer_c *lpThis, const void *riid, PTR32(void)* ppvObj)
@@ -2642,9 +2693,12 @@ uint32_t CCALL IDirectSound3DListener_SetAllParameters_c(struct IDirectSound3D_c
 
     ds = lpThis->owner->DirectSound;
     memcpy(ds->listener_position, pcListener->vPosition, sizeof(ds->listener_position));
+    memcpy(ds->listener_velocity, pcListener->vVelocity, sizeof(ds->listener_velocity));
     memcpy(ds->listener_front, pcListener->vOrientFront, sizeof(ds->listener_front));
     memcpy(ds->listener_top, pcListener->vOrientTop, sizeof(ds->listener_top));
+    ds->distance_factor = pcListener->flDistanceFactor;
     ds->rolloff_factor = pcListener->flRolloffFactor;
+    ds->doppler_factor = pcListener->flDopplerFactor;
 
     return Listener_Applied(lpThis, dwApply);
 }
@@ -2680,6 +2734,38 @@ uint32_t CCALL IDirectSound3DListener_SetPosition_c(struct IDirectSound3D_c *lpT
     return Listener_Applied(lpThis, dwApply);
 }
 
+uint32_t CCALL IDirectSound3DListener_SetVelocity_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply)
+{
+    struct IDirectSound_c *ds;
+
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    ds = lpThis->owner->DirectSound;
+    ds->listener_velocity[0] = GuestFloat(x);
+    ds->listener_velocity[1] = GuestFloat(y);
+    ds->listener_velocity[2] = GuestFloat(z);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DListener_SetDistanceFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flDistanceFactor, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->owner->DirectSound->distance_factor = GuestFloat(flDistanceFactor);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DListener_SetDopplerFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flDopplerFactor, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->owner->DirectSound->doppler_factor = GuestFloat(flDopplerFactor);
+
+    return Listener_Applied(lpThis, dwApply);
+}
+
 uint32_t CCALL IDirectSound3DListener_SetRolloffFactor_c(struct IDirectSound3D_c *lpThis, uint32_t flRolloffFactor, uint32_t dwApply)
 {
     if (lpThis == NULL) return DSERR_INVALIDPARAM;
@@ -2700,6 +2786,7 @@ uint32_t CCALL IDirectSound3DBuffer_SetAllParameters_c(struct IDirectSound3D_c *
     if ((lpThis == NULL) || (pcDs3dBuffer == NULL) || (pcDs3dBuffer->dwSize < sizeof(ds3dbuffer))) return DSERR_INVALIDPARAM;
 
     memcpy(lpThis->position, pcDs3dBuffer->vPosition, sizeof(lpThis->position));
+    memcpy(lpThis->velocity, pcDs3dBuffer->vVelocity, sizeof(lpThis->velocity));
     lpThis->min_distance = pcDs3dBuffer->flMinDistance;
     lpThis->max_distance = pcDs3dBuffer->flMaxDistance;
     lpThis->mode = pcDs3dBuffer->dwMode;
@@ -2741,6 +2828,17 @@ uint32_t CCALL IDirectSound3DBuffer_SetPosition_c(struct IDirectSound3D_c *lpThi
     lpThis->position[0] = GuestFloat(x);
     lpThis->position[1] = GuestFloat(y);
     lpThis->position[2] = GuestFloat(z);
+
+    return Buffer_Applied(lpThis, dwApply);
+}
+
+uint32_t CCALL IDirectSound3DBuffer_SetVelocity_c(struct IDirectSound3D_c *lpThis, uint32_t x, uint32_t y, uint32_t z, uint32_t dwApply)
+{
+    if (lpThis == NULL) return DSERR_INVALIDPARAM;
+
+    lpThis->velocity[0] = GuestFloat(x);
+    lpThis->velocity[1] = GuestFloat(y);
+    lpThis->velocity[2] = GuestFloat(z);
 
     return Buffer_Applied(lpThis, dwApply);
 }
