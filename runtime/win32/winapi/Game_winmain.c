@@ -54,6 +54,7 @@
 #include "display.h"
 #include "Game_config.h"
 #include "Game_memory.h"
+#include "Game_guestdata.h"
 #include "Game_thread.h"
 #include "input.h"
 #include "main.h"
@@ -192,6 +193,9 @@ static int Game_Run(int argc, char *argv[])
         fprintf(stderr, "Renderer: DirectDraw (software)\n");
 #endif
 
+#ifdef GAME_GUEST_DATA_IN_MEMORY
+    Game_GuestDataStart();
+#endif
 #ifdef GAME_WIN_START
     GAME_WIN_START();
 #endif

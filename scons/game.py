@@ -347,6 +347,10 @@ else:
 # game.cfg (the flags of a game that copies its data into the guest's memory)
 if CFG.get('llasm_flags', ''):
     env.Append(LLASMFLAGS=' ' + CFG.get('llasm_flags', '').strip())
+# guest_data_in_memory=yes: the game reaches its data at the addresses it had in
+# the original (runtime/win32/winapi/Game_guestdata.c)
+if WINAPI and CFG.get('guest_data_in_memory', 'no') == 'yes':
+    env.Append(LLASMFLAGS=' -guest-data-in-memory', CPPDEFINES=['GAME_GUEST_DATA_IN_MEMORY'])
 
 # extra libraries of the game for a device: libs.<device>=GL,... in game.cfg
 env.Append(LIBS=[lib.strip() for lib in CFG.get('libs.' + device, '').split(',')

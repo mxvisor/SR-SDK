@@ -99,7 +99,8 @@ opengl=no               # the shared OpenGL module, runtime/core/gl (glad, conte
 glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide (implies opengl)
 d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl (implies opengl)
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
-llasm_flags=-guest-data-in-memory -pic  # more flags of llasm: the guest's data at its original addresses
+guest_data_in_memory=no # win32 only: the guest's data at the addresses of the original (llasm -guest-data-in-memory, runtime/win32/winapi/Game_guestdata.c)
+llasm_flags=            # more flags of llasm
 program=game                       # the port's name: build/bin/<device>/<program>, and
                                    # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)

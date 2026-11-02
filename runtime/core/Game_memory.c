@@ -59,6 +59,10 @@
 #if defined(__ANDROID__)
 #include "Game_android.h"
 #include "Game_hooks.h"
+#if defined(GAME_GUEST_DATA_IN_MEMORY) && !defined(GAME_GUEST_LOW_MEMORY)
+#include "Game_guestdata.h"
+#define GAME_GUEST_LOW_MEMORY() Game_GuestLowMemory()
+#endif
 #ifndef GAME_GUEST_LOW_MEMORY
 #define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
 #endif
@@ -120,6 +124,10 @@ uint64_t pointer_offset;
  * address space from pointer_offset up the program wants to be free of
  * the host (Windows: below the image of the host). The default is the
  * low megabyte of the guest and the 64 KB after it. */
+#if defined(GAME_GUEST_DATA_IN_MEMORY) && !defined(GAME_GUEST_LOW_MEMORY)
+#include "Game_guestdata.h"
+#define GAME_GUEST_LOW_MEMORY() Game_GuestLowMemory()
+#endif
 #ifndef GAME_GUEST_LOW_MEMORY
 #define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
 #endif
