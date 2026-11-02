@@ -38,3 +38,9 @@ android {
 
 dependencies {
 }
+
+// SDL's Java 8 target is "obsolete" for the JDK; with Java 11 AGP runs jlink on the
+// platform's core-for-system-modules.jar, which fails with this JDK.  Only the warning goes.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-Xlint:-options'
+}

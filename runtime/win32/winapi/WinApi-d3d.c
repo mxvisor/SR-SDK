@@ -1697,7 +1697,6 @@ static uint32_t execute_buffer_run(d3d_execbuf *b)
         case 3:             /* D3DOP_TRIANGLE: D3DTRIANGLE */
             if (count != 0)
             {
-                static long exec_no;
                 uint16_t *index = (uint16_t *)malloc((size_t)count * 3 * sizeof(uint16_t));
                 if (index != NULL)
                 {
@@ -1707,7 +1706,6 @@ static uint32_t execute_buffer_run(d3d_execbuf *b)
                         index[i * 3 + 1] = ((uint16_t *)d)[i * 4 + 1];
                         index[i * 3 + 2] = ((uint16_t *)d)[i * 4 + 2];
                     }
-                    exec_no++;
                     draw_primitive(dev, 4 /* D3DPT_TRIANGLELIST */, 3 /* D3DVT_TLVERTEX */,
                                    (const float *)(base + voff), vcount, index, count * 3);
                     free(index);

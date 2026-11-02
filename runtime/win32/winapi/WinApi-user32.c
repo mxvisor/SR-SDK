@@ -394,8 +394,10 @@ static const uint8_t virtual_keyboard_layout[2][4][VK_LAYOUT_WIDTH] = { {
 static uint8_t virtual_keyboard_buffer[2 * VK_LAYOUT_WIDTH];
 static int virtual_keyboard_buflen;
 
+#if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
 /* how many of the messages of GAME_WINAPI_ACTIVATE_APP_ON_IDLE are sent */
 static int activate_app_state = 0;
+#endif
 
 #ifdef PYRA
 static SDL_Joystick *pyra_stick = NULL;
@@ -1225,7 +1227,10 @@ static void wait_queue(unsigned int ms)
 
 static int find_event(SDL_Event *event, int remove, int wait)
 {
-    int pump_events, can_sleep;
+#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+    int pump_events;
+#endif
+    int can_sleep;
 
     if (Thread_Exit) Game_StopMain();
 
@@ -1239,7 +1244,9 @@ static int find_event(SDL_Event *event, int remove, int wait)
         return 1;
     }
 
+#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
     pump_events = 1;
+#endif
     can_sleep = (CPU_SleepMode != 2)?1:0;
 
     while (1)

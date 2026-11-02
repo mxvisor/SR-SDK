@@ -65,7 +65,8 @@ fetch() {
 build() {
     src=$WORK/$1; shift
     rm -rf "$src/build-android"
-    cmake -S "$src" -B "$src/build-android" -G Ninja \
+    # -Wno-deprecated: SDL's own CMakeLists asks for an old cmake_minimum_required
+    cmake -Wno-deprecated -S "$src" -B "$src/build-android" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=$API -DANDROID_STL=c++_shared \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
