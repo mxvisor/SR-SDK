@@ -30,6 +30,7 @@
 #endif
 #include <stdlib.h>
 #include "CLIB.h"
+#include "Game_vfs.h"
 #include "Game-Memory.h"
 
 #include <string.h>
@@ -483,6 +484,22 @@ static int CLIB_FindPath(char *dirstart, char *dst, const char *rest)
 #endif
 
 #if !defined(_WIN32)
+/* A game may upper-case the path of its own directory, and the directories above
+ * it need not be readable (/data on Android), so that the search cannot go through
+ * them: the root is known. -1: src is not under the root. */
+static int CLIB_FindUnderRoot(const char *root, const char *src, char *dst)
+{
+    size_t length = (root != NULL) ? strlen(root) : 0;
+
+    if ((length == 0) || (strncasecmp(src, root, length) != 0)) return -1;
+    if ((src[length] != '/') && (src[length] != '\\')) return -1;
+
+    memcpy(dst, root, length);
+    dst[length] = '/';
+    dst[length + 1] = 0;
+    return CLIB_FindPath(dst, dst + length + 1, src + length + 1);
+}
+
 int CLIB_FindFile(const char *src, char *dst)
 {
     const char *filename_start;
@@ -495,6 +512,10 @@ int CLIB_FindFile(const char *src, char *dst)
     filename_start = src;
     if (src[0] == '/')
     {
+        found = CLIB_FindUnderRoot(Game_DataRoot(), src, dst);
+        if (found < 0) found = CLIB_FindUnderRoot(Game_WriteRoot(), src, dst);
+        if (found >= 0) return found;
+
         /* an absolute path (the copy of the disc as D:): component by component */
         dst[0] = '/';
         dst[1] = 0;
