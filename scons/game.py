@@ -677,6 +677,10 @@ if want('obj'):
     # in this order -- the game's own first, so a same-named file there wins
     gen_src_dir = GEN_SRC_DIR
     gen_main = GEN_MAIN
+    # the master includes the segments stage 3 copied beside it; they are no
+    # target of it, so SCons reads them before the copy and keeps an object of
+    # the old ones: the master's object depends on what stands for them
+    gen_deps = [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS] if SR_EXTRAS else [SR_SEGMENTS]
     llasm_inc_dirs = LLASM_INC_DIRS
 
     # The game's sources, then the SDK's runtime, then SR's shared code. A .c
@@ -759,7 +763,7 @@ if want('obj'):
         obj_runtime = os.path.join(obj_device, 'runtime')
         game_objs += SConscript(os.path.join(SDK_ROOT, 'scons', 'llasm.SConscript'),
                                 exports='device env gen_dir llasm_tool llasm_deps '
-                                        'gen_src_dir gen_main llasm_inc_dirs game_llasm_dir '
+                                        'gen_src_dir gen_main gen_deps llasm_inc_dirs game_llasm_dir '
                                         'sdk_llasm_dirs sdk_root obj_runtime')
     defaults += game_objs
 

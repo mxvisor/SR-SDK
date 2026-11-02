@@ -32,7 +32,7 @@ import sys
 #                    and runtime/win32/winapi/llasm); a file the game has under the
 #                    same name replaces the runtime's
 #   obj_runtime      where the objects of the runtime's .c go
-Import('device', 'env', 'gen_dir', 'llasm_tool', 'llasm_deps', 'gen_src_dir', 'gen_main', 'llasm_inc_dirs',
+Import('device', 'env', 'gen_dir', 'llasm_tool', 'llasm_deps', 'gen_src_dir', 'gen_main', 'gen_deps', 'llasm_inc_dirs',
        'game_llasm_dir', 'sdk_llasm_dirs', 'sdk_root', 'obj_runtime')
 
 llasm_include_re = re.compile(r'^include\s+(\S+)\r?$', re.M)
@@ -125,6 +125,8 @@ for llasm_file in llasm_files:
     llasm_obj = env.llasm(target = target, source = File(llasm_file))
     # the driver is named in the action, so SCons has to be told about it
     env.Depends(llasm_obj, llasm_deps)
+    if gen_main and llasm_file == str(gen_main):
+        env.Depends(llasm_obj, gen_deps)
     obj += llasm_obj
 
 Return('obj')
