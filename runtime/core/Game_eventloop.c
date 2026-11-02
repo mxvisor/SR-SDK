@@ -209,7 +209,23 @@ void Game_Event_Loop(void)
          * winapi message pump (WM_ACTIVATEAPP, SC_MINIMIZE, close). */
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_WINDOWEVENT - 1);
         if (NumEvents <= 0)
+        {
             NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_USEREVENT, SDL_LASTEVENT);
+#ifdef GAME_WINAPI
+            /* the winapi layer's own user events (its timer callbacks, wake-ups of its message
+             * queue) are for the guest's message pump: they go back, or the timer of a game
+             * that is started again by its callback dies when this loop wins the race */
+            if ((NumEvents > 0) && (event.type == SDL_USEREVENT) && ((event.user.code == EC_WINAPI_WAKE)
+#if GAME_WINAPI_TIMER_EVENTS
+                || (event.user.code == EC_WINAPI_TIMER)
+#endif
+                ))
+            {
+                SDL_PushEvent(&event);
+                NumEvents = 0;
+            }
+#endif
+        }
 #endif
         if (NumEvents <= 0)
         {

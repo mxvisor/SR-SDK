@@ -24,6 +24,8 @@
  */
 
 #include "WinApi-winmm.h"
+#include "Game_memory.h"
+#include "Game_defs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
@@ -69,20 +71,33 @@ struct winapi_timer {
     void *callback;
     uint32_t interval;
     uint32_t event;
+    void *user;
 };
 
-static struct winapi_timer winapi_timer_ = { 0, NULL, 0, 0 };
+static struct winapi_timer winapi_timer_ = { 0, NULL, 0, 0, NULL };
+
+/* WINAPI_TIMER_LOG=1 logs the timer calls */
+static int timer_log(void)
+{
+    static int on = -1;
+
+    if (on < 0) on = (getenv("WINAPI_TIMER_LOG") != NULL);
+    return on;
+}
 
 static uint32_t SDLCALL winapi_timer_callback(uint32_t interval, void *userdata)
 {
     struct winapi_timer *timer = (struct winapi_timer *)userdata;
     SDL_Event event;
+    static unsigned fired;
+
+    if (timer_log() && (fired++ < 5)) eprintf("timer fires: proc %p\n", timer->callback);
 
     SDL_zero(event);
     event.type = SDL_USEREVENT;
-    event.user.code = 6; /* timer callback */
-    event.user.data1 = timer->callback;
-    event.user.data2 = (void *)(uintptr_t)timer->sdl_id;
+    event.user.code = EC_WINAPI_TIMER;
+    event.user.data1 = (void *)(uintptr_t)GAME_PTR_TO_GUEST32(timer->callback);
+    event.user.data2 = timer->user;
     SDL_PushEvent(&event);
 
     return (timer->event & TIME_PERIODIC) ? interval : 0;
@@ -117,13 +132,14 @@ uint32_t CCALL timeSetEvent_c(uint32_t delay, uint32_t resolution,
     void *lpTimeProc, void *dwUser, uint32_t fuEvent)
 {
     (void)resolution;
-    (void)dwUser;
 
     winapi_timer_.callback = lpTimeProc;
+    winapi_timer_.user = dwUser;
     winapi_timer_.interval = delay ? delay : 1;
     winapi_timer_.event = fuEvent;
 
     winapi_timer_.sdl_id = SDL_AddTimer(winapi_timer_.interval, winapi_timer_callback, &winapi_timer_);
+    if (timer_log()) eprintf("timeSetEvent: delay %u proc %p event %u -> %u\n", delay, lpTimeProc, fuEvent, (unsigned)winapi_timer_.sdl_id);
     if (!winapi_timer_.sdl_id)
     {
         return 0;
@@ -136,7 +152,7 @@ uint32_t CCALL timeSetEvent_c(uint32_t delay, uint32_t resolution,
 
 uint32_t CCALL timeKillEvent_c(uint32_t id)
 {
-    (void)id;
+    if (timer_log()) eprintf("timeKillEvent: id %u (sdl %u)\n", id, (unsigned)winapi_timer_.sdl_id);
 
     if (winapi_timer_.sdl_id)
     {

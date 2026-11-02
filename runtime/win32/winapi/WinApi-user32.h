@@ -56,6 +56,7 @@ uint32_t CCALL MessageBoxA_c(void *hWnd, const char *lpText, const char *lpCapti
 uint32_t CCALL OffsetRect_c(void *lprc, int32_t dx, int32_t dy);
 uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax, uint32_t wRemoveMsg);
 uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam);
+uint32_t CCALL PostThreadMessageA_c(uint32_t idThread, uint32_t Msg, uint32_t wParam, uint32_t lParam);
 void CCALL PostQuitMessage_c(int32_t nExitCode);
 uint32_t CCALL PtInRect_c(const void *lprc, int32_t px, int32_t py);
 uint32_t CCALL RegisterClassA_c(void *lpWndClass);

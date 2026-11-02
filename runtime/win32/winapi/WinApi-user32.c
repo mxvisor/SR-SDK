@@ -33,6 +33,9 @@
 #include "WinApi-config.h"
 #include "VKfont.h"
 #include "WinApi-guest.h"
+#include "WinApi-kernel32.h"
+#include "Game_memory.h"
+#include "Game_defs.h"
 #include "Game_hooks.h"
 #include "main.h"
 
@@ -63,6 +66,17 @@
  * draws the scene on the second (default 0: no such messages) */
 #ifndef GAME_WINAPI_ACTIVATE_APP_ON_IDLE
 #define GAME_WINAPI_ACTIVATE_APP_ON_IDLE 0
+#endif
+/* GAME_WINAPI_TIMER_EVENTS 1: the callback of timeSetEvent runs, from the game's message
+ * pump (default 0: a game that sets a timer never hears from it) */
+#ifndef GAME_WINAPI_TIMER_EVENTS
+#define GAME_WINAPI_TIMER_EVENTS 0
+#endif
+/* GAME_WINAPI_WINDOW_MESSAGES 1: the game's message loop looks at the window of a message:
+ * input messages carry the window's handle, and PostMessageA delivers the WM_USER range to it
+ * (default 0: a handle of zero, and the post fails: the games of SR post these for nothing) */
+#ifndef GAME_WINAPI_WINDOW_MESSAGES
+#define GAME_WINAPI_WINDOW_MESSAGES 0
 #endif
 /* GAME_WINAPI_TOUCH_GAMEPAD 1: the game draws the on-screen gamepad
  * (touchgamepad.h) over its picture, and the touches are the gamepad's, not
@@ -339,6 +353,7 @@ static int controller_frac_x;
 static int controller_frac_y;
 static uint32_t controller_mouse_last_time;
 static SDL_Event priority_event;
+static uint32_t window_thread_id;    /* the guest thread that created the pseudo window */
 static SDL_Surface *virtual_keyboard_surface = NULL;
 static SDL_Texture *virtual_keyboard_texture = NULL;
 static SDL_Surface *virtual_keyboard_texture_surface = NULL;
@@ -381,19 +396,6 @@ static int virtual_keyboard_buflen;
 
 /* how many of the messages of GAME_WINAPI_ACTIVATE_APP_ON_IDLE are sent */
 static int activate_app_state = 0;
-
-/* The messages the program posts to itself (PostMessageA): they wait here
- * until the program asks for them with PeekMessageA or GetMessageA. */
-#define GAME_MSGQUEUE_SIZE 64
-typedef struct
-{
-    void *hwnd;
-    uint32_t message;
-    uint32_t wParam;
-    uint32_t lParam;
-} game_queued_msg;
-static game_queued_msg game_msgqueue[GAME_MSGQUEUE_SIZE];
-static int game_msgqueue_count = 0;
 
 #ifdef PYRA
 static SDL_Joystick *pyra_stick = NULL;
@@ -520,6 +522,12 @@ void init_sleepmode(void)
 
 static void warp_mouse(int x, int y)
 {
+#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
+    /* the host pointer is the truth: a warp (the game puts its cursor back every frame) would pin it
+     * to the guest's coordinates, unscaled, and make it flicker */
+    (void)x; (void)y;
+    return;
+#endif
     if (mouse_renderer != NULL)
     {
 #if SDL_VERSION_ATLEAST(2,0,18)
@@ -1079,11 +1087,142 @@ static int check_controller_event(SDL_Event *event, int remove)
     return 0;
 }
 
+/* Posted messages and the guest's message queues.
+ *
+ * Windows keeps one queue per thread that has called a message function.
+ * This port only needs the main thread's queue in practice, but the queue is
+ * tagged with its target thread id so a worker that posts to the main thread
+ * does not put its message in its own queue.  A target id of 0 is what the
+ * game passes when it has not initialized its "main thread id" global; treat it
+ * as the main thread, as the original Windows program effectively would. */
+#define WINAPI_MSG_QUEUE_SIZE 256
+#define FIND_EVENT_WAKE 2
+
+typedef struct {
+    uint32_t target;
+    msg m;
+} winapi_posted_message;
+
+static winapi_posted_message posted_queue[WINAPI_MSG_QUEUE_SIZE];
+static int posted_head;
+static int posted_count;
+static SDL_mutex *posted_lock;
+static SDL_atomic_t posted_lock_state = { 0 };
+
+static SDL_mutex *posted_get_lock(void)
+{
+    for (;;)
+    {
+        int state = SDL_AtomicGet(&posted_lock_state);
+
+        if (state == 2) return posted_lock;
+        if ((state == 0) && SDL_AtomicCAS(&posted_lock_state, 0, 1))
+        {
+            posted_lock = SDL_CreateMutex();
+            SDL_AtomicSet(&posted_lock_state, 2);
+            return posted_lock;
+        }
+        SDL_Delay(0);
+    }
+}
+
+static uint32_t message_time_now(void)
+{
+#ifdef _WIN32
+    return GetTickCount();
+#else
+    return Winapi_GetTicks();
+#endif
+}
+
+static void posted_wake(void)
+{
+    SDL_Event event;
+
+    SDL_zero(event);
+    event.type = SDL_USEREVENT;
+    event.user.code = EC_WINAPI_WAKE;
+    SDL_PushEvent(&event);
+}
+
+static int posted_put(uint32_t target, const msg *m)
+{
+    SDL_mutex *lock = posted_get_lock();
+    int index;
+
+    SDL_LockMutex(lock);
+    if (posted_count >= WINAPI_MSG_QUEUE_SIZE)
+    {
+        SDL_UnlockMutex(lock);
+        return 0;
+    }
+    index = (posted_head + posted_count) % WINAPI_MSG_QUEUE_SIZE;
+    posted_queue[index].target = target;
+    posted_queue[index].m = *m;
+    posted_count++;
+    SDL_UnlockMutex(lock);
+
+    posted_wake();
+    return 1;
+}
+
+/* remove = 0 peeks, remove = 1 takes the first message for this thread */
+static int posted_take(uint32_t target, msg *out, int remove)
+{
+    SDL_mutex *lock = posted_get_lock();
+    int index, j, found = 0;
+
+    SDL_LockMutex(lock);
+    for (j = 0; j < posted_count; j++)
+    {
+        index = (posted_head + j) % WINAPI_MSG_QUEUE_SIZE;
+        if (posted_queue[index].target != target) continue;
+
+        *out = posted_queue[index].m;
+        if (remove)
+        {
+            for (; j + 1 < posted_count; j++)
+            {
+                int next = (posted_head + j + 1) % WINAPI_MSG_QUEUE_SIZE;
+                posted_queue[index] = posted_queue[next];
+                index = next;
+            }
+            posted_count--;
+        }
+        found = 1;
+        break;
+    }
+    SDL_UnlockMutex(lock);
+    return found;
+}
+
 /* main.c asks the game thread to stop by setting Thread_Exit; the message pump
  * is the one place a recompiled Windows program polls often enough to notice. */
 extern volatile uint32_t Thread_Exit;
 extern void Game_StopMain(void) __attribute__((noreturn));
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_StopMainIfExiting(void)
+{
+    if (Thread_Exit) Game_StopMain();
+}
 extern SDL_sem *Game_FlipSem;
+
+#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+/* sleeps until an event is queued (at most ms): Game_Event_Loop, on the host's main
+ * thread, is the one that pumps; a pump from a game thread races its window calls */
+static void wait_queue(unsigned int ms)
+{
+    SDL_Event ev;
+
+    while (ms-- != 0)
+    {
+        if (SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) != 0) return;
+        SDL_Delay(1);
+    }
+}
+#endif
 
 static int find_event(SDL_Event *event, int remove, int wait)
 {
@@ -1114,6 +1253,14 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
         num_events = SDL_PeepEvents(event, 1, (remove)?SDL_GETEVENT:SDL_PEEKEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
         if (num_events < 0) return 0; // error
+        if ((num_events > 0) && (event->type == SDL_USEREVENT) && (event->user.code == EC_WINAPI_WAKE))
+        {
+            /* a posted message is waiting, but it is not an SDL event: consume
+             * the wake-up (also in peek mode) and let GetMessage look at the
+             * guest queue again */
+            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+            return FIND_EVENT_WAKE;
+        }
         if (num_events == 0) // no events
         {
             if (Thread_Exit) Game_StopMain();
@@ -1122,15 +1269,21 @@ static int find_event(SDL_Event *event, int remove, int wait)
             {
                 /* not for ever: a close of the window sets Thread_Exit and may send no
                  * further event to wake this thread (under Wine it does not) */
+#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+                wait_queue(100);
+#else
                 SDL_WaitEventTimeout(NULL, 100);
+#endif
                 continue;
             }
+#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
             else if (pump_events)
             {
                 pump_events = 0;
                 SDL_PumpEvents();
                 continue;
             }
+#endif
             else if (can_sleep)
             {
                 if (Display_DelayAfterFlip || Display_VSync)
@@ -1557,6 +1710,13 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
         case SDL_USEREVENT:
             // user events
+#if GAME_WINAPI_TIMER_EVENTS
+            if (event->user.code == EC_WINAPI_TIMER)
+            {
+                keep_event = 1;
+            }
+            else
+#endif
             if ((event->user.code >= 0) && (event->user.code <= 3))
             {
                 keep_event = 1;
@@ -2075,7 +2235,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
     };
 
     memset((void *)lpMsg, 0, sizeof(msg));
-
     switch (event->type)
     {
         case SDL_KEYDOWN:
@@ -2690,16 +2849,16 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
             break;
         case 5:
             break;
-        case 6:
-            /* Timer callback: data1 = guest function address, data2 = timer id.
+        case EC_WINAPI_TIMER:
+            /* Timer callback: data1 = guest function address, data2 = dwUser of timeSetEvent.
                The callback is a stdcall TIMECALLBACK taking 5 arguments. */
             if (event->user.data1)
             {
                 uint32_t args[5];
 
-                args[0] = (uint32_t)(uintptr_t)event->user.data2;
+                args[0] = 1; /* the id timeSetEvent returned to the game */
                 args[1] = 0;
-                args[2] = 0;
+                args[2] = (uint32_t)(uintptr_t)event->user.data2;
                 args[3] = 0;
                 args[4] = 0;
                 Winapi_CallGuest((uint32_t)(uintptr_t)event->user.data1, 5, args);
@@ -2815,6 +2974,14 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
     default:
         break;
     }
+
+#if GAME_WINAPI_WINDOW_MESSAGES
+    /* SDL input is a message for the program's window; WM_QUIT is a thread message */
+    if (lpMsg->message != WM_QUIT)
+    {
+        lpMsg->hwnd.set_value(GAME_PTR_TO_GUEST32(PSEUDO_HANDLE_MAIN_WINDOW));
+    }
+#endif
 }
 
 
@@ -2841,6 +3008,9 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
 
     SDL_GetVersion(&linked);
     sdl_versionnum = SDL_VERSIONNUM(linked.major, linked.minor, linked.patch);
+
+    /* Windows posts a window message to the thread that created the window. */
+    window_thread_id = GetCurrentThreadId_c();
 
     priority_event.type = 0;
     controller_mouse_last_time = SoundEngine_Counter;
@@ -2940,7 +3110,6 @@ int16_t CCALL GetAsyncKeyState_c(int32_t vKey)
 #ifdef DEBUG_USER32
     eprintf("GetAsyncKeyState: %i\n", vKey);
 #endif
-
     if (vKey == VK_SHIFT)
     {
         return (keyboard_mods & KMOD_SHIFT)?0x8000:0;
@@ -3045,22 +3214,42 @@ uint32_t CCALL GetMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, ui
 
     if ((hWnd == NULL) && (wMsgFilterMin == 0) && (wMsgFilterMax == 0))
     {
-        SDL_Event event;
-        if (!find_event(&event, 1, 1))
-        {
-            Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return -1;
-        }
+        uint32_t thread_id = GetCurrentThreadId_c();
+        msg posted;
 
-        translate_event((lpmsg)lpMsg, &event, 1);
+        for (;;)
+        {
+            if (posted_take(thread_id, &posted, 1))
+            {
+                *((lpmsg)lpMsg) = posted;
+                message_time = posted.time;
+                if (posted.message == WM_PAINT) paint_pending = 0;
+                if (getenv(GAME_ENV("MSG_LOG"))) fprintf(stderr, "[msg get tid=%u hwnd=%x msg=%x wp=%x lp=%x]\n", thread_id, posted.hwnd.get_value(), posted.message, posted.wParam, posted.lParam);
+                return (posted.message == WM_QUIT)?0:1;
+            }
+
+            {
+                SDL_Event event;
+                int found = find_event(&event, 1, 1);
+
+                if (found == FIND_EVENT_WAKE) continue;
+                if (!found)
+                {
+                    Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                    return -1;
+                }
+
+                translate_event((lpmsg)lpMsg, &event, 1);
+            }
 
 #ifdef _WIN32
-        message_time = GetTickCount();
+            message_time = GetTickCount();
 #else
-        message_time = Winapi_GetTicks();
+            message_time = Winapi_GetTicks();
 #endif
 
-        return (((lpmsg)lpMsg)->message == WM_QUIT)?0:1;
+            return (((lpmsg)lpMsg)->message == WM_QUIT)?0:1;
+        }
     }
 
     eprintf("Unsupported method: %s\n", "GetMessageA");
@@ -3369,6 +3558,66 @@ uint32_t CCALL OffsetRect_c(void *lprc, int32_t dx, int32_t dy)
     return 1;
 }
 
+/* No message: the program gets on with its work, usually drawing the next frame.  The
+ * port has no window of its own, so it must not invent a WM_PAINT here: a program that
+ * draws when it has no message (and waits for a message to redraw) would never draw at
+ * all.  A game that asks for it gets the repaint request the window of Windows would
+ * send it. */
+static int peek_idle(void *lpMsg)
+{
+#if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
+    if (activate_app_state < 2 && lpfnWndProc != NULL && lpMsg != NULL)
+    {
+        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+        ((lpmsg)lpMsg)->message = WM_ACTIVATEAPP;
+        ((lpmsg)lpMsg)->wParam = (activate_app_state == 0) ? 0 : 1;
+        ((lpmsg)lpMsg)->lParam = 0;
+        activate_app_state++;
+        return 1;
+    }
+#endif
+#if GAME_WINAPI_COMMAND_ON_IDLE
+    if (activate_app_state == 2 && lpfnWndProc != NULL && lpMsg != NULL && GAME_WINAPI_COMMAND_READY())
+    {
+        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+        ((lpmsg)lpMsg)->message = WM_COMMAND;
+        ((lpmsg)lpMsg)->wParam = GAME_WINAPI_COMMAND_ON_IDLE;
+        ((lpmsg)lpMsg)->lParam = 0;
+        activate_app_state++;
+        /* After New Game, schedule a WM_PAINT on the next idle cycle */
+        post_command_redraw = 1;
+        return 1;
+    }
+#endif
+#if GAME_WINAPI_PAINT_WHEN_IDLE
+    if (lpfnWndProc != NULL && lpMsg != NULL)
+    {
+        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+        ((lpmsg)lpMsg)->message = WM_PAINT;
+        ((lpmsg)lpMsg)->wParam = 0;
+        ((lpmsg)lpMsg)->lParam = 0;
+        return 1;
+    }
+#endif
+
+    if (post_command_redraw && lpfnWndProc != NULL && lpMsg != NULL)
+    {
+        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
+        ((lpmsg)lpMsg)->message = WM_PAINT;
+        ((lpmsg)lpMsg)->wParam = 0;
+        ((lpmsg)lpMsg)->lParam = 0;
+        post_command_redraw = 0;
+        return 1;
+    }
+
+    if (Game_Wing_Tick != NULL)
+    {
+        Game_Wing_Tick();
+    }
+
+    return 0;
+}
+
 uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax, uint32_t wRemoveMsg)
 {
 #ifdef DEBUG_USER32
@@ -3378,99 +3627,34 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
     /* the program has one window, so a handle names the same queue as NULL does */
     if ((wMsgFilterMin == 0) && (wMsgFilterMax == 0) && ((wRemoveMsg == 0) || (wRemoveMsg == 1)))
     {
-        SDL_Event event;
+        uint32_t thread_id = GetCurrentThreadId_c();
+        msg posted;
 
-        if (!find_event(&event, wRemoveMsg, 0))
+        for (;;)
         {
-            /* a message the program posted to itself comes first */
-            if (game_msgqueue_count > 0 && lpMsg != NULL)
+            if (posted_take(thread_id, &posted, wRemoveMsg != 0))
             {
-                game_queued_msg *m = &game_msgqueue[0];
-                ((lpmsg)lpMsg)->hwnd = m->hwnd;
-                ((lpmsg)lpMsg)->message = m->message;
-                ((lpmsg)lpMsg)->wParam = m->wParam;
-                ((lpmsg)lpMsg)->lParam = m->lParam;
-                if (wRemoveMsg != PM_NOREMOVE)
+                if (lpMsg != NULL) *((lpmsg)lpMsg) = posted;
+                if (wRemoveMsg != 0 && posted.message == WM_PAINT) paint_pending = 0;
+                if (getenv(GAME_ENV("MSG_LOG"))) fprintf(stderr, "[msg peek tid=%u hwnd=%x msg=%x wp=%x lp=%x]\n", thread_id, posted.hwnd.get_value(), posted.message, posted.wParam, posted.lParam);
+                return 1;
+            }
+
+            {
+                SDL_Event event;
+                int found = find_event(&event, wRemoveMsg, 0);
+
+                if (found == FIND_EVENT_WAKE) continue;
+                if (!found) return peek_idle(lpMsg);
+
+                if (lpMsg != NULL)
                 {
-                    int i;
-                    if (m->message == WM_PAINT && m->hwnd == (void *)PSEUDO_HANDLE_MAIN_WINDOW)
-                    {
-                        paint_pending = 0;
-                    }
-                    game_msgqueue_count--;
-                    for (i = 0; i < game_msgqueue_count; i++)
-                    {
-                        game_msgqueue[i] = game_msgqueue[i + 1];
-                    }
+                    translate_event((lpmsg)lpMsg, &event, wRemoveMsg);
                 }
-                return 1;
             }
 
-            /* No message: the program gets on with its work, usually
-             * drawing the next frame.  The port has no window of its own,
-             * so it must not invent a WM_PAINT here: a program that draws
-             * when it has no message (and waits for a message to redraw)
-             * would never draw at all.  A game that asks for it gets the
-             * repaint request the window of Windows would send it. */
-#if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
-            if (activate_app_state < 2 && lpfnWndProc != NULL && lpMsg != NULL)
-            {
-                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-                ((lpmsg)lpMsg)->message = WM_ACTIVATEAPP;
-                ((lpmsg)lpMsg)->wParam = (activate_app_state == 0) ? 0 : 1;
-                ((lpmsg)lpMsg)->lParam = 0;
-                activate_app_state++;
-                return 1;
-            }
-#endif
-#if GAME_WINAPI_COMMAND_ON_IDLE
-            if (activate_app_state == 2 && lpfnWndProc != NULL && lpMsg != NULL && GAME_WINAPI_COMMAND_READY())
-            {
-                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-                ((lpmsg)lpMsg)->message = WM_COMMAND;
-                ((lpmsg)lpMsg)->wParam = GAME_WINAPI_COMMAND_ON_IDLE;
-                ((lpmsg)lpMsg)->lParam = 0;
-                activate_app_state++;
-                /* After New Game, schedule a WM_PAINT on the next idle cycle */
-                post_command_redraw = 1;
-                return 1;
-            }
-#endif
-#if GAME_WINAPI_PAINT_WHEN_IDLE
-            if (lpfnWndProc != NULL && lpMsg != NULL)
-            {
-                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-                ((lpmsg)lpMsg)->message = WM_PAINT;
-                ((lpmsg)lpMsg)->wParam = 0;
-                ((lpmsg)lpMsg)->lParam = 0;
-                return 1;
-            }
-#endif
-
-            if (post_command_redraw && lpfnWndProc != NULL && lpMsg != NULL)
-            {
-                ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-                ((lpmsg)lpMsg)->message = WM_PAINT;
-                ((lpmsg)lpMsg)->wParam = 0;
-                ((lpmsg)lpMsg)->lParam = 0;
-                post_command_redraw = 0;
-                return 1;
-            }
-
-            if (Game_Wing_Tick != NULL)
-            {
-                Game_Wing_Tick();
-            }
-
-            return 0;
+            return 1;
         }
-
-        if (lpMsg != NULL)
-        {
-            translate_event((lpmsg)lpMsg, &event, wRemoveMsg);
-        }
-
-        return 1;
     }
 
     eprintf("Unsupported method: %s hWnd=%p min=%u max=%u remove=%u\n", "PeekMessageA", hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
@@ -3479,10 +3663,14 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
 
 uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
+    msg m;
+    uint32_t target;
+
 #ifdef DEBUG_USER32
     eprintf("PostMessageA: 0x%" PRIxPTR ", %i, %i, %i\n", (uintptr_t)hWnd, Msg, wParam, lParam);
 #endif
 
+#if !GAME_WINAPI_WINDOW_MESSAGES
     if ((hWnd == PSEUDO_HANDLE_MAIN_WINDOW) && (Msg >= WM_USER) && (Msg < WM_APP))
     {
         // the original posts these messages, but I have no idea what they are for (they're not used by the application)
@@ -3490,26 +3678,55 @@ uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_
         Winapi_SetLastError(ERROR_ACCESS_DENIED);
         return 0;
     }
+#endif
 
-    if (Msg == WM_PAINT && hWnd == PSEUDO_HANDLE_MAIN_WINDOW)
+    if (Msg == WM_PAINT && hWnd == (void *)PSEUDO_HANDLE_MAIN_WINDOW)
     {
-        if (paint_pending)
-        {
-            return 1;
-        }
+        if (paint_pending) return 1;
         paint_pending = 1;
     }
 
-    if (game_msgqueue_count < GAME_MSGQUEUE_SIZE)
-    {
-        game_queued_msg *m = &game_msgqueue[game_msgqueue_count++];
-        m->hwnd = hWnd;
-        m->message = Msg;
-        m->wParam = wParam;
-        m->lParam = lParam;
-    }
+    target = (hWnd == NULL) ? GetCurrentThreadId_c() : window_thread_id;
+    if (target == 0) target = GetCurrentThreadId_c();
+    SDL_zero(m);
+    m.hwnd.set_value((hWnd == NULL) ? 0 : GAME_PTR_TO_GUEST32(hWnd));
+    m.message = Msg;
+    m.wParam = wParam;
+    m.lParam = (int32_t)lParam;
+    m.time = message_time_now();
+    m.pt.x = (uint32_t)mouse_x;
+    m.pt.y = (uint32_t)mouse_y;
 
-    // Just succeed for unhandled messages to avoid exit
+    if (getenv(GAME_ENV("MSG_LOG"))) fprintf(stderr, "[msg post tid=%u hwnd=%x msg=%x wp=%x lp=%x]\n", target, m.hwnd.get_value(), m.message, m.wParam, (uint32_t)m.lParam);
+    if (!posted_put(target, &m))
+    {
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+    return 1;
+}
+
+uint32_t CCALL PostThreadMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    msg m;
+    uint32_t target = (a0 != 0) ? a0 : window_thread_id;
+    if (target == 0) target = GetCurrentThreadId_c();
+
+    SDL_zero(m);
+    m.hwnd.set_value(0);
+    m.message = a1;
+    m.wParam = a2;
+    m.lParam = (int32_t)a3;
+    m.time = message_time_now();
+    m.pt.x = (uint32_t)mouse_x;
+    m.pt.y = (uint32_t)mouse_y;
+
+    if (getenv(GAME_ENV("MSG_LOG"))) fprintf(stderr, "[msg post-thread tid=%u msg=%x wp=%x lp=%x]\n", target, m.message, m.wParam, (uint32_t)m.lParam);
+    if (!posted_put(target, &m))
+    {
+        Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
     return 1;
 }
 
@@ -3653,11 +3870,16 @@ uint32_t CCALL WaitMessage_c(void)
     /* Windows wakes the program up when a message arrives. The port has no
      * message queue of its own: the program is woken up regularly and finds
      * the repaint request (the port's own WM_PAINT) in PeekMessage. */
+#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+    wait_queue(33);
+    if (Thread_Exit) Game_StopMain();
+#else
     while (!SDL_WaitEventTimeout(NULL, 33))
     {
         if (Thread_Exit) Game_StopMain();
         break;
     }
+#endif
     return 1;
 }
 
