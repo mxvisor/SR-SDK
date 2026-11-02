@@ -522,9 +522,8 @@ void init_sleepmode(void)
 
 static void warp_mouse(int x, int y)
 {
-#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
-    /* the host pointer is the truth: a warp (the game puts its cursor back every frame) would pin it
-     * to the guest's coordinates, unscaled, and make it flicker */
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    /* the pointer is held by the relative mode; the game puts its cursor back every frame */
     (void)x; (void)y;
     return;
 #endif

@@ -202,60 +202,16 @@ static void mouse_move(int dx, int dy)
     if (dy) mouse_queue_put(4, (uint32_t)dy, Winapi_GetTicks()); /* DIMOFS_Y */
 }
 
-#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
-/* <GAME>_DINPUT_ABSOLUTE_MOUSE (Game_hooks.h): the game draws its own cursor from the
-   motion deltas, which leaves it wherever the game put it first, not under the host's
-   pointer. The deltas are made from the pointer's position instead: a big step to the
-   corner (the game keeps its cursor on the screen) once, when the device is acquired
-   or the pointer comes back to the window, then the steps from the game cursor's
-   position, as we have followed it, to the pointer's. */
-extern int winapi_get_dd_mode(int *width, int *height);
-
-static int mouse_resync = 1;
-static int mouse_gx, mouse_gy;
-
-static int mouse_follow(const SDL_MouseMotionEvent *m)
-{
-    int w, h, ww = 0, wh = 0, x = m->x, y = m->y;
-    SDL_Window *window = SDL_GetWindowFromID(m->windowID);
-
-    if (window == NULL || !winapi_get_dd_mode(&w, &h) || w <= 0 || h <= 0) return 0;
-    SDL_GetWindowSize(window, &ww, &wh);
-    if (ww > 0 && wh > 0) { x = x * w / ww; y = y * h / wh; }
-    if (x < 0) x = 0; else if (x >= w) x = w - 1;
-    if (y < 0) y = 0; else if (y >= h) y = h - 1;
-    if (mouse_resync)
-    {
-        mouse_move(-4096, -4096);
-        mouse_gx = mouse_gy = 0;
-        mouse_resync = 0;
-    }
-    mouse_move(x - mouse_gx, y - mouse_gy);
-    mouse_gx = x;
-    mouse_gy = y;
-    return 1;
-}
-#endif
-
 static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
     touchpad_event(event);
     switch (event->type)
     {
-#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
-        case SDL_WINDOWEVENT:
-            if (event->window.event == SDL_WINDOWEVENT_ENTER || event->window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
-                mouse_resync = 1;
-            break;
-#endif
         case SDL_MOUSEMOTION:
             if (event->motion.which == SDL_TOUCH_MOUSEID) return 0;
             SDL_LockMutex(mouse_mutex);
-#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
-            if (!mouse_follow(&event->motion))
-#endif
-                mouse_move(event->motion.xrel, event->motion.yrel);
+            mouse_move(event->motion.xrel, event->motion.yrel);
             SDL_UnlockMutex(mouse_mutex);
             break;
         case SDL_MOUSEWHEEL:
@@ -438,8 +394,12 @@ uint32_t CCALL IDirectInputDevice_SetProperty_c(uint32_t a0, uint32_t a1, uint32
 uint32_t CCALL IDirectInputDevice_Acquire_c(uint32_t a0)
 {
     if (input_debug()) fprintf(stderr, "[dinput %08x Acquire]\n", a0);
-#ifdef GAME_DINPUT_ABSOLUTE_MOUSE
-    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) mouse_resync = 1;
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    /* the game draws its cursor from the deltas and moves it itself to a menu item: a host pointer
+     * beside it would part from it, and a compositor does not let a program warp its pointer.
+     * As with the exclusive mouse of DirectInput the host's is hidden and held in the window
+     * (SDL gives it back while the window has no focus). */
+    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) SDL_SetRelativeMouseMode(SDL_TRUE);
 #endif
     return DI_OK;
 }
@@ -447,6 +407,9 @@ uint32_t CCALL IDirectInputDevice_Acquire_c(uint32_t a0)
 uint32_t CCALL IDirectInputDevice_Unacquire_c(uint32_t a0)
 {
     if (input_debug()) fprintf(stderr, "[dinput %08x Unacquire]\n", a0);
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) SDL_SetRelativeMouseMode(SDL_FALSE);
+#endif
     return DI_OK;
 }
 

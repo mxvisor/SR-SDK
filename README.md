@@ -274,7 +274,7 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
-| `GAME_DINPUT_ABSOLUTE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: they are made to follow the host pointer |
+| `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: while the mouse is acquired the host pointer is hidden and held in the window |
 | `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D` |
 | `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
