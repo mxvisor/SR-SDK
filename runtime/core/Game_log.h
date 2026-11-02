@@ -30,19 +30,20 @@
  * the write root, unless the caller gave it somewhere to write.  Game_LogShow
  * shows the last lines of that file in a message box, for a program that
  * stopped on an error.  Game_CrashHandlerInstall makes an exception nobody
- * handles write what is known of it (address, registers, stack) to stderr.
- * Elsewhere all of them do nothing. */
+ * handles write what is known of it (address, registers, stack) to stderr; on
+ * Linux and Android it is a signal (SEGV, BUS, ILL, FPE) with the registers,
+ * the module and offset of the code, and on Android also crash-native.txt in
+ * Android/data/<package>/files/.  Elsewhere the other three do nothing. */
 
 #if defined(_WIN32)
 void Game_LogOpen(void);
 int Game_LogHasStdout(void);    /* the log file is where stdout goes */
 void Game_LogShow(void);
-void Game_CrashHandlerInstall(void);
 #else
 static inline void Game_LogOpen(void) {}
 static inline int Game_LogHasStdout(void) { return 0; }
 static inline void Game_LogShow(void) {}
-static inline void Game_CrashHandlerInstall(void) {}
 #endif
+void Game_CrashHandlerInstall(void);
 
 #endif /* _GAME_LOG_H_INCLUDED_ */

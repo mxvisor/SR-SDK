@@ -23,8 +23,8 @@
  */
 
 /* The log file of a Windows program without a console, the report of why it
- * stopped, and the report of a crash (Game_log.h).  On other systems there is
- * nothing to do. */
+ * stopped, and the report of a crash (Game_log.h).  Elsewhere only the report
+ * of a crash. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +32,128 @@
 
 #include "Game_log.h"
 
-#if defined(_WIN32)
+#if !defined(_WIN32)
+
+#include <inttypes.h>
+#include <signal.h>
+#include <string.h>
+#include <ucontext.h>
+#include <dlfcn.h>
+#if defined(__ANDROID__)
+#include <SDL.h>
+#endif
+
+#include "Game_defs.h"
+#include "Game_memory.h"
+
+/* A signal nobody handles ends the process without a word.  Write what is
+ * known (the signal, the address, the registers, the module and offset of the
+ * code that ran) to stderr, and on Android also to crash-native.txt in
+ * Android/data/<package>/files/ (the log pump may not get to the end of
+ * stderr before the process is gone), then let the signal take its course. */
+#if defined(__ANDROID__)
+static char Crash_Path[1024];
+#endif
+
+static void Crash_Symbol(FILE *f, uintptr_t value)
+{
+    Dl_info info;
+
+    if (value != 0 && dladdr((void *)value, &info) != 0 && info.dli_fbase != NULL)
+    {
+        fprintf(f, "  %p %s+0x%" PRIxPTR "\n", (void *)value, info.dli_fname, value - (uintptr_t)info.dli_fbase);
+    }
+    else
+    {
+        fprintf(f, "  %p ?\n", (void *)value);
+    }
+}
+
+static void Crash_Report(FILE *f, int sig, uintptr_t addr, uintptr_t pc, const ucontext_t *context)
+{
+    fprintf(f, "\nCRASH: signal %d (%s) at %p, pc %p", sig, strsignal(sig), (void *)addr, (void *)pc);
+#if defined(PTROFS_64BIT)
+    fprintf(f, ", pointer_offset %p", (void *)(uintptr_t)pointer_offset);
+#endif
+    fprintf(f, "\n");
+#if defined(PTROFS_64BIT)
+    /* a jump to an address outside of the code is not a read of zeros */
+    if (pc == addr) fprintf(f, "  the guest jumped to %" PRIxPTR " (guest address %" PRIxPTR ")\n", addr, addr - (uintptr_t)pointer_offset);
+#endif
+    Crash_Symbol(f, pc);
+#if defined(__x86_64__) && defined(REG_RIP)
+    {
+        const greg_t *g = context->uc_mcontext.gregs;
+
+        fprintf(f, "  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n"
+                   "  r8 =%016llx r9 =%016llx r10=%016llx r11=%016llx\n  r12=%016llx r13=%016llx r14=%016llx r15=%016llx\n",
+                (unsigned long long)g[REG_RAX], (unsigned long long)g[REG_RBX], (unsigned long long)g[REG_RCX], (unsigned long long)g[REG_RDX],
+                (unsigned long long)g[REG_RSI], (unsigned long long)g[REG_RDI], (unsigned long long)g[REG_RBP], (unsigned long long)g[REG_RSP],
+                (unsigned long long)g[REG_R8], (unsigned long long)g[REG_R9], (unsigned long long)g[REG_R10], (unsigned long long)g[REG_R11],
+                (unsigned long long)g[REG_R12], (unsigned long long)g[REG_R13], (unsigned long long)g[REG_R14], (unsigned long long)g[REG_R15]);
+    }
+#elif defined(__aarch64__)
+    {
+        int index;
+
+        for (index = 0; index < 31; index++) fprintf(f, "  x%02d=%016llx%s", index, (unsigned long long)context->uc_mcontext.regs[index], (index % 4 == 3) ? "\n" : "");
+        fprintf(f, "  sp =%016llx\n  caller:\n", (unsigned long long)context->uc_mcontext.sp);
+        Crash_Symbol(f, (uintptr_t)context->uc_mcontext.regs[30]);
+    }
+#else
+    (void)context;
+#endif
+    fflush(f);
+}
+
+static void Crash_Handler(int sig, siginfo_t *info, void *uc)
+{
+    const ucontext_t *context = (const ucontext_t *)uc;
+    uintptr_t addr = (uintptr_t)info->si_addr;
+#if defined(__x86_64__) && defined(REG_RIP)
+    uintptr_t pc = (uintptr_t)context->uc_mcontext.gregs[REG_RIP];
+#elif defined(__aarch64__)
+    uintptr_t pc = (uintptr_t)context->uc_mcontext.pc;
+#else
+    uintptr_t pc = 0;
+#endif
+
+    Crash_Report(stderr, sig, addr, pc, context);
+#if defined(__ANDROID__)
+    if (Crash_Path[0] != 0)
+    {
+        FILE *f = fopen(Crash_Path, "a");
+
+        if (f != NULL)
+        {
+            Crash_Report(f, sig, addr, pc, context);
+            fclose(f);
+        }
+    }
+#endif
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void Game_CrashHandlerInstall(void)
+{
+    static const int signals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE };
+    struct sigaction action;
+    unsigned int index;
+
+#if defined(__ANDROID__)
+    const char *external = SDL_AndroidGetExternalStoragePath();
+
+    if (external != NULL) snprintf(Crash_Path, sizeof(Crash_Path), "%s/crash-native.txt", external);
+#endif
+    memset(&action, 0, sizeof(action));
+    action.sa_sigaction = Crash_Handler;
+    action.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigemptyset(&action.sa_mask);
+    for (index = 0; index < sizeof(signals) / sizeof(signals[0]); index++) sigaction(signals[index], &action, NULL);
+}
+
+#else
 
 #include <windows.h>
 
@@ -186,4 +307,4 @@ int Game_LogHasStdout(void)
 {
     return Log_Has_Stdout;
 }
-#endif
+#endif /* _WIN32 */
