@@ -709,6 +709,10 @@ if want('obj'):
                               exports='device env')
         return env.Object(Glob(os.path.join(obj_game, sub, '*.c')))
 
+    # runtime files built as C, not C++ (the rest are C++): TinySoundFont's
+    # static tables would need the C++ runtime (__cxa_guard_*), which the link
+    # line does not have
+    RUNTIME_PLAIN_C = ('Game_tsf_impl.c',)
     runtime_objs = []
     for runtime_dir in RUNTIME_DIRS:
         obj_runtime = os.path.join(obj_device, 'runtime',
@@ -732,6 +736,10 @@ if want('obj'):
                         env.StaticLibrary(os.path.join(obj_runtime, 'winapistubs'),
                                                      stub_objs)
                         env.Append(LIBPATH=[obj_runtime], LIBS=['winapistubs'])
+                        continue
+                    if os.path.basename(source) in RUNTIME_PLAIN_C:
+                        runtime_objs += env.Object(os.path.join(obj_runtime, name),
+                                                   CCFLAGS=env['CCFLAGS'] + ['-x', 'c', '-Wno-null-pointer-subtraction'])
                         continue
                     runtime_objs += env.Object(os.path.join(obj_runtime, name))
 
