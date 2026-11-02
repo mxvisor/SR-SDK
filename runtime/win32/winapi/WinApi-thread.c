@@ -482,6 +482,42 @@ uint32_t CCALL WaitForSingleObject_c(uint32_t a0, uint32_t a1)
     }
 }
 
+/* a0 count, a1 handles, a2 wait all, a3 milliseconds, a4 alertable.  The
+ * objects are polled, as an event is; wait-all is taken as wait-any.  (A timer
+ * thread that waits here for ever span when this returned at once.) */
+uint32_t CCALL WaitForMultipleObjectsEx_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+{
+    const uint32_t *handles;
+    uint32_t start, i;
+
+    (void)a2; (void)a4;
+    if ((a0 == 0) || (a0 > 64) || (a1 == 0)) return WAIT_FAILED;
+    handles = (const uint32_t *)GAME_GUEST32_TO_PTR(a1);
+    if (thread_log())
+    {
+        static SDL_atomic_t logged;
+
+        if (SDL_AtomicAdd(&logged, 1) < 5) fprintf(stderr, "WaitForMultipleObjectsEx: n %u first 0x%x ms 0x%x\n", a0, handles[0], a3);
+    }
+
+    start = SDL_GetTicks();
+    for (;;)
+    {
+        uint32_t failed = 0;
+
+        for (i = 0; i < a0; i++)
+        {
+            uint32_t r = WaitForSingleObject_c(handles[i], 0);
+
+            if (r == WAIT_OBJECT_0) return WAIT_OBJECT_0 + i;
+            if (r == WAIT_FAILED) failed++;
+        }
+        if (failed == a0) return WAIT_FAILED;
+        if ((a3 != INFINITE) && (SDL_GetTicks() - start >= a3)) return WAIT_TIMEOUT;
+        SDL_Delay(1);
+    }
+}
+
 uint32_t CCALL CreateEventA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
     handle h;

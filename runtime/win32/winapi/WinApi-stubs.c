@@ -154,11 +154,38 @@ uint32_t CCALL BeginPaint_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_CallNextHookEx
+uint32_t CCALL CallNextHookEx_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("CallNextHookEx");
+    return 0;
+}
+#endif
+
 #ifdef STUB_CharToOemA
 uint32_t CCALL CharToOemA_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("CharToOemA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_CharUpperA
+uint32_t CCALL CharUpperA_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("CharUpperA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_CharUpperBuffA
+uint32_t CCALL CharUpperBuffA_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("CharUpperBuffA");
     return 0;
 }
 #endif
@@ -177,6 +204,24 @@ uint32_t CCALL CloseHandle_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("CloseHandle");
+    return 0;
+}
+#endif
+
+#ifdef STUB_CoCreateGuid
+uint32_t CCALL CoCreateGuid_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("CoCreateGuid");
+    return 0;
+}
+#endif
+
+#ifdef STUB_CompareFileTime
+uint32_t CCALL CompareFileTime_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("CompareFileTime");
     return 0;
 }
 #endif
@@ -240,6 +285,77 @@ uint32_t CCALL CreateWindowExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; (void)a7; (void)a8; (void)a9; (void)a10; (void)a11;
     GAME_STUBLOG("CreateWindowExA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeClientTransaction
+uint32_t CCALL DdeClientTransaction_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; (void)a7;
+    GAME_STUBLOG("DdeClientTransaction");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeConnect
+uint32_t CCALL DdeConnect_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("DdeConnect");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeCreateStringHandleA
+uint32_t CCALL DdeCreateStringHandleA_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("DdeCreateStringHandleA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeGetLastError
+uint32_t CCALL DdeGetLastError_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("DdeGetLastError");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeInitializeA
+uint32_t CCALL DdeInitializeA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("DdeInitializeA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeQueryStringA
+uint32_t CCALL DdeQueryStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
+    GAME_STUBLOG("DdeQueryStringA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DdeUninitialize
+uint32_t CCALL DdeUninitialize_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("DdeUninitialize");
+    return 0;
+}
+#endif
+
+#ifdef STUB_DebugBreak
+uint32_t CCALL DebugBreak_c(void)
+{
+    GAME_STUBLOG("DebugBreak");
     return 0;
 }
 #endif
@@ -352,6 +468,15 @@ uint32_t CCALL DispatchMessageA_c(uint32_t a0)
 }
 #endif
 
+#ifdef STUB_DuplicateHandle
+uint32_t CCALL DuplicateHandle_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    GAME_STUBLOG("DuplicateHandle");
+    return 0;
+}
+#endif
+
 #ifdef STUB_EnableWindow
 uint32_t CCALL EnableWindow_c(uint32_t a0, uint32_t a1)
 {
@@ -388,11 +513,29 @@ uint32_t CCALL EnumWindows_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_EscapeCommFunction
+uint32_t CCALL EscapeCommFunction_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("EscapeCommFunction");
+    return 0;
+}
+#endif
+
 #ifdef STUB_ExitProcess
 uint32_t CCALL ExitProcess_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("ExitProcess");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ExitThread
+uint32_t CCALL ExitThread_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("ExitThread");
     return 0;
 }
 #endif
@@ -522,6 +665,50 @@ uint32_t CCALL GetClientRect_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_GetCommModemStatus
+uint32_t CCALL GetCommModemStatus_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("GetCommModemStatus");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetCommProperties
+uint32_t CCALL GetCommProperties_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("GetCommProperties");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetCommState
+uint32_t CCALL GetCommState_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("GetCommState");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetCommandLineW
+uint32_t CCALL GetCommandLineW_c(void)
+{
+    GAME_STUBLOG("GetCommandLineW");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetConsoleMode
+uint32_t CCALL GetConsoleMode_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("GetConsoleMode");
+    return 0;
+}
+#endif
+
 #ifdef STUB_GetCurrentDirectoryA
 uint32_t CCALL GetCurrentDirectoryA_c(uint32_t a0, uint32_t a1)
 {
@@ -631,10 +818,37 @@ uint32_t CCALL GetFullPathNameA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_
 }
 #endif
 
+#ifdef STUB_GetKeyboardType
+uint32_t CCALL GetKeyboardType_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("GetKeyboardType");
+    return 0;
+}
+#endif
+
 #ifdef STUB_GetLastError
 uint32_t CCALL GetLastError_c(void)
 {
     GAME_STUBLOG("GetLastError");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetModuleFileNameW
+uint32_t CCALL GetModuleFileNameW_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("GetModuleFileNameW");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetOverlappedResult
+uint32_t CCALL GetOverlappedResult_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("GetOverlappedResult");
     return 0;
 }
 #endif
@@ -711,6 +925,15 @@ uint32_t CCALL GetUpdateRgn_c(uint32_t a0, uint32_t a1, uint32_t a2)
 }
 #endif
 
+#ifdef STUB_GetWindowDC
+uint32_t CCALL GetWindowDC_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("GetWindowDC");
+    return 0;
+}
+#endif
+
 #ifdef STUB_GetWindowLongA
 uint32_t CCALL GetWindowLongA_c(uint32_t a0, uint32_t a1)
 {
@@ -734,6 +957,15 @@ uint32_t CCALL GetWindowTextA_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
     (void)a0; (void)a1; (void)a2;
     GAME_STUBLOG("GetWindowTextA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_GetWindowsDirectoryA
+uint32_t CCALL GetWindowsDirectoryA_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("GetWindowsDirectoryA");
     return 0;
 }
 #endif
@@ -927,6 +1159,18 @@ uint32_t CCALL OpenFileMappingA_c(uint32_t a0, uint32_t a1, uint32_t a2)
 }
 #endif
 
+#ifdef STUB_PeekConsoleInputA
+uint32_t CCALL PeekConsoleInputA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    /* no console input: zero events read (a game that flushes the console
+     * until the count is 0 never ended on a count left as it was) */
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("PeekConsoleInputA");
+    if (a3 != 0) *(uint32_t *)GUEST_MEM(a3) = 0;
+    return 1;
+}
+#endif
+
 #ifdef STUB_PeekMessageA
 uint32_t CCALL PeekMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
 {
@@ -954,12 +1198,42 @@ uint32_t CCALL PostQuitMessage_c(uint32_t a0)
 }
 #endif
 
+#ifdef STUB_PulseEvent
+uint32_t CCALL PulseEvent_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("PulseEvent");
+    return 0;
+}
+#endif
+
+#ifdef STUB_PurgeComm
+uint32_t CCALL PurgeComm_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("PurgeComm");
+    return 0;
+}
+#endif
+
 #ifdef STUB_RaiseException
 uint32_t CCALL RaiseException_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
     (void)a0; (void)a1; (void)a2; (void)a3;
     GAME_STUBLOG("RaiseException");
     return 0;
+}
+#endif
+
+#ifdef STUB_ReadConsoleInputA
+uint32_t CCALL ReadConsoleInputA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    /* no console input: zero events read (a game that flushes the console
+     * until the count is 0 never ended on a count left as it was) */
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("ReadConsoleInputA");
+    if (a3 != 0) *(uint32_t *)GUEST_MEM(a3) = 0;
+    return 1;
 }
 #endif
 
@@ -1008,6 +1282,15 @@ uint32_t CCALL ReleaseDC_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_RemoveDirectoryA
+uint32_t CCALL RemoveDirectoryA_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("RemoveDirectoryA");
+    return 0;
+}
+#endif
+
 #ifdef STUB_ReplyMessage
 uint32_t CCALL ReplyMessage_c(uint32_t a0)
 {
@@ -1053,12 +1336,57 @@ uint32_t CCALL SendMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
 }
 #endif
 
+#ifdef STUB_SendNotifyMessageA
+uint32_t CCALL SendNotifyMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("SendNotifyMessageA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_SetActiveWindow
+uint32_t CCALL SetActiveWindow_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("SetActiveWindow");
+    return 0;
+}
+#endif
+
+#ifdef STUB_SetCommState
+uint32_t CCALL SetCommState_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("SetCommState");
+    return 0;
+}
+#endif
+
+#ifdef STUB_SetCommTimeouts
+uint32_t CCALL SetCommTimeouts_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("SetCommTimeouts");
+    return 0;
+}
+#endif
+
 #ifdef STUB_SetConsoleCtrlHandler
 uint32_t CCALL SetConsoleCtrlHandler_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("SetConsoleCtrlHandler");
     return 1; /* success */
+}
+#endif
+
+#ifdef STUB_SetConsoleMode
+uint32_t CCALL SetConsoleMode_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("SetConsoleMode");
+    return 0;
 }
 #endif
 
@@ -1098,6 +1426,24 @@ uint32_t CCALL SetEnvironmentVariableA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_SetEnvironmentVariableW
+uint32_t CCALL SetEnvironmentVariableW_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("SetEnvironmentVariableW");
+    return 0;
+}
+#endif
+
+#ifdef STUB_SetFileAttributesA
+uint32_t CCALL SetFileAttributesA_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("SetFileAttributesA");
+    return 0;
+}
+#endif
+
 #ifdef STUB_SetFilePointer
 uint32_t CCALL SetFilePointer_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
@@ -1113,6 +1459,15 @@ uint32_t CCALL SetForegroundWindow_c(uint32_t a0)
     (void)a0;
     GAME_STUBLOG("SetForegroundWindow");
     return 1; /* success */
+}
+#endif
+
+#ifdef STUB_SetLastError
+uint32_t CCALL SetLastError_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("SetLastError");
+    return 0;
 }
 #endif
 
@@ -1179,6 +1534,24 @@ uint32_t CCALL SetWindowTextA_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_SetWindowsHookExA
+uint32_t CCALL SetWindowsHookExA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("SetWindowsHookExA");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ShellExecuteA
+uint32_t CCALL ShellExecuteA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    GAME_STUBLOG("ShellExecuteA");
+    return 0;
+}
+#endif
+
 #ifdef STUB_ShowCursor
 uint32_t CCALL ShowCursor_c(uint32_t a0)
 {
@@ -1206,6 +1579,15 @@ uint32_t CCALL Sleep_c(uint32_t a0)
 }
 #endif
 
+#ifdef STUB_SwapMouseButton
+uint32_t CCALL SwapMouseButton_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("SwapMouseButton");
+    return 0;
+}
+#endif
+
 #ifdef STUB_SystemParametersInfoA
 uint32_t CCALL SystemParametersInfoA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
@@ -1224,6 +1606,15 @@ uint32_t CCALL TerminateProcess_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_TerminateThread
+uint32_t CCALL TerminateThread_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("TerminateThread");
+    return 0;
+}
+#endif
+
 #ifdef STUB_TranslateAcceleratorA
 uint32_t CCALL TranslateAcceleratorA_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
@@ -1238,6 +1629,15 @@ uint32_t CCALL TranslateMessage_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("TranslateMessage");
+    return 0;
+}
+#endif
+
+#ifdef STUB_UnhookWindowsHookEx
+uint32_t CCALL UnhookWindowsHookEx_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("UnhookWindowsHookEx");
     return 0;
 }
 #endif
@@ -1260,21 +1660,21 @@ uint32_t CCALL ValidateRgn_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
+#ifdef STUB_VirtualQuery
+uint32_t CCALL VirtualQuery_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("VirtualQuery");
+    return 0;
+}
+#endif
+
 #ifdef STUB_WaitForInputIdle
 uint32_t CCALL WaitForInputIdle_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("WaitForInputIdle");
     return 0;
-}
-#endif
-
-#ifdef STUB_WinHelpA
-uint32_t CCALL WinHelpA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3;
-    GAME_STUBLOG("WinHelpA");
-    return 0; /* no help viewer */
 }
 #endif
 
@@ -1285,6 +1685,15 @@ uint32_t CCALL WinExec_c(uint32_t a0, uint32_t a1)
     fprintf(stderr, "WinExec: not started: %s\n", (a0 != 0) ? (const char *)GUEST_MEM(a0) : "");
     GAME_STUBLOG("WinExec");
     return 2; /* ERROR_FILE_NOT_FOUND */
+}
+#endif
+
+#ifdef STUB_WinHelpA
+uint32_t CCALL WinHelpA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("WinHelpA");
+    return 0; /* no help viewer */
 }
 #endif
 
@@ -1337,6 +1746,15 @@ uint32_t CCALL auxSetVolume_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("auxSetVolume");
+    return 0;
+}
+#endif
+
+#ifdef STUB_keybd_event
+uint32_t CCALL keybd_event_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("keybd_event");
     return 0;
 }
 #endif
@@ -1485,11 +1903,37 @@ uint32_t CCALL ws2_32_WSACleanup_c(void)
 }
 #endif
 
+#ifdef STUB_ws2_32_WSAGetLastError
+uint32_t CCALL ws2_32_WSAGetLastError_c(void)
+{
+    GAME_STUBLOG("ws2_32_WSAGetLastError");
+    return 0;
+}
+#endif
+
 #ifdef STUB_ws2_32_WSAStartup
 uint32_t CCALL ws2_32_WSAStartup_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("ws2_32_WSAStartup");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32___WSAFDIsSet
+uint32_t CCALL ws2_32___WSAFDIsSet_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("ws2_32___WSAFDIsSet");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_accept
+uint32_t CCALL ws2_32_accept_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("ws2_32_accept");
     return 0;
 }
 #endif
@@ -1508,6 +1952,15 @@ uint32_t CCALL ws2_32_closesocket_c(uint32_t a0)
 {
     (void)a0;
     GAME_STUBLOG("ws2_32_closesocket");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_connect
+uint32_t CCALL ws2_32_connect_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("ws2_32_connect");
     return 0;
 }
 #endif
@@ -1575,11 +2028,92 @@ uint32_t CCALL ws2_32_inet_ntoa_c(uint32_t a0)
 }
 #endif
 
+#ifdef STUB_ws2_32_ioctlsocket
+uint32_t CCALL ws2_32_ioctlsocket_c(uint32_t a0, uint32_t a1, uint32_t a2)
+{
+    (void)a0; (void)a1; (void)a2;
+    GAME_STUBLOG("ws2_32_ioctlsocket");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_listen
+uint32_t CCALL ws2_32_listen_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("ws2_32_listen");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_ntohs
+uint32_t CCALL ws2_32_ntohs_c(uint32_t a0)
+{
+    (void)a0;
+    GAME_STUBLOG("ws2_32_ntohs");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_recv
+uint32_t CCALL ws2_32_recv_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("ws2_32_recv");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_recvfrom
+uint32_t CCALL ws2_32_recvfrom_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    GAME_STUBLOG("ws2_32_recvfrom");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_select
+uint32_t CCALL ws2_32_select_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
+    GAME_STUBLOG("ws2_32_select");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_send
+uint32_t CCALL ws2_32_send_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3;
+    GAME_STUBLOG("ws2_32_send");
+    return 0;
+}
+#endif
+
 #ifdef STUB_ws2_32_sendto
 uint32_t CCALL ws2_32_sendto_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
 {
     (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
     GAME_STUBLOG("ws2_32_sendto");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_setsockopt
+uint32_t CCALL ws2_32_setsockopt_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+{
+    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
+    GAME_STUBLOG("ws2_32_setsockopt");
+    return 0;
+}
+#endif
+
+#ifdef STUB_ws2_32_shutdown
+uint32_t CCALL ws2_32_shutdown_c(uint32_t a0, uint32_t a1)
+{
+    (void)a0; (void)a1;
+    GAME_STUBLOG("ws2_32_shutdown");
     return 0;
 }
 #endif
