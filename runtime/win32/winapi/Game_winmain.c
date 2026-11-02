@@ -32,7 +32,10 @@
  *                            log's, so the port's files never take a name of the game's)
  *   GAME_LOG_FILE            the name of the Windows log file (default <program>.log)
  *   GAME_WIN_START()         optional: after the winapi layer is up, before the game runs
- *                            (a registry the game reads, a line to the log) */
+ *                            (a registry the game reads, a line to the log)
+ *   GAME_GUEST_PAGE0         defined: the guest's page at address 0 reads as zeros and takes
+ *                            writes (Windows 9x maps the DOS memory there)
+ * A game with GAME_DIRECT3D gets the renderer in the log. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +61,7 @@
 #include "Game_log.h"
 #include "Game_runtime.h"
 #include "WinApi-kernel32.h"
+#include "WinApi-d3d.h"
 
 void Game_SetMainArgs(int argc, char *argv[]);
 
@@ -162,6 +166,9 @@ static int Game_Run(int argc, char *argv[])
         SDL_Quit();
         return 1;
     }
+#ifdef GAME_GUEST_PAGE0
+    if (commit_guest_page0() != 0) fprintf(stderr, "Could not map the guest's page 0\n");
+#endif
 #endif
 
     if (Game_RuntimeInit() != 0)
@@ -176,6 +183,13 @@ static int Game_Run(int argc, char *argv[])
 #ifdef GAME_EARLY_GL_WINDOW
     /* Game_hooks.h: show the Direct3D window at once (see Winapi_EarlyWindow) */
     Winapi_EarlyWindow(640, 480);
+#endif
+
+#if defined(GAME_DIRECT3D) && GAME_DIRECT3D
+    if (Winapi_Direct3DEnabled())
+        fprintf(stderr, "Renderer: Direct3D (%s)\n", Winapi_Direct3DGL() ? "OpenGL" : "software");
+    else
+        fprintf(stderr, "Renderer: DirectDraw (software)\n");
 #endif
 
 #ifdef GAME_WIN_START

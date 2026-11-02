@@ -1622,6 +1622,23 @@ int initialize_pointer_offset(void)
 #endif
 }
 
+/* The first page of the guest (its address 0) readable and writable, zeros:
+ * Windows 9x maps the DOS memory there, and a program that reads it faults
+ * on NT, under Wine and in the reserved low memory of the port. */
+int commit_guest_page0(void)
+{
+#if defined(__ANDROID__)
+    if (guest_region_base == 0) return 1;
+#else
+    if (pointer_reserved_length == 0) return 1;
+#endif
+#ifdef _WIN32
+    return (VirtualAlloc((void *)pointer_offset, 4096, MEM_COMMIT, PAGE_READWRITE) == NULL) ? 2 : 0;
+#else
+    return (mprotect((void *)pointer_offset, 4096, PROT_READ | PROT_WRITE) != 0) ? 2 : 0;
+#endif
+}
+
 #endif /* PTROFS_64BIT */
 
 #endif /* __cplusplus */

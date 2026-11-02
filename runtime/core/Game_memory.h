@@ -42,6 +42,8 @@ void unmap_memory_32bit(void *mem, unsigned int size);
 #ifdef PTROFS_64BIT
 
 int initialize_pointer_offset(void);
+/* the guest's page at address 0 readable and writable (GAME_GUEST_PAGE0) */
+int commit_guest_page0(void);
 
 #endif
 
