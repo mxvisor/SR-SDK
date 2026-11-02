@@ -109,7 +109,8 @@ typedef enum _handle_types_ {
     HT_PIPE,
     HT_EVENT,
     HT_THREAD,
-    HT_SEMAPHORE
+    HT_SEMAPHORE,
+    HT_MAPPING
 } handle_types;
 
 
@@ -140,6 +141,13 @@ typedef struct {
     void *obj;
 } T_object_handle, *object_handle;
 
+/* a memory-mapped file (created by the game's CreateFileMappingA): the whole file in a guest buffer */
+typedef struct {
+    handle_types handle_type;
+    void *data;
+    uint32_t size;
+} T_mapping_handle, *mapping_handle;
+
 typedef union {
     handle_types handle_type;
     T_file_handle fh;
@@ -147,6 +155,7 @@ typedef union {
     T_pipe_handle pph;
     T_event_handle eh;
     T_object_handle oh;
+    T_mapping_handle mh;
 } T_handle, *handle;
 
 

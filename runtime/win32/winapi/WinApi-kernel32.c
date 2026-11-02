@@ -325,6 +325,15 @@ static char current_directory[MAX_PATH] = GAME_WINAPI_START_DIRECTORY;
 static void resolve_path(const char *src, char *dst)
 {
     char temp[MAX_PATH];
+    char rooted[MAX_PATH];
+
+    /* "D:name": a path relative to the root of the disc */
+    if ((src[0] == Winapi_CdDriveLetter() || src[0] == (Winapi_CdDriveLetter() | 0x20)) &&
+        src[1] == ':' && src[2] != 0 && src[2] != '\\' && src[2] != '/')
+    {
+        snprintf(rooted, MAX_PATH, "%c:\\%s", src[0], src + 2);
+        src = rooted;
+    }
 
     if (is_d_drive_path(src))
     {
@@ -356,6 +365,15 @@ static void resolve_path(const char *src, char *dst)
     }
 
     snprintf(dst, MAX_PATH, "%s", src);
+}
+
+/* the path as the host sees it: D: (the disc) redirected */
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_ResolveGamePath(const char *src, char *dst)
+{
+    resolve_path(src, dst);
 }
 
 #if defined(_WIN32)
@@ -597,6 +615,18 @@ uint32_t CCALL CloseHandle_c(void *hObject)
             x86_free(hObject);
 
             return 1;
+        case HT_MAPPING:
+#define hMap ((mapping_handle)(void *)hObject)
+
+            if (hMap->data != NULL)
+            {
+                x86_free(hMap->data);
+            }
+
+            x86_free(hMap);
+
+            return 1;
+#undef hMap
         case HT_THREAD:
         case HT_SEMAPHORE:
             return Winapi_CloseObject((handle)hObject);
@@ -793,6 +823,17 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
 #else
     file_exists = CLIB_FindFile(lpFileName, buf);
 #endif
+
+    /* the NUL device */
+    if (strcasecmp(lpFileName, "nul") == 0)
+    {
+        file_exists = 1;
+#ifdef _WIN32
+        lpFileName = "NUL";
+#else
+        snprintf(buf, sizeof(buf), "/dev/null");
+#endif
+    }
 
     SeekToStart = 0;
     mode[0] = mode[1] = mode[2] = mode[3] = 0;
@@ -1499,7 +1540,14 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     }
 
     // fill find structure
-    Conv_find((win32_find_data *)lpFindFileData, &filestat, (direntry != NULL)?direntry->d_name:buf);
+    {
+        /* cFileName is the name without its directory, as on Windows */
+        const char *name = (direntry != NULL) ? direntry->d_name : buf;
+        const char *sep = strrchr(name, '/');
+
+        if (sep != NULL) name = sep + 1;
+        Conv_find((win32_find_data *)lpFindFileData, &filestat, name);
+    }
 
 #ifdef DEBUG_KERNEL32
     eprintf("found file: %s\n", (direntry != NULL)?direntry->d_name:buf);

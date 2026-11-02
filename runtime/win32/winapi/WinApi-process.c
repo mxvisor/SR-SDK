@@ -49,6 +49,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -622,10 +623,17 @@ uint32_t CCALL OutputDebugStringA_c(uint32_t a0)
 
 /* -------------------------------------------------------------- file attrs */
 
+void Winapi_ResolveGamePath(const char *src, char *dst);
+
 uint32_t CCALL GetFileAttributesA_c(uint32_t a0)
 {
-    char real[4096];
-    if (a0 == 0 || !CLIB_FindFile((const char *)GUEST_MEM(a0), real)) return 0xffffffffu; /* INVALID_FILE_ATTRIBUTES */
+    char path[4096], real[4096];
+    struct stat st;
+
+    if (a0 == 0) return 0xffffffffu;
+    Winapi_ResolveGamePath((const char *)GUEST_MEM(a0), path);
+    if (!CLIB_FindFile(path, real)) return 0xffffffffu; /* INVALID_FILE_ATTRIBUTES */
+    if (stat(real, &st) == 0 && S_ISDIR(st.st_mode)) return 0x00000010u; /* FILE_ATTRIBUTE_DIRECTORY */
     return 0x00000080u; /* FILE_ATTRIBUTE_NORMAL */
 }
 
