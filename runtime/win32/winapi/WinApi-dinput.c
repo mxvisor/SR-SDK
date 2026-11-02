@@ -202,10 +202,41 @@ static void mouse_move(int dx, int dy)
     if (dy) mouse_queue_put(4, (uint32_t)dy, Winapi_GetTicks()); /* DIMOFS_Y */
 }
 
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+/* <GAME>_DINPUT_EXCLUSIVE_MOUSE (Game_hooks.h): the game draws its cursor from the deltas and
+   moves it itself to a menu item: a host pointer beside it would part from it, and a compositor
+   does not let a program warp its pointer. As with the exclusive mouse of DirectInput the
+   host's is hidden and held in the window, from the first click in the window (which the game
+   does not see) until the window loses the focus. The watch only asks for it: the mode
+   changes on the thread that polls the device, not in the middle of SDL's pump. */
+static int mouse_held, mouse_hold_wanted, mouse_skip_up;
+
+static void mouse_apply_hold(void)
+{
+    if (mouse_held == mouse_hold_wanted) return;
+    mouse_held = mouse_hold_wanted;
+    SDL_SetRelativeMouseMode(mouse_held ? SDL_TRUE : SDL_FALSE);
+}
+#endif
+
 static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
     touchpad_event(event);
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    if ((event->type == SDL_WINDOWEVENT) && (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST)) mouse_hold_wanted = 0;
+    if ((event->type == SDL_MOUSEMOTION) && !mouse_hold_wanted) return 0;
+    if ((event->type == SDL_MOUSEBUTTONDOWN) && !mouse_hold_wanted)
+    {
+        if (event->button.which != SDL_TOUCH_MOUSEID) { mouse_hold_wanted = 1; mouse_skip_up = 1; }
+        return 0;
+    }
+    if ((event->type == SDL_MOUSEBUTTONUP) && mouse_skip_up)
+    {
+        mouse_skip_up = 0;
+        return 0;
+    }
+#endif
     switch (event->type)
     {
         case SDL_MOUSEMOTION:
@@ -394,13 +425,6 @@ uint32_t CCALL IDirectInputDevice_SetProperty_c(uint32_t a0, uint32_t a1, uint32
 uint32_t CCALL IDirectInputDevice_Acquire_c(uint32_t a0)
 {
     if (input_debug()) fprintf(stderr, "[dinput %08x Acquire]\n", a0);
-#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
-    /* the game draws its cursor from the deltas and moves it itself to a menu item: a host pointer
-     * beside it would part from it, and a compositor does not let a program warp its pointer.
-     * As with the exclusive mouse of DirectInput the host's is hidden and held in the window
-     * (SDL gives it back while the window has no focus). */
-    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) SDL_SetRelativeMouseMode(SDL_TRUE);
-#endif
     return DI_OK;
 }
 
@@ -408,7 +432,7 @@ uint32_t CCALL IDirectInputDevice_Unacquire_c(uint32_t a0)
 {
     if (input_debug()) fprintf(stderr, "[dinput %08x Unacquire]\n", a0);
 #ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
-    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) SDL_SetRelativeMouseMode(SDL_FALSE);
+    if (((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) { mouse_hold_wanted = 0; mouse_apply_hold(); }
 #endif
     return DI_OK;
 }
@@ -418,6 +442,9 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
     di_device *d = (di_device *)GUEST_MEM(a0);
     uint8_t *out = (uint8_t *)GUEST_MEM(a2);
     if (out == NULL) return DIERR_INVALIDPARAM;
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    if (d->kind == DEV_MOUSE) mouse_apply_hold();
+#endif
     memset(out, 0, a1);
 
     if (d->kind == DEV_KEYBOARD)
@@ -458,6 +485,9 @@ uint32_t CCALL IDirectInputDevice_GetDeviceData_c(uint32_t a0, uint32_t a1, uint
     uint32_t *count, capacity, n = 0;
     unsigned tail;
     if (a3 == 0) return DIERR_INVALIDPARAM;
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    if (d->kind == DEV_MOUSE) mouse_apply_hold();
+#endif
     count = (uint32_t *)GUEST_MEM(a3);
     capacity = (a2 != 0) ? *count : 0;
     if (d->kind == DEV_KEYBOARD && key_mutex != NULL)
