@@ -29,6 +29,8 @@
  * with its own layout has game/Game_touchlayout.h; the others get
  * touchlayout_default.h.  The desktop builds get no-ops. */
 
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
@@ -69,6 +71,95 @@ static SDL_Renderer *gp_renderer;
 static SDL_Texture *gp_glyph[128];
 static int gp_stamp;
 
+/* A pad is a cross of four arrow buttons (up, down, left, right around an empty
+ * centre), found in the layout by its geometry.  One finger on the pad steers in
+ * eight directions: it holds the arrow buttons of the direction it points to,
+ * two of them on a diagonal.  Arrows that are not in a cross stay plain buttons. */
+#define GP_MAXPADS 2
+enum { GP_PAD_UP, GP_PAD_DOWN, GP_PAD_LEFT, GP_PAD_RIGHT };
+
+typedef struct {
+    int btn[4];                 /* indexes into gp_buttons */
+    int x, y, w, h;             /* the box around the four */
+    Sint64 finger;              /* the SDL_FingerID steering it, -1 = free */
+} GPPad;
+
+static GPPad gp_pad[GP_MAXPADS];
+static int gp_npads;
+
+static int gp_cx(const GPButton *b) { return b->x + b->w / 2; }
+static int gp_cy(const GPButton *b) { return b->y + b->h / 2; }
+
+static int gp_find_arrow(int arrow, int taken_from)
+{
+    int i;
+
+    for (i = taken_from; i < GP_NBUTTONS; i++)
+    {
+        if (gp_buttons[i].arrow == arrow && gp_buttons[i].w > 0) return i;
+    }
+    return -1;
+}
+
+static void gp_find_pads(void)
+{
+    GPPad found[GP_MAXPADS];
+    int n = 0, u, d, l, r;
+
+    for (u = gp_find_arrow(1, 0); u >= 0 && n < GP_MAXPADS; u = gp_find_arrow(1, u + 1))
+    {
+        const GPButton *bu = &gp_buttons[u];
+
+        for (d = gp_find_arrow(2, 0); d >= 0; d = gp_find_arrow(2, d + 1))
+        {
+            const GPButton *bd = &gp_buttons[d];
+            int midy;
+
+            if (abs(gp_cx(bd) - gp_cx(bu)) >= bu->w / 2 || gp_cy(bd) <= gp_cy(bu)) continue;
+            midy = (gp_cy(bu) + gp_cy(bd)) / 2;
+
+            for (l = gp_find_arrow(3, 0); l >= 0; l = gp_find_arrow(3, l + 1))
+            {
+                const GPButton *bl = &gp_buttons[l];
+
+                if (abs(gp_cy(bl) - midy) >= bu->h / 2 || gp_cx(bl) >= gp_cx(bu) || gp_cx(bu) - gp_cx(bl) >= 2 * bu->w) continue;
+
+                for (r = gp_find_arrow(4, 0); r >= 0; r = gp_find_arrow(4, r + 1))
+                {
+                    const GPButton *br = &gp_buttons[r];
+                    int x0, y0, x1, y1;
+
+                    if (abs(gp_cy(br) - midy) >= bu->h / 2 || gp_cx(br) <= gp_cx(bu) || gp_cx(br) - gp_cx(bu) >= 2 * bu->w) continue;
+
+                    x0 = bl->x;                 x1 = br->x + br->w;
+                    y0 = bu->y;                 y1 = bd->y + bd->h;
+                    found[n].btn[GP_PAD_UP] = u;
+                    found[n].btn[GP_PAD_DOWN] = d;
+                    found[n].btn[GP_PAD_LEFT] = l;
+                    found[n].btn[GP_PAD_RIGHT] = r;
+                    found[n].x = x0;  found[n].y = y0;
+                    found[n].w = x1 - x0;  found[n].h = y1 - y0;
+                    found[n].finger = -1;
+                    n++;
+                    goto next_up;
+                }
+            }
+        }
+        next_up: ;
+    }
+
+    /* the finger of a pad that was already there goes on steering it */
+    for (d = 0; d < n; d++)
+    {
+        for (u = 0; u < gp_npads; u++)
+        {
+            if (gp_pad[u].btn[GP_PAD_UP] == found[d].btn[GP_PAD_UP]) found[d].finger = gp_pad[u].finger;
+        }
+    }
+    memcpy(gp_pad, found, sizeof(GPPad) * n);
+    gp_npads = n;
+}
+
 static void gp_ensure_layout(void)
 {
     int W, H;
@@ -78,6 +169,7 @@ static void gp_ensure_layout(void)
     gp_layout(W, H);
     gp_W = W;
     gp_H = H;
+    gp_find_pads();
 }
 
 static SDL_Texture *gp_glyph_texture(int chr)
@@ -206,6 +298,58 @@ static void gp_draw_arrow(int dir, int x, int y, int w, int h)
     else if (dir == 4) gp_fill_triangle(x + w - pad, cy,        x + pad,     y + pad,     x + pad,     y + h - pad);
 }
 
+/* Rounded corners: a quarter circle of radius r per corner, drawn row by row.
+ * inset(row) is how far the row starts from the left edge of the rectangle. */
+static int gp_corner_radius(const SDL_Rect *rect)
+{
+    int r = (rect->w < rect->h ? rect->w : rect->h) / 4;
+
+    return (r < 2) ? 0 : r;
+}
+
+static int gp_row_inset(int r, int h, int row)
+{
+    float c;
+
+    if (row >= h - r) row = h - 1 - row;
+    if (row < 0 || row >= r) return 0;
+    c = (float)(r - row) - 0.5f;
+    return r - (int)(sqrtf((float)r * (float)r - c * c) + 0.5f);
+}
+
+static void gp_fill_round_rect(const SDL_Rect *rect)
+{
+    int r = gp_corner_radius(rect), row, ins;
+
+    for (row = 0; row < rect->h; row++)
+    {
+        ins = gp_row_inset(r, rect->h, row);
+        SDL_RenderDrawLine(gp_renderer, rect->x + ins, rect->y + row, rect->x + rect->w - 1 - ins, rect->y + row);
+    }
+}
+
+static void gp_outline_round_rect(const SDL_Rect *rect)
+{
+    int r = gp_corner_radius(rect), h = rect->h, row, ins, prev, next, reach;
+
+    for (row = 0; row < h; row++)
+    {
+        ins = gp_row_inset(r, h, row);
+        if (row == 0 || row == h - 1)
+        {
+            SDL_RenderDrawLine(gp_renderer, rect->x + ins, rect->y + row, rect->x + rect->w - 1 - ins, rect->y + row);
+            continue;
+        }
+        /* the side of this row reaches over to the next row's side, so the arc has no gaps */
+        prev = gp_row_inset(r, h, row - 1);
+        next = gp_row_inset(r, h, row + 1);
+        reach = (prev > next ? prev : next) - 1;
+        if (reach < ins) reach = ins;
+        SDL_RenderDrawLine(gp_renderer, rect->x + ins, rect->y + row, rect->x + reach, rect->y + row);
+        SDL_RenderDrawLine(gp_renderer, rect->x + rect->w - 1 - reach, rect->y + row, rect->x + rect->w - 1 - ins, rect->y + row);
+    }
+}
+
 static void gp_draw_button(GPButton *btn)
 {
     int active = (btn->finger >= 0);
@@ -222,10 +366,10 @@ static void gp_draw_button(GPButton *btn)
 
     SDL_SetRenderDrawBlendMode(gp_renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(gp_renderer, r, g, b, a);
-    SDL_RenderFillRect(gp_renderer, &rect);
+    gp_fill_round_rect(&rect);
 
     SDL_SetRenderDrawColor(gp_renderer, 255, 255, 255, active ? 230 : 140);
-    SDL_RenderDrawRect(gp_renderer, &rect);
+    gp_outline_round_rect(&rect);
 
     if (btn->arrow)
     {
@@ -263,6 +407,23 @@ void TouchGamepad_ForgetRenderer(void)
 int TouchGamepad_Stamp(void)
 {
     return gp_stamp;
+}
+
+static int gp_in_pad(const GPPad *pad, int x, int y, int margin)
+{
+    return x >= pad->x - margin && x < pad->x + pad->w + margin &&
+           y >= pad->y - margin && y < pad->y + pad->h + margin;
+}
+
+static int gp_pad_at(int x, int y)
+{
+    int i;
+
+    for (i = 0; i < gp_npads; i++)
+    {
+        if (gp_in_pad(&gp_pad[i], x, y, 0)) return i;
+    }
+    return -1;
 }
 
 static int gp_button_at(int x, int y)
@@ -305,9 +466,49 @@ static void gp_release(int idx)
     EmulateKey(SDL_KEYUP, gp_buttons[idx].key);
 }
 
+/* The arrows a finger at (x, y) asks of the pad: the 360 degrees around its centre
+ * are eight sectors of 45 degrees, the diagonal ones hold two arrows; the middle
+ * of the cross (half a button) holds none.  press = -1: nothing (the finger left). */
+static void gp_pad_steer(GPPad *pad, int x, int y, int press)
+{
+    const GPButton *bu = &gp_buttons[pad->btn[GP_PAD_UP]];
+    int dx = x - (pad->x + pad->w / 2), dy = y - (pad->y + pad->h / 2);
+    int ax = abs(dx), ay = abs(dy), want[4] = {0, 0, 0, 0}, i, half = bu->w / 2;
+
+    if (press >= 0 && (int64_t)dx * dx + (int64_t)dy * dy >= (int64_t)half * half)
+    {
+        /* tan(22.5 degrees) = 0.414: below it the other axis does not count */
+        int vertical = (ay * 1000 >= ax * 414), horizontal = (ax * 1000 >= ay * 414);
+
+        if (vertical)   want[dy < 0 ? GP_PAD_UP : GP_PAD_DOWN] = 1;
+        if (horizontal) want[dx < 0 ? GP_PAD_LEFT : GP_PAD_RIGHT] = 1;
+    }
+
+    /* press what is new before releasing what is gone: no gap between two directions */
+    for (i = 0; i < 4; i++)
+    {
+        if (want[i] && gp_buttons[pad->btn[i]].finger < 0) gp_press(pad->btn[i], pad->finger);
+    }
+    for (i = 0; i < 4; i++)
+    {
+        if (!want[i] && gp_buttons[pad->btn[i]].finger == pad->finger) gp_release(pad->btn[i]);
+    }
+}
+
+static int gp_pad_with_finger(Sint64 finger)
+{
+    int i;
+
+    for (i = 0; i < gp_npads; i++)
+    {
+        if (gp_pad[i].finger == finger) return i;
+    }
+    return -1;
+}
+
 int TouchGamepad_Event(SDL_Event *event)
 {
-    int x, y, idx, cur;
+    int x, y, idx, cur, pad;
     Sint64 finger;
 
     switch (event->type)
@@ -324,15 +525,43 @@ int TouchGamepad_Event(SDL_Event *event)
     y = (int)(event->tfinger.y * gp_H);
     finger = event->tfinger.fingerId;
 
-    if (event->type == SDL_FINGERDOWN)
+    pad = gp_pad_with_finger(finger);
+
+    if (event->type == SDL_FINGERUP)
+    {
+        if (pad >= 0)
+        {
+            gp_pad_steer(&gp_pad[pad], x, y, -1);
+            gp_pad[pad].finger = -1;
+        }
+        cur = gp_button_with_finger(finger);
+        if (cur >= 0) gp_release(cur);
+    }
+    else if (pad >= 0)
+    {
+        /* a finger steering a pad: it keeps the pad a little beyond its edge, then lets go
+         * and may press the buttons it slides onto */
+        if (gp_in_pad(&gp_pad[pad], x, y, gp_buttons[gp_pad[pad].btn[GP_PAD_UP]].w / 2))
+        {
+            gp_pad_steer(&gp_pad[pad], x, y, 1);
+        }
+        else
+        {
+            gp_pad_steer(&gp_pad[pad], x, y, -1);
+            gp_pad[pad].finger = -1;
+            idx = gp_button_at(x, y);
+            if (idx >= 0 && gp_buttons[idx].finger < 0) gp_press(idx, finger);
+        }
+    }
+    else if ((idx = gp_pad_at(x, y)) >= 0 && gp_pad[idx].finger < 0 && gp_button_with_finger(finger) < 0)
+    {
+        gp_pad[idx].finger = finger;
+        gp_pad_steer(&gp_pad[idx], x, y, 1);
+    }
+    else if (event->type == SDL_FINGERDOWN)
     {
         idx = gp_button_at(x, y);
         if (idx >= 0 && gp_buttons[idx].finger < 0) gp_press(idx, finger);
-    }
-    else if (event->type == SDL_FINGERUP)
-    {
-        cur = gp_button_with_finger(finger);
-        if (cur >= 0) gp_release(cur);
     }
     else /* SDL_FINGERMOTION */
     {
@@ -358,7 +587,7 @@ int TouchGamepad_Event(SDL_Event *event)
 
 int TouchGamepad_ButtonAt(float x, float y)
 {
-    return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
+    return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0 || gp_pad_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
 }
 
 int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
