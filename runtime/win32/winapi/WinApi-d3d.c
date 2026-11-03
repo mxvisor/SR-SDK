@@ -223,6 +223,8 @@ typedef struct {
 } d3d_texture1;
 
 extern uint32_t IDirect3D2Vtbl_asm2c;
+extern uint32_t IDirect3DVtbl_asm2c;
+extern uint32_t IDirect3DMaterialVtbl_asm2c;
 extern uint32_t IDirect3DDevice2Vtbl_asm2c;
 extern uint32_t IDirect3DDeviceVtbl_asm2c;
 extern uint32_t IDirect3DDevice3Vtbl_asm2c;
@@ -238,6 +240,7 @@ static d3d_material *material_handles[MAX_MATERIALS];
 
 /* ---- GUIDs ---- */
 static const uint8_t IID_IUnknown_[16]           = { 0,0,0,0, 0,0, 0,0, 0xc0,0,0,0,0,0,0,0x46 };
+static const uint8_t IID_IDirect3D_[16]          = { 0x80,0x00,0xba,0x3b, 0x21,0x24, 0xcf,0x11, 0xa3,0x1a,0x00,0xaa,0x00,0xb9,0x33,0x56 };
 static const uint8_t IID_IDirect3D2_[16]         = { 0xc1,0x1e,0xae,0x6a, 0x2a,0x66, 0xd0,0x11, 0x88,0x9d,0x00,0xaa,0x00,0xbb,0xb7,0x6a };
 static const uint8_t IID_IDirect3DDevice2_[16]   = { 0x01,0x15,0x28,0x93, 0xf8,0x8c, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
 static const uint8_t IID_IDirect3DDevice_[16]    = { 0x00,0x88,0x10,0x64, 0x7d,0x95, 0xd0,0x11, 0x89,0xab,0x00,0xa0,0xc9,0x05,0x41,0x29 };
@@ -353,14 +356,18 @@ int Winapi_D3dQuery(struct IDirectDraw_c *dd, const void *riid, uint32_t *out)
 {
     d3d_t *d3d;
 
-    if (!Winapi_Direct3DEnabled() || !same_guid(riid, IID_IDirect3D2_)) return 0;
+    int v1 = 0;
 
-    d3d = (d3d_t *)new_object(sizeof(d3d_t), &IDirect3D2Vtbl_asm2c);
+    if (!Winapi_Direct3DEnabled()) return 0;
+    if (same_guid(riid, IID_IDirect3D_)) v1 = 1;
+    else if (!same_guid(riid, IID_IDirect3D2_)) return 0;
+
+    d3d = (d3d_t *)new_object(sizeof(d3d_t), v1 ? &IDirect3DVtbl_asm2c : &IDirect3D2Vtbl_asm2c);
     if (d3d == NULL) { *out = 0; return 0; }
     d3d->dd = dd;
     dd->RefCount++;
     *out = GUEST_ADDR(d3d);
-    d3d_log("D3D: IDirect3D2\n");
+    d3d_log(v1 ? "D3D: IDirect3D\n" : "D3D: IDirect3D2\n");
     return 1;
 }
 
@@ -422,6 +429,68 @@ uint32_t CCALL IDirect3D2_EnumDevices_c(void */*lpThis*/, uint32_t callback, uin
         if (Winapi_CallGuest(callback, 6, args) == 0) break;    /* D3DENUMRET_CANCEL */
     }
     x86_free(mem);
+    return D3D_OK;
+}
+
+/* ---- IDirect3D (DirectX 3): the same object, the DirectX 3 view ---- */
+
+uint32_t CCALL IDirect3D_QueryInterface_c(void *lpThis, void *riid, void *ppvObj)
+{
+    d3d_t *d3d = (d3d_t *)lpThis;
+    uint32_t *out = (uint32_t *)ppvObj;
+    d3d_t *v2;
+
+    if (out == NULL) return D3DERR_POINTER;
+    if (same_guid(riid, IID_IUnknown_) || same_guid(riid, IID_IDirect3D_))
+    {
+        d3d->RefCount++;
+        *out = GUEST_ADDR(d3d);
+        return D3D_OK;
+    }
+    if (same_guid(riid, IID_IDirect3D2_))
+    {
+        v2 = (d3d_t *)new_object(sizeof(d3d_t), &IDirect3D2Vtbl_asm2c);
+        if (v2 == NULL) { *out = 0; return D3DERR_GENERIC; }
+        v2->dd = d3d->dd;
+        d3d->dd->RefCount++;
+        *out = GUEST_ADDR(v2);
+        return D3D_OK;
+    }
+    *out = 0;
+    return D3DERR_NOINTERFACE;
+}
+
+uint32_t CCALL IDirect3D_Initialize_c(void */*lpThis*/, void */*a1*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3D_CreateMaterial_c(void */*lpThis*/, void *a1, void */*a2*/)
+{
+    d3d_material *m;
+
+    if (a1 == NULL) return D3DERR_INVALIDARG;
+    m = (d3d_material *)new_object(sizeof(d3d_material), &IDirect3DMaterialVtbl_asm2c);
+    if (m == NULL) return D3DERR_GENERIC;
+    *(uint32_t *)a1 = GUEST_ADDR(m);
+    d3d_log("D3D: CreateMaterial (DX3) -> %p\n", (void *)m);
+    return D3D_OK;
+}
+
+/* ---- IDirect3DMaterial (DirectX 3): the methods that DirectX 5 dropped ---- */
+
+uint32_t CCALL IDirect3DMaterial_Initialize_c(void */*lpThis*/, void */*a1*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DMaterial_Reserve_c(void */*lpThis*/)
+{
+    return D3D_OK;
+}
+
+uint32_t CCALL IDirect3DMaterial_Unreserve_c(void */*lpThis*/)
+{
     return D3D_OK;
 }
 
@@ -2474,6 +2543,36 @@ int Winapi_D3dSurfaceQuery(struct IDirectDrawSurface_c *surface, const void *rii
         *out = GUEST_ADDR(t);
         return 1;
     }
+    if (same_guid(riid, IID_HALDevice) || same_guid(riid, IID_RGBDevice))
+    {
+        /* DirectX 3: the device is made from the surface, no IDirect3D::CreateDevice */
+        d3d_t *d3d;
+        d3d_device *dev;
+        d3d_device1 *v1;
+        struct IDirectDraw_c *dd = DDBase(surface->dd);
+
+        d3d = (d3d_t *)new_object(sizeof(d3d_t), &IDirect3D2Vtbl_asm2c);
+        dev = (d3d_device *)new_object(sizeof(d3d_device), &IDirect3DDevice2Vtbl_asm2c);
+        v1 = (d3d_device1 *)new_object(sizeof(d3d_device1), &IDirect3DDeviceVtbl_asm2c);
+        if ((d3d == NULL) || (dev == NULL) || (v1 == NULL))
+        {
+            x86_free(d3d); x86_free(dev); x86_free(v1);
+            *out = 0;
+            return 0;
+        }
+        d3d->dd = dd;
+        dd->RefCount++;
+        dev->d3d = d3d;                 /* d3d's only count is the device's */
+        dev->target = surface;
+        surface->RefCount++;
+        dev->RefCount = 2;              /* the device's own and the one IDirect3DDevice holds */
+        dev->v1 = v1;
+        v1->dev = dev;
+        d3d_log("D3D: surface QI -> IDirect3DDevice (DX3) %ux%u, %u bpp, z %s\n", (unsigned)surface->width,
+                (unsigned)surface->height, (unsigned)surface->bpp, (surface->zsurf != NULL) ? "yes" : "no");
+        *out = GUEST_ADDR(v1);
+        return 1;
+    }
     if (same_guid(riid, IID_IDirect3DTexture_))
     {
         d3d_texture1 *v1;
@@ -2626,16 +2725,18 @@ uint32_t CCALL IDirect3DTexture_GetHandle_c(void *lpThis, void */*a1*/, void *a2
     return D3D_OK;
 }
 
-uint32_t CCALL IDirect3DTexture_PaletteChanged_c(void */*lpThis*/, uint32_t /*a1*/, uint32_t /*a2*/)
+uint32_t CCALL IDirect3DTexture_PaletteChanged_c(void *lpThis, uint32_t /*a1*/, uint32_t /*a2*/)
 {
+    ((d3d_texture1 *)lpThis)->tex->surface->texture_gen++;
     return D3D_OK;
 }
 
+/* the same copy as the DirectX 5 texture's: the game loads its textures this way */
 uint32_t CCALL IDirect3DTexture_Load_c(void *lpThis, void *a1)
 {
     d3d_log("D3D: IDirect3DTexture::Load(%p)\n", a1);
-    (void)lpThis;
-    return D3D_OK;
+    if (a1 == NULL) return D3DERR_INVALIDARG;
+    return IDirect3DTexture2_Load_c(((d3d_texture1 *)lpThis)->tex, ((d3d_texture1 *)a1)->tex);
 }
 
 uint32_t CCALL IDirect3DTexture_Unload_c(void */*lpThis*/)

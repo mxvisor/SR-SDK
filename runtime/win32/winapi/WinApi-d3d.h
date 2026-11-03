@@ -66,16 +66,23 @@ void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Wind
 /* the GL context and the present texture go away (the window is going away) */
 void Winapi_D3dPresentDeinit(void);
 
-/* IDirectDraw::QueryInterface for IID_IDirect3D2: 1 and *out = the object, else 0 */
+/* IDirectDraw::QueryInterface for IID_IDirect3D(2): 1 and *out = the object, else 0 */
 int Winapi_D3dQuery(struct IDirectDraw_c *dd, const void *riid, uint32_t *out);
 
-/* IDirectDrawSurface::QueryInterface for IID_IDirect3DTexture(2) */
+/* IDirectDrawSurface::QueryInterface for IID_IDirect3DTexture(2) and the device GUIDs */
 int Winapi_D3dSurfaceQuery(struct IDirectDrawSurface_c *surface, const void *riid, uint32_t *out);
 
 /* a surface goes away: its texture object and handle */
 void Winapi_D3dSurfaceFree(struct IDirectDrawSurface_c *surface);
 
 /* generated with llasm/WinApi-d3d-asm.llasm */
+
+uint32_t CCALL IDirect3D_QueryInterface_c(void *lpThis, void *a1, void *a2);
+uint32_t CCALL IDirect3D_Initialize_c(void *lpThis, void *a1);
+uint32_t CCALL IDirect3D_CreateMaterial_c(void *lpThis, void *a1, void *a2);
+uint32_t CCALL IDirect3DMaterial_Initialize_c(void *lpThis, void *a1);
+uint32_t CCALL IDirect3DMaterial_Reserve_c(void *lpThis);
+uint32_t CCALL IDirect3DMaterial_Unreserve_c(void *lpThis);
 
 uint32_t CCALL IDirect3D2_QueryInterface_c(void *lpThis, void *a1, void *a2);
 uint32_t CCALL IDirect3D2_AddRef_c(void *lpThis);

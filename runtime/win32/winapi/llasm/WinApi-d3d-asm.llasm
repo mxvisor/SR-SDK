@@ -1376,7 +1376,87 @@ proc IDirect3DDevice3_ValidateDevice_asm2c public
 
 endp ; end procedure IDirect3DDevice3_ValidateDevice_asm2c
 
+; ---- IDirect3D (DirectX 3) ----
+
+func IDirect3D_QueryInterface_c *lpThis, *a1, *a2
+proc IDirect3D_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirect3D_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D_QueryInterface_asm2c
+
+func IDirect3D_Initialize_c *lpThis, *a1
+proc IDirect3D_Initialize_asm2c public
+
+        Call_Asm_Stack2 IDirect3D_Initialize_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3D_Initialize_asm2c
+
+func IDirect3D_CreateMaterial_c *lpThis, *a1, *a2
+proc IDirect3D_CreateMaterial_asm2c public
+
+        Call_Asm_Stack3 IDirect3D_CreateMaterial_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirect3D_CreateMaterial_asm2c
+
+; ---- IDirect3DMaterial (DirectX 3) ----
+
+func IDirect3DMaterial_Initialize_c *lpThis, *a1
+proc IDirect3DMaterial_Initialize_asm2c public
+
+        Call_Asm_Stack2 IDirect3DMaterial_Initialize_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirect3DMaterial_Initialize_asm2c
+
+func IDirect3DMaterial_Reserve_c *lpThis
+proc IDirect3DMaterial_Reserve_asm2c public
+
+        Call_Asm_Stack1 IDirect3DMaterial_Reserve_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DMaterial_Reserve_asm2c
+
+func IDirect3DMaterial_Unreserve_c *lpThis
+proc IDirect3DMaterial_Unreserve_asm2c public
+
+        Call_Asm_Stack1 IDirect3DMaterial_Unreserve_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirect3DMaterial_Unreserve_asm2c
+
 datasegment d3d_data constant
+
+dlabel IDirect3DVtbl_asm2c global
+daddr IDirect3D_QueryInterface_asm2c
+daddr IDirect3D2_AddRef_asm2c
+daddr IDirect3D2_Release_asm2c
+daddr IDirect3D_Initialize_asm2c
+daddr IDirect3D2_EnumDevices_asm2c
+daddr IDirect3D2_CreateLight_asm2c
+daddr IDirect3D_CreateMaterial_asm2c
+daddr IDirect3D2_CreateViewport_asm2c
+daddr IDirect3D2_FindDevice_asm2c
+
+dlabel IDirect3DMaterialVtbl_asm2c global
+daddr IDirect3DMaterial2_QueryInterface_asm2c
+daddr IDirect3DMaterial2_AddRef_asm2c
+daddr IDirect3DMaterial2_Release_asm2c
+daddr IDirect3DMaterial_Initialize_asm2c
+daddr IDirect3DMaterial2_SetMaterial_asm2c
+daddr IDirect3DMaterial2_GetMaterial_asm2c
+daddr IDirect3DMaterial2_GetHandle_asm2c
+daddr IDirect3DMaterial_Reserve_asm2c
+daddr IDirect3DMaterial_Unreserve_asm2c
 
 dlabel IDirect3D2Vtbl_asm2c global
 daddr IDirect3D2_QueryInterface_asm2c
