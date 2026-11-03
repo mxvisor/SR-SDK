@@ -36,62 +36,41 @@
 #include <sys/mman.h>
 #endif
 
-uint32_t Game_DosMemBias;
 uint32_t Game_DosMemLastBlock;
 
-static uint8_t *pool;
-static uint32_t pool_dos_base;
-static uint32_t pool_size;
-static uint32_t pool_next;
-static int pool_mapped;
+#define DOS_LOW_END (DOS_VGA_ADDRESS + DOS_VGA_SIZE)
+#define POOL_SIZE (DOS_MEMORY_END - DOS_PSP_ADDRESS)
 
-uint8_t *Game_DosMapLow(uint32_t address, uint32_t size)
+static uint8_t *pool;
+static uint32_t pool_next;
+
+int Game_DosMemInit(uint32_t first_free)
 {
 #ifdef PTROFS_64BIT
     /* initialize_pointer_offset keeps the low memory of the guest window
-     * (pointer_reserved_length bytes) free (reserved, no access); with
-     * pointer_offset == 0 there is nothing to commit and guest 0 is the host's. */
-    uint8_t *host;
-    uint32_t end = (address + size + 0xfffu) & ~0xfffu;
+     * (pointer_reserved_length bytes) free, reserved with no access; the pages
+     * become memory here, zeros, and stay while the process lives */
+    uint8_t *low;
 
-    address &= ~0xfffu;
-    if (pointer_offset == 0 || size == 0 || end <= address || end > pointer_reserved_length) return NULL;
-    host = (uint8_t *)GAME_GUEST32_TO_PTR(address);
+    if (pointer_offset == 0 || pointer_reserved_length < DOS_LOW_END) return -1;
+    low = (uint8_t *)GAME_GUEST32_TO_PTR(0);
 #if defined(_WIN32)
-    if (VirtualAlloc(host, end - address, MEM_COMMIT, PAGE_READWRITE) == NULL) return NULL;
+    if (VirtualAlloc(low, DOS_LOW_END, MEM_COMMIT, PAGE_READWRITE) == NULL) return -1;
 #else
-    if (mprotect(host, end - address, PROT_READ | PROT_WRITE) != 0) return NULL;
+    if (mprotect(low, DOS_LOW_END, PROT_READ | PROT_WRITE) != 0) return -1;
 #endif
-    return host;
-#else
-    (void)address;
-    (void)size;
-    return NULL;
-#endif
-}
-
-int Game_DosMemInit(uint32_t dos_base, uint32_t size, uint32_t first_free)
-{
-    /* The DOS range at its own guest addresses when they are free: the flat
-     * accesses of the code (PSP at 80h, the VGA at A0000h) then find what DOS
-     * would have there, and Game_DosMemBias is 0. */
-    pool = Game_DosMapLow(dos_base, size);
-    pool_mapped = pool != NULL;
-    if (pool == NULL) pool = (uint8_t *)map_memory_32bit(size, 0);
-    if (pool == NULL) return -1;
-
-    pool_dos_base = dos_base;
-    pool_size = size;
-    Game_DosMemBias = GAME_PTR_TO_GUEST32(pool) - dos_base;
+    pool = low + DOS_PSP_ADDRESS;
     Game_DosMemReset(first_free);
     return 0;
+#else
+    (void)first_free;
+    return -1;
+#endif
 }
 
 void Game_DosMemDeinit(void)
 {
-    if (pool != NULL && !pool_mapped) unmap_memory_32bit(pool, pool_size);
     pool = NULL;
-    pool_size = 0;
     pool_next = 0;
     Game_DosMemLastBlock = 0;
 }
@@ -103,7 +82,7 @@ uint8_t *Game_DosMemBase(void)
 
 void Game_DosMemReset(uint32_t first_free)
 {
-    if (pool != NULL) memset(pool, 0, pool_size);
+    if (pool != NULL) memset(pool, 0, POOL_SIZE);
     pool_next = first_free;
     Game_DosMemLastBlock = 0;
 }
@@ -115,18 +94,18 @@ uint32_t Game_DosMemAlloc(uint32_t paragraphs, uint16_t *segment)
 
     if (pool == NULL) return 0;
     if (bytes == 0) bytes = 16u;
-    if (at > pool_size || bytes > pool_size - at) return 0;
+    if (at > POOL_SIZE || bytes > POOL_SIZE - at) return 0;
 
     pool_next = at + bytes;
     memset(pool + at, 0, bytes);
-    *segment = (uint16_t)((pool_dos_base + at) >> 4);
-    Game_DosMemLastBlock = GAME_PTR_TO_GUEST32(pool + at);
+    *segment = (uint16_t)((DOS_PSP_ADDRESS + at) >> 4);
+    Game_DosMemLastBlock = DOS_PSP_ADDRESS + at;
     return Game_DosMemLastBlock;
 }
 
 uint32_t Game_DosMemFreeBytes(void)
 {
-    return pool_next < pool_size ? pool_size - pool_next : 0;
+    return pool_next < POOL_SIZE ? POOL_SIZE - pool_next : 0;
 }
 
 uint32_t Game_DosMemFreeParagraphs(void)
@@ -138,21 +117,8 @@ uint32_t Game_DosMemFreeParagraphs(void)
 
 uint8_t *Game_DosMemPtr(uint32_t address, uint32_t size)
 {
-    uint32_t guest_base;
-
-    if (pool == NULL) return NULL;
-    if (address >= pool_dos_base && address - pool_dos_base < pool_size && size <= pool_size - (address - pool_dos_base))
-        return pool + (address - pool_dos_base);
-    guest_base = GAME_PTR_TO_GUEST32(pool);
-    if (address >= guest_base && address - guest_base < pool_size && size <= pool_size - (address - guest_base))
-        return pool + (address - guest_base);
-    return NULL;
-}
-
-uint32_t Game_DosMemFlat(uint32_t address)
-{
-    if (pool != NULL && address >= pool_dos_base && address - pool_dos_base < pool_size) return address + Game_DosMemBias;
-    return address;
+    if (pool == NULL || address >= DOS_LOW_END || size > DOS_LOW_END - address) return NULL;
+    return (uint8_t *)GAME_GUEST32_TO_PTR(address);
 }
 
 static uint8_t *program_block;

@@ -36,10 +36,10 @@
  * (nonzero: served), then to the PIT (40h, 43h), the keyboard (60h, 64h) and
  * the VGA (3C7h-3C9h, 3DAh); any other reads 0.
  *
- * A segment-override access above the PSP goes to the game's
- * GAME_DOS_VIDEO_WINDOW(address, size) when Game_hooks.h defines it: the host
- * copy of an access of `size` bytes to the VGA window at A0000h, NULL if the
- * access is not in it.  Without it nothing is there.
+ * A segment-override access with an offset below 100h goes to the PSP or to
+ * the latest DOS block (Game_dosrt.c), one above to the DOS address itself
+ * (Game_dosmem.h: the memory and the VGA window at A0000h); past the window
+ * nothing is there.
  *
  * Game_DumpGuestMemory (called when the game fails to open its error log)
  * calls GAME_DUMP_GUEST_MEMORY() when Game_hooks.h defines it. */
@@ -48,10 +48,12 @@
 extern "C" {
 #endif
 
-/* The game directory, DOS memory for [lowmem_base, +lowmem_size) with the
- * first first_free bytes taken (Game_DosMemInit), the vectors (Game_DosIntInit, all to the stub of llasm/Game-llasm.llasm),
- * the DOS files, the keyboard, the PIT and the audio device.  0 on success. */
-int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free);
+/* The game directory, the DOS memory with the first first_free bytes from the
+ * PSP on taken (Game_DosMemInit), the VGA window as Game_FrameBuffer and
+ * Game_ScreenWindow, the vectors (Game_DosIntInit, all to the stub of
+ * llasm/Game-llasm.llasm), the DOS files, the keyboard, the PIT and the audio
+ * device.  0 on success. */
+int Game_DosRuntimeInit(uint32_t first_free);
 void Game_DosRuntimeDeinit(void);
 
 /* Any thread: asks the main loop to show a frame (EC_DISPLAY_FLIP_START). */

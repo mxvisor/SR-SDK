@@ -32,10 +32,10 @@
  *   GAME_CONFIG()            reads the port's configuration, after the options (default
  *                            Game_ReadConfig: <program>.cfg)
  *   GAME_CONFIG_KEY(key, value)  a key of the settings file that is the game's: nonzero if it took it
- *   GAME_RUNTIME_INIT()      the game's runtime, after the guest allocator; nonzero: failed
- *   GAME_RUNTIME_DEINIT()    its end
- *   GAME_DOS_ENV             without GAME_RUNTIME_INIT: the variables of the environment, "NAME=VALUE" strings
- *                            separated by commas (the BLASTER of GAME_DOS_SOUNDBLASTER comes first)
+ *   GAME_RUNTIME_INIT()      the game's own part of the runtime, after the DOS world; nonzero: failed
+ *   GAME_RUNTIME_DEINIT()    its end, before the DOS world's
+ *   GAME_DOS_ENV             the variables of the environment, "NAME=VALUE" strings separated by commas
+ *                            (the BLASTER of GAME_DOS_SOUNDBLASTER comes first)
  *   GAME_LOG_FILE            the name of the Windows log file (default <program>.log)
  * The window is display/pc.c's, unless the game brings its own. */
 
@@ -70,13 +70,10 @@
 
 void Game_SetMainArgs(int argc, char *argv[]);
 
-#ifndef GAME_RUNTIME_INIT
-/* The DOS world of a game that says nothing about its own: the conventional
- * memory at its own addresses (PSP with the command line at 0, the DPMI 0100h
- * blocks above), the VGA window at A0000h, the disc and the music. */
-#define DOS_LOW_SIZE 0xA0000u
-#define DOS_VGA_BASE 0xA0000u
-#define DOS_VGA_SIZE 0x10000u
+/* The DOS world of every game: the conventional memory at its own addresses
+ * (Game_dosmem.h: the PSP with the command line, its environment behind it,
+ * the DPMI 0100h blocks above), the VGA window at A0000h, the disc and the
+ * music. */
 #define DOS_ENV_OFFSET 0x100u
 #define DOS_ENV_SIZE 0x100u
 
@@ -87,9 +84,10 @@ void Game_SetMainArgs(int argc, char *argv[]);
 static uint32_t Game_DosEnvironArray[16];
 extern "C" { uint32_t Game_DosEnviron; }
 
-static int Game_DefaultRuntimeInit(int argc, char *argv[])
+static int Game_DosWorldInit(int argc, char *argv[])
 {
     uint8_t *psp, *env;
+    uint16_t segment;
     const char *name = GAME_MAIN_FILENAME;
     const char *const variables[] = {
 #ifdef GAME_DOS_SOUNDBLASTER
@@ -103,24 +101,18 @@ static int Game_DefaultRuntimeInit(int argc, char *argv[])
     size_t length, pos = 0, used = 0, count = 0;
     int index;
 
-    if (Game_DosRuntimeInit(0, DOS_LOW_SIZE, DOS_ENV_OFFSET + DOS_ENV_SIZE) != 0) return -1;
+    if (Game_DosRuntimeInit(DOS_ENV_OFFSET + DOS_ENV_SIZE) != 0) return -1;
     psp = Game_DosMemBase();
 
-    /* the VGA window: real memory at A0000h when the guest can have it */
-    Game_FrameBuffer = Game_DosMapLow(DOS_VGA_BASE, DOS_VGA_SIZE);
-    if (Game_FrameBuffer == NULL) Game_FrameBuffer = (uint8_t *)x86_malloc(DOS_VGA_SIZE);
-    if (Game_FrameBuffer == NULL) return -1;
-    memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
-    Game_ScreenWindow = Game_FrameBuffer;
-    Game_ScreenWindowNum = 0;
-
-    /* PSP: INT 20h, the end of memory, the environment, the command tail */
+    /* PSP: INT 20h, the segment of the end of memory (at 2, and at 5Ch where
+     * DOS4GW's start-up looks for it), the environment, the command tail */
     psp[0] = 0xcd;
     psp[1] = 0x20;
-    psp[2] = (uint8_t)(DOS_LOW_SIZE >> 12);
-    psp[3] = (uint8_t)(DOS_LOW_SIZE >> 20);
-    psp[0x2c] = (uint8_t)(DOS_ENV_OFFSET >> 4);
-    psp[0x2d] = (uint8_t)(DOS_ENV_OFFSET >> 12);
+    segment = (uint16_t)(DOS_MEMORY_END >> 4);
+    memcpy(psp + 2, &segment, sizeof(segment));
+    memcpy(psp + 0x5c, &segment, sizeof(segment));
+    segment = (uint16_t)((DOS_PSP_ADDRESS + DOS_ENV_OFFSET) >> 4);
+    memcpy(psp + 0x2c, &segment, sizeof(segment));
     /* the environment: the variables, an empty string, the count of the
      * strings that follow (1) and the program's name */
     env = psp + DOS_ENV_OFFSET;
@@ -148,16 +140,22 @@ static int Game_DefaultRuntimeInit(int argc, char *argv[])
     /* Game_CdInit says what it did not find; a game that needs no disc goes on */
     Game_CdInit(Game_DataRoot());
     Game_MusicInit();
+#ifdef GAME_RUNTIME_INIT
+    return GAME_RUNTIME_INIT();
+#else
     return 0;
+#endif
 }
 
-static void Game_DefaultRuntimeDeinit(void)
+static void Game_DosWorldDeinit(void)
 {
+#ifdef GAME_RUNTIME_DEINIT
+    GAME_RUNTIME_DEINIT();
+#endif
     Game_MusicDeinit();
     Game_CdDeinit();
     Game_DosRuntimeDeinit();
 }
-#endif
 
 static int Game_Run(int argc, char *argv[])
 {
@@ -218,11 +216,7 @@ static int Game_Run(int argc, char *argv[])
     fprintf(stderr, "Guest pointer offset: 0x%llx\n", (unsigned long long)pointer_offset);
 #endif
 
-#ifdef GAME_RUNTIME_INIT
-    if (GAME_RUNTIME_INIT() != 0)
-#else
-    if (Game_DefaultRuntimeInit(argc, argv) != 0)
-#endif
+    if (Game_DosWorldInit(argc, argv) != 0)
     {
         fprintf(stderr, "Could not initialize the %s runtime: %s\n", GAME_NAME, SDL_GetError());
         x86_deinit_malloc();
@@ -234,11 +228,7 @@ static int Game_Run(int argc, char *argv[])
     Game_SetMainArgs(argc, argv);
     Game_Event_Loop();
 
-#ifdef GAME_RUNTIME_DEINIT
-    GAME_RUNTIME_DEINIT();
-#else
-    Game_DefaultRuntimeDeinit();
-#endif
+    Game_DosWorldDeinit();
     x86_deinit_malloc();
     Cleanup_Input();
     Cleanup_Audio();

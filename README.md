@@ -252,14 +252,13 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
 | `GAME_DISPLAY_INIT()`, `GAME_DISPLAY_INIT2()`, `GAME_DISPLAY_CLEANUP()`, `GAME_DISPLAY_DESTROY()` | `core/display/pc.c`, the default display: after the defaults of `Init_Display`; at the end of `Init_Display2` (may change `Render_Width`, `Render_Height`, `Display_Flip_Procedure`); in `Cleanup_Display`; in `Game_Display_Destroy` |
 | `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()`, `GAME_DISPLAY_OVERLAY(picture)` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip` (nonzero: the game showed the frame itself); drawn over the picture (an `SDL_Rect`) before the touch gamepad |
-| `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's runtime, started after the guest allocator (nonzero: failed). Without them `Game_dosmain.c` makes the DOS world itself: conventional memory at its own addresses (PSP and command line at 0, the VGA window at A0000h), the disc and the music |
-| `GAME_DOS_ENV` | without `GAME_RUNTIME_INIT`: the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
+| `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
+| `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
-| `GAME_DOS_VIDEO_WINDOW(address, size)` | the host copy of a guest access to the VGA window at A0000h, NULL if it is not in it |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
 
 `Game_dosmain.c` is the `main` of a DOS game's port, `Game_dosaudio.c` the SDL_mixer device, `Game_dostimer.c`
@@ -328,8 +327,8 @@ the game's handlers run as hardware interrupts, INT 08h, 16h, 1Ah, 21h, 2Fh and 
 Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Game_doskbd.c`),
 MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`), the VGA ports (`Game_dosvga.c`) and the
 Microsoft mouse driver of INT 33h with AH = 0 (`Game_dosmouse.c`: the host mouse in the 4:3 picture).
-The game's own services (INT, the A0000h window, a memory dump) and ports come through hooks
-(`GAME_DOS_INTERRUPT`, `GAME_DOS_VIDEO_WINDOW`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
+The game's own services (INT, a memory dump) and ports come through hooks
+(`GAME_DOS_INTERRUPT`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
 in `Game_hooks.h`). It brings its sound, its llasm glue (with the handler every vector starts
 with) and whatever else of the files above it replaces.
 
@@ -387,15 +386,15 @@ skeleton/               a starting point for a new game repository -- to come
   CDDA or ogg/flac/wav audio tracks) or from a copy of the disc;
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
 - `Game_dosrt.c`, `.h`: start and end of a DOS game's runtime, the I/O ports, the
-  segment-override accesses (PSP, the last DOS block, the game's A0000h window);
+  segment-override accesses (PSP, the last DOS block, a DOS address);
 - `Game_dosint.c`, `.h`: the interrupt vectors, the game's handlers run as hardware
   interrupts and AIL timer callbacks, the software interrupts every DOS game here shares
   (INT 21h and DPMI as far as a flat game asks them), after the game's `Game_DosInterrupt`;
 - `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
 - `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h) and Input Status #1 (3DAh);
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
-  buffers, the PSP) in one pool, at its own addresses when the guest's low megabyte is free
-  (`Game_DosMapLow`: the PSP at 0, the VGA window at A0000h), and the memory block of a
+  buffers, the PSP) at its own addresses in the low memory of the guest window (zeros below
+  the PSP at 10000h, the VGA window at A0000h), and the memory block of a
   program started at its entry point (`Game_DosProgramInit`: stack and heap above the image,
   grown by INT 21h AH=4Ah);
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,

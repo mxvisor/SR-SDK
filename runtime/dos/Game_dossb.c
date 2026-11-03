@@ -280,13 +280,12 @@ static void dsp_start(void)
 {
     const dma_channel *channel = &dma[SB_DMA];
     /* The 8237 addresses real-mode memory: the page and the address are the
-     * linear address of the buffer in the DOS memory the guest sees.  The
-     * runtime keeps that memory at an address of its own, so the address the
-     * card was given has to be translated before the samples are read. */
+     * linear address of the buffer in the DOS memory, the guest's own
+     * (Game_dosmem.h). */
     const uint32_t linear = ((uint32_t)channel->page << 16) | channel->address;
 
     SDL_LockMutex(audio_lock != NULL ? audio_lock : (audio_lock = SDL_CreateMutex()));
-    play_start = Game_DosMemFlat(linear);
+    play_start = linear;
     play_length = (uint32_t)channel->count + 1u;
     play_position = 0;
     irq_last_position = 0;

@@ -134,14 +134,8 @@ static uint8_t *segment_access(uint32_t address, uint32_t size)
             return (uint8_t *)GAME_GUEST32_TO_PTR(Game_DosMemLastBlock + address);
         return Game_DosMemBase() + address;
     }
-#ifdef GAME_DOS_VIDEO_WINDOW
-    return GAME_DOS_VIDEO_WINDOW(address, size);
-#else
-    /* the 64 KiB at A0000h are Game_FrameBuffer */
-    if (Game_FrameBuffer != NULL && address >= 0xA0000u && address + size <= 0xB0000u)
-        return Game_FrameBuffer + (address - 0xA0000u);
-    return NULL;
-#endif
+    /* the rest is a DOS address: the memory and the VGA window at A0000h */
+    return Game_DosMemPtr(address, size);
 }
 
 extern "C" uint32_t CCALL X86_ReadMemProcedure(uint32_t address, uint32_t size)
@@ -189,17 +183,16 @@ extern void CCALL c_Game_DosNullIsr(void *cpu);
 }
 static uint8_t idt[2048];
 
-int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free)
+int Game_DosRuntimeInit(uint32_t first_free)
 {
     if (Game_FilesInit() != 0) return -1;
-    /* No interrupt vector table or BIOS data area at 0, but the memory is
-     * there, zeros: on DOS a null pointer reads the vectors, and a game that
-     * reads through one goes on. */
-    if (Game_DosMemInit(lowmem_base, lowmem_size, first_free) != 0) {
-        fprintf(stderr, GAME_NAME ": could not map DOS memory (%u KiB)\n", lowmem_size / 1024u);
+    if (Game_DosMemInit(first_free) != 0) {
+        fprintf(stderr, GAME_NAME ": no DOS memory at the guest's addresses 0-%Xh (the guest window has no low memory of its own)\n", DOS_VGA_ADDRESS + DOS_VGA_SIZE);
         return -1;
     }
-    if (lowmem_base != 0) Game_DosMapLow(0, lowmem_base);
+    Game_FrameBuffer = Game_DosMemPtr(DOS_VGA_ADDRESS, DOS_VGA_SIZE);
+    Game_ScreenWindow = Game_FrameBuffer;
+    Game_ScreenWindowNum = 0;
     Game_DosIdtBase = GAME_PTR_TO_GUEST32(idt);
     Game_DosIntInit(GAME_PTR_TO_GUEST32(&c_Game_DosNullIsr));
     Game_DosFileInit();
