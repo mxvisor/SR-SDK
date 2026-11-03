@@ -833,7 +833,7 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
  * drawn into the target surface and its Z-buffer directly: 2D blits, the 3D scene and the
  * overlay stay in one picture.  Done: Z test and write, flat and Gouraud colour, textures
  * (8 bit palette, 5-6-5, 1-5-5-5, 4-4-4-4) with perspective correction, wrap/mirror/clamp,
- * the colour key, the texture blend modes, alpha blending, culling, lines, vertex fog
+ * the colour key, the texture blend modes, the alpha test, alpha blending, culling, lines, vertex fog
  * (the alpha of the specular colour is how much of the colour stays, 255 no fog). */
 
 #define RS_TEXTUREHANDLE    1
@@ -843,6 +843,7 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
 #define RS_FILLMODE         8
 #define RS_SHADEMODE        9
 #define RS_ZWRITEENABLE     14
+#define RS_ALPHATESTENABLE  15
 #define RS_TEXTUREMIN       18
 #define RS_TEXTUREMAG       17
 #define RS_SRCBLEND         19
@@ -850,6 +851,8 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
 #define RS_TEXTUREMAPBLEND  21
 #define RS_CULLMODE         22
 #define RS_ZFUNC            23
+#define RS_ALPHAREF         24
+#define RS_ALPHAFUNC        25
 #define RS_ALPHABLENDENABLE 27
 #define RS_FOGENABLE        28
 #define RS_SPECULARENABLE   29
@@ -1122,6 +1125,7 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
     int blend = (st[RS_ALPHABLENDENABLE] != 0);
     int ckey = (st[RS_COLORKEYENABLE] != 0);
     int spec = (st[RS_SPECULARENABLE] != 0);
+    int atest = (st[RS_ALPHATESTENABLE] != 0);
     /* the vertex fog; a fog table (per pixel, from the depth) is not done */
     int fog = (st[RS_FOGENABLE] != 0) && (st[RS_FOGTABLEMODE] == 0);
     int fogr = (st[RS_FOGCOLOR] >> 16) & 255, fogg = (st[RS_FOGCOLOR] >> 8) & 255, fogb = st[RS_FOGCOLOR] & 255;
@@ -1257,6 +1261,8 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
                 b += (int)(w0 * v0->sb + w1 * v1->sb + w2 * v2->sb);
             }
             r = clamp255(r); g = clamp255(g); b = clamp255(b); a = clamp255(a);
+            /* the alpha test compares as the Z test: a pixel that fails is not drawn, nor its depth */
+            if (atest && !z_test(st[RS_ALPHAFUNC], (uint32_t)a, st[RS_ALPHAREF])) continue;
             if (fog)
             {
                 int f = clamp255((int)(w0 * v0->f + w1 * v1->f + w2 * v2->f + 0.5f));

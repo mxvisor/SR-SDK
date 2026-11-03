@@ -28,8 +28,8 @@
  * the colour read back into the guest's surface needs no flipping and 2D the
  * guest blits into that memory stays under the 3D.  One shader does the rest
  * (OpenGL ES has no fixed pipeline): rhw divides the texture coordinates per
- * fragment, u_mode is the blend mode, u_fog the vertex fog (its factor rides in
- * a_pos.w), glBlendFunc the alpha blend.
+ * fragment, u_mode is the blend mode, u_afunc the alpha test, u_fog the vertex
+ * fog (its factor rides in a_pos.w), glBlendFunc the alpha blend.
  *
  * Compromises: the depth attachment is 24 bit, not the guest's 16; the depth
  * of the guest's Z-buffer is neither uploaded nor read back (a scene starts
@@ -52,6 +52,7 @@
 #define RS_ZENABLE          7
 #define RS_SHADEMODE        9
 #define RS_ZWRITEENABLE     14
+#define RS_ALPHATESTENABLE  15
 #define RS_TEXTUREMIN       18
 #define RS_TEXTUREMAG       17
 #define RS_SRCBLEND         19
@@ -59,6 +60,8 @@
 #define RS_TEXTUREMAPBLEND  21
 #define RS_CULLMODE         22
 #define RS_ZFUNC            23
+#define RS_ALPHAREF         24
+#define RS_ALPHAFUNC        25
 #define RS_ALPHABLENDENABLE 27
 #define RS_FOGENABLE        28
 #define RS_SPECULARENABLE   29
@@ -89,7 +92,7 @@ static int present_w = 0, present_h = 0;
 static uint32_t gl_state[MAX_GL_STATES];
 
 static GLuint draw_prog = 0;
-static GLint u_scale, u_mode, u_alphatest, u_fog, u_fogcolor;
+static GLint u_scale, u_mode, u_alphatest, u_afunc, u_aref, u_fog, u_fogcolor;
 
 /* what a primitive call gives is one glDrawArrays; f is the vertex fog, 1 no fog */
 typedef struct {
@@ -116,12 +119,15 @@ static const char draw_vs[] =
     "}\n";
 
 /* u_mode: 0 no texture, 1 the texel, 2 DECALALPHA, 3 MODULATEALPHA, 4 MODULATE
- * (keeps the texel's alpha, so the colour key still tests as 0); u_fog: the
+ * (keeps the texel's alpha, so the colour key still tests as 0); u_afunc: the
+ * D3DCMPFUNC of the alpha test against u_aref (0..255), 0 none; u_fog: the
  * colour goes to u_fogcolor as v_fog goes to 0 */
 static const char draw_fs[] =
     "uniform sampler2D u_tex;\n"
     "uniform int u_mode;\n"
     "uniform int u_alphatest;\n"
+    "uniform int u_afunc;\n"
+    "uniform float u_aref;\n"
     "uniform int u_fog;\n"
     "uniform vec3 u_fogcolor;\n"
     "varying vec3 v_stq;\n"
@@ -137,6 +143,12 @@ static const char draw_fs[] =
     "        else c = vec4(t.rgb * v_col.rgb, t.a);\n"
     "    }\n"
     "    if (u_alphatest != 0 && c.a <= 0.5) discard;\n"
+    "    if (u_afunc != 0) {\n"
+    "        float a = floor(c.a * 255.0 + 0.5);\n"
+    "        if ((u_afunc == 1) || (u_afunc == 2 && a >= u_aref) || (u_afunc == 3 && a != u_aref) ||\n"
+    "            (u_afunc == 4 && a > u_aref) || (u_afunc == 5 && a <= u_aref) ||\n"
+    "            (u_afunc == 6 && a == u_aref) || (u_afunc == 7 && a < u_aref)) discard;\n"
+    "    }\n"
     "    if (u_fog != 0) c.rgb = mix(u_fogcolor, c.rgb, clamp(v_fog, 0.0, 1.0));\n"
     "    gl_FragColor = c;\n"
     "}\n";
@@ -163,6 +175,8 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
         u_scale = glGetUniformLocation(draw_prog, "u_scale");
         u_mode = glGetUniformLocation(draw_prog, "u_mode");
         u_alphatest = glGetUniformLocation(draw_prog, "u_alphatest");
+        u_afunc = glGetUniformLocation(draw_prog, "u_afunc");
+        u_aref = glGetUniformLocation(draw_prog, "u_aref");
         u_fog = glGetUniformLocation(draw_prog, "u_fog");
         u_fogcolor = glGetUniformLocation(draw_prog, "u_fogcolor");
     }
@@ -607,6 +621,10 @@ static void gl_apply_draw_state(int textured)
 
     glUseProgram(draw_prog);
     glUniform2f(u_scale, 2.0f / (float)scene_w, 2.0f / (float)scene_h);
+    /* the alpha test (D3DCMP_ALWAYS, 8, and unknown functions draw everything) */
+    glUniform1i(u_afunc, ((gl_state[RS_ALPHATESTENABLE] != 0) && (gl_state[RS_ALPHAFUNC] >= 1) && (gl_state[RS_ALPHAFUNC] <= 7))
+                         ? (GLint)gl_state[RS_ALPHAFUNC] : 0);
+    glUniform1f(u_aref, (float)(gl_state[RS_ALPHAREF] & 255));
     /* the vertex fog, as the software rasteriser: a fog table is not done */
     glUniform1i(u_fog, (gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0));
     glUniform3f(u_fogcolor, (float)((gl_state[RS_FOGCOLOR] >> 16) & 255) / 255.0f,
