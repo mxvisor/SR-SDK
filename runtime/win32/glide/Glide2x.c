@@ -31,8 +31,10 @@
  * Voodoo's LFB (2048 bytes) in memory it can address: a lock reads the buffer
  * into it, the unlock of a write lock puts it back. grBufferSwap shows the
  * front buffer scaled to the window, which the DirectDraw layer makes.
- * Left out: the depth buffer, fog, alpha test, dithering, NCC (YIQ) textures,
- * more than one TMU, antialiasing. GLIDE_DEBUG=1 in the environment logs the
+ * grAADrawPoint and grAADrawLine add the edges of glide2x's antialiasing
+ * (the iterated alpha falls to 0 across them); the grAADrawPolygon* are drawn
+ * without. Left out: the depth buffer, fog, alpha test, dithering, NCC (YIQ)
+ * textures, more than one TMU. GLIDE_DEBUG=1 in the environment logs the
  * calls. */
 
 #include <math.h>
@@ -813,6 +815,61 @@ static void draw_line(const struct gr_vertex *v1, const struct gr_vertex *v2)
     batch_vertex(GL_LINES, v2, 1);
 }
 
+/* v moved by (dx, dy), its iterated alpha 0 */
+static struct gr_vertex aa_fringe(const struct gr_vertex *v, float dx, float dy)
+{
+    struct gr_vertex o = *v;
+
+    o.x += dx;
+    o.y += dy;
+    o.a = 0.0f;
+    return o;
+}
+
+/* the antialiasing of glide2x: a primitive gets edges one pixel wide, across
+ * which the iterated alpha falls to 0; how it shows is up to the alpha combine
+ * and the blend function the program set (no culling) */
+static void aa_draw_line(const struct gr_vertex *v1, const struct gr_vertex *v2)
+{
+    struct gr_vertex u1, u2, d1, d2;
+    float ox, oy;
+
+    if (!win_open || !gl_ok) return;
+    if (v1->x == v2->x && v1->y == v2->y) return;
+
+    /* the fringes lie across the minor axis */
+    if (fabsf(v2->x - v1->x) >= fabsf(v2->y - v1->y)) { ox = 0.0f; oy = 1.0f; }
+    else { ox = 1.0f; oy = 0.0f; }
+    u1 = aa_fringe(v1, -ox, -oy);
+    u2 = aa_fringe(v2, -ox, -oy);
+    d1 = aa_fringe(v1, ox, oy);
+    d2 = aa_fringe(v2, ox, oy);
+
+    batch_vertex(GL_TRIANGLES, v1, 0); batch_vertex(GL_TRIANGLES, v2, 0); batch_vertex(GL_TRIANGLES, &u2, 0);
+    batch_vertex(GL_TRIANGLES, v1, 0); batch_vertex(GL_TRIANGLES, &u2, 0); batch_vertex(GL_TRIANGLES, &u1, 0);
+    batch_vertex(GL_TRIANGLES, v1, 0); batch_vertex(GL_TRIANGLES, v2, 0); batch_vertex(GL_TRIANGLES, &d2, 0);
+    batch_vertex(GL_TRIANGLES, v1, 0); batch_vertex(GL_TRIANGLES, &d2, 0); batch_vertex(GL_TRIANGLES, &d1, 0);
+}
+
+static void aa_draw_point(const struct gr_vertex *v)
+{
+    static const float dirs[5][2] = { { 1.0f, 0.0f }, { 0.0f, 1.0f }, { -1.0f, 0.0f }, { 0.0f, -1.0f }, { 1.0f, 0.0f } };
+    struct gr_vertex c = *v, e0, e1;
+    int i;
+
+    if (!win_open || !gl_ok) return;
+    c.x = floorf(v->x) + 0.5f;
+    c.y = floorf(v->y) + 0.5f;
+    for (i = 0; i < 4; i++)
+    {
+        e0 = aa_fringe(&c, dirs[i][0], dirs[i][1]);
+        e1 = aa_fringe(&c, dirs[i + 1][0], dirs[i + 1][1]);
+        batch_vertex(GL_TRIANGLES, &c, 0);
+        batch_vertex(GL_TRIANGLES, &e0, 0);
+        batch_vertex(GL_TRIANGLES, &e1, 0);
+    }
+}
+
 /* a colour buffer's GL image -> its 565 shadow */
 static void shadow_from_gl(int pi)
 {
@@ -1321,13 +1378,13 @@ uint32_t CCALL grTexDownloadTable_c(uint32_t tmu, uint32_t type, void *data)
 
 uint32_t CCALL grAADrawPoint_c(void *p)
 {
-    if (p != NULL) draw_point((const struct gr_vertex *)p);
+    if (p != NULL) aa_draw_point((const struct gr_vertex *)p);
     return 0;
 }
 
 uint32_t CCALL grAADrawLine_c(void *v1, void *v2)
 {
-    if (v1 != NULL && v2 != NULL) draw_line((const struct gr_vertex *)v1, (const struct gr_vertex *)v2);
+    if (v1 != NULL && v2 != NULL) aa_draw_line((const struct gr_vertex *)v1, (const struct gr_vertex *)v2);
     return 0;
 }
 
