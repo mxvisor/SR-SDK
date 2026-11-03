@@ -204,7 +204,6 @@ static int Game_Run(int argc, char *argv[])
         return 1;
     }
 
-#ifdef PTROFS_64BIT
     if (initialize_pointer_offset() != 0)
     {
         fprintf(stderr, "Could not initialize the guest pointer offset\n");
@@ -214,7 +213,6 @@ static int Game_Run(int argc, char *argv[])
         return 1;
     }
     fprintf(stderr, "Guest pointer offset: 0x%llx\n", (unsigned long long)pointer_offset);
-#endif
 
     if (Game_DosWorldInit(argc, argv) != 0)
     {

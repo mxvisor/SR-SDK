@@ -55,11 +55,7 @@
  * build) to a host pointer. printf_x86.c does the same through ptr32_t. */
 static void *guest_arg_ptr(uint32_t value)
 {
-#ifdef PTROFS_64BIT
     return (value == 0) ? NULL : (void *)(uintptr_t)((uint64_t)value + pointer_offset);
-#else
-    return (void *)(uintptr_t)value;
-#endif
 }
 
 /* WATCOM's FILE, #pragma pack(1), 26 bytes. A game reads two fields of it

@@ -72,14 +72,10 @@ static void Crash_Symbol(FILE *f, uintptr_t value)
 static void Crash_Report(FILE *f, int sig, uintptr_t addr, uintptr_t pc, const ucontext_t *context)
 {
     fprintf(f, "\nCRASH: signal %d (%s) at %p, pc %p", sig, strsignal(sig), (void *)addr, (void *)pc);
-#if defined(PTROFS_64BIT)
     fprintf(f, ", pointer_offset %p", (void *)(uintptr_t)pointer_offset);
-#endif
     fprintf(f, "\n");
-#if defined(PTROFS_64BIT)
     /* a jump to an address outside of the code is not a read of zeros */
     if (pc == addr) fprintf(f, "  the guest jumped to %" PRIxPTR " (guest address %" PRIxPTR ")\n", addr, addr - (uintptr_t)pointer_offset);
-#endif
     Crash_Symbol(f, pc);
 #if defined(__x86_64__) && defined(REG_RIP)
     {

@@ -35,15 +35,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include "Game_hooks.h"
-#elif defined(__APPLE__)
-#include <dlfcn.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <mach/mach_init.h>
-#include <mach/mach_vm.h>
-#include <pthread.h>
 #else
 #if !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
@@ -68,18 +59,22 @@
 #endif
 #endif
 
-#if !defined(__APPLE__)
+/* The guest's memory is the guest window (below): a 64-bit host, the guest's
+ * addresses offsets from pointer_offset.  Linux, Windows and Android. */
+#if !defined(PTROFS_64BIT)
+#error "the guest's memory needs PTROFS_64BIT (a 64-bit host)"
+#endif
+
 /* Game_hooks.h may set GAME_GUEST_LOW_MEMORY(): how much of the guest's
  * address space from pointer_offset up the program wants to be free of
- * the host (the low memory of the guest window, see map_memory_32bit). The
- * default is the low megabyte of the guest and the 64 KB after it. */
+ * the host (the low memory of the guest window). The default is the low
+ * megabyte of the guest and the 64 KB after it. */
 #if defined(GAME_GUEST_DATA_IN_MEMORY) && !defined(GAME_GUEST_LOW_MEMORY)
 #include "Game_guestdata.h"
 #define GAME_GUEST_LOW_MEMORY() Game_GuestLowMemory()
 #endif
 #ifndef GAME_GUEST_LOW_MEMORY
 #define GAME_GUEST_LOW_MEMORY() (1024*1024 + 65536)
-#endif
 #endif
 
 #include <cstdint>
@@ -123,64 +118,50 @@ static pthread_mutex_t mutex;
 #endif
 
 
-#ifdef PTROFS_64BIT
 extern "C" void (*ptr_initialize_pointers)(uint64_t pointer_offset);
 
 uint64_t pointer_offset;
 
 unsigned int pointer_reserved_length;
-#else
-#define pointer_offset 0
-#endif
 
 
 int x86_init_malloc(void)
 {
-    if (sizeof(void *) > 4)
-    {
 #ifdef _WIN32
-        InitializeCriticalSection(&mutex);
-        return 0;
+    InitializeCriticalSection(&mutex);
+    return 0;
 #else
-        pthread_mutexattr_t attr;
+    pthread_mutexattr_t attr;
 
-        if (pthread_mutexattr_init(&attr))
-        {
-            return 1;
-        }
-
-        if (pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE))
-        {
-            pthread_mutexattr_destroy(&attr);
-            return 2;
-        }
-
-        if (pthread_mutex_init(&mutex, &attr))
-        {
-            pthread_mutexattr_destroy(&attr);
-            return 3;
-        }
-
-        pthread_mutexattr_destroy(&attr);
-        return 0;
-#endif
-    }
-    else
+    if (pthread_mutexattr_init(&attr))
     {
-        return 0;
+        return 1;
     }
+
+    if (pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE))
+    {
+        pthread_mutexattr_destroy(&attr);
+        return 2;
+    }
+
+    if (pthread_mutex_init(&mutex, &attr))
+    {
+        pthread_mutexattr_destroy(&attr);
+        return 3;
+    }
+
+    pthread_mutexattr_destroy(&attr);
+    return 0;
+#endif
 }
 
 void x86_deinit_malloc(void)
 {
-    if (sizeof(void *) > 4)
-    {
 #ifdef _WIN32
-        DeleteCriticalSection(&mutex);
+    DeleteCriticalSection(&mutex);
 #else
-        pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutex);
 #endif
-    }
 }
 
 #ifdef _WIN32
@@ -307,359 +288,326 @@ static memblock_t *find_last_free_block_before(heapblock_t *heapblock, int32_t o
 
 void *x86_malloc(unsigned int size)
 {
-    if (sizeof(void *) > 4)
+    heapblock_t *heapblock;
+    memblock_t *largestblock, *freeblock, *prevblock;
+
+    if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
     {
-        heapblock_t *heapblock;
-        memblock_t *largestblock, *freeblock, *prevblock;
+        errno = ENOMEM;
+        return NULL;
+    }
 
-        if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
+    // round up allocated size and add header size
+    size = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
+
+    LOCK_MUTEX
+
+    // try to find free memory in existing heapblocks
+    for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
+    {
+        if (heapblock->offset_largest_free < 0) continue; // no free memory in heapblock
+        largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
+        if (largestblock->block_size < (int)size) continue; // size of largest free block in heapblock is smaller than required
+
+        if (largestblock->block_size > (int)size)
         {
-            errno = ENOMEM;
-            return NULL;
-        }
+            // use the beginning of largest free block as allocated block and the rest as free block
+            freeblock = (memblock_t *)(size + (uint8_t *)largestblock);
+            freeblock->u.offset_next = largestblock->u.offset_next;
+            freeblock->block_size = largestblock->block_size - size;
+            largestblock->block_size = size;
+            largestblock->u.inverted_value = ~largestblock->block_size;
 
-        // round up allocated size and add header size
-        size = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
-
-        LOCK_MUTEX
-
-        // try to find free memory in existing heapblocks
-        for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
-        {
-            if (heapblock->offset_largest_free < 0) continue; // no free memory in heapblock
-            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-            if (largestblock->block_size < (int)size) continue; // size of largest free block in heapblock is smaller than required
-
-            if (largestblock->block_size > (int)size)
+            if (heapblock->offset_largest_free == heapblock->offset_first_free)
             {
-                // use the beginning of largest free block as allocated block and the rest as free block
-                freeblock = (memblock_t *)(size + (uint8_t *)largestblock);
-                freeblock->u.offset_next = largestblock->u.offset_next;
-                freeblock->block_size = largestblock->block_size - size;
-                largestblock->block_size = size;
-                largestblock->u.inverted_value = ~largestblock->block_size;
-
-                if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                {
-                    heapblock->offset_first_free += size;
-                }
-                else
-                {
-                    prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
-                    prevblock->u.offset_next += size;
-                }
-
-                if (freeblock->block_size >= heapblock->size >> 1)
-                {
-                    heapblock->offset_largest_free += size;
-                }
-                else
-                {
-                    find_largest_free_block(heapblock);
-                }
+                heapblock->offset_first_free += size;
             }
             else
             {
-                // change largest free block into allocated block
-                if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                {
-                    heapblock->offset_first_free = largestblock->u.offset_next;
-                    if (heapblock->offset_first_free >= heapblock->size)
-                    {
-                        heapblock->offset_first_free = -1;
-                    }
-                }
-                else
-                {
-                    prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
-                    prevblock->u.offset_next = largestblock->u.offset_next;
-                }
+                prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
+                prevblock->u.offset_next += size;
+            }
 
-                largestblock->u.inverted_value = ~largestblock->block_size;
-
+            if (freeblock->block_size >= heapblock->size >> 1)
+            {
+                heapblock->offset_largest_free += size;
+            }
+            else
+            {
                 find_largest_free_block(heapblock);
             }
-
-            UNLOCK_MUTEX
-            errno = 0;
-            return (void *)(sizeof(memblock_t) + (uint8_t *)largestblock);
         }
-
-        do
+        else
         {
-            if (last_released_heapblock != NULL)
+            // change largest free block into allocated block
+            if (heapblock->offset_largest_free == heapblock->offset_first_free)
             {
-                // reuse last released heapblock
-                heapblock = last_released_heapblock;
-                last_released_heapblock = NULL;
-
-                if (heapblock->size >= (int)((size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1))) break;
-
-                unmap_memory_32bit(heapblock->address, heapblock->size);
+                heapblock->offset_first_free = largestblock->u.offset_next;
+                if (heapblock->offset_first_free >= heapblock->size)
+                {
+                    heapblock->offset_first_free = -1;
+                }
             }
             else
             {
-                // allocate new heapblock header
-                heapblock = (heapblock_t *) malloc(sizeof(heapblock_t));
-                if (heapblock == NULL)
-                {
-                    UNLOCK_MUTEX
-                    errno = ENOMEM;
-                    return NULL;
-                }
+                prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
+                prevblock->u.offset_next = largestblock->u.offset_next;
             }
 
-            // allocate heapblock memory
-            heapblock->size = (size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1);
-            heapblock->address = (uint8_t *)map_memory_32bit(heapblock->size, 0);
-            if (heapblock->address == NULL)
-            {
-                free(heapblock);
-                UNLOCK_MUTEX
-                errno = ENOMEM;
-                return NULL;
-            }
+            largestblock->u.inverted_value = ~largestblock->block_size;
 
-#ifdef PR_SET_VMA_ANON_NAME
-            prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, heapblock->address, heapblock->size, "heap32");
-#endif
-        } while (0);
-
-        heapblock->prev_block = last_heapblock;
-        last_heapblock = heapblock;
-
-        // use the beginning of heapblock memory as allocated block
-        largestblock = (memblock_t *)heapblock->address;
-        largestblock->block_size = size;
-        largestblock->u.inverted_value = ~largestblock->block_size;
-
-        // use the rest of heapblock memory as free block
-        if ((int)size < heapblock->size)
-        {
-            heapblock->offset_first_free = size;
-            freeblock = (memblock_t *)(size + heapblock->address);
-            freeblock->block_size = heapblock->size - size;
-            freeblock->u.offset_next = heapblock->size;
+            find_largest_free_block(heapblock);
         }
-        else heapblock->offset_first_free = -1;
-
-        heapblock->offset_largest_free = heapblock->offset_first_free;
-        heapblock->offset_largest_free_prev = -1;
 
         UNLOCK_MUTEX
         errno = 0;
         return (void *)(sizeof(memblock_t) + (uint8_t *)largestblock);
     }
-    else
+
+    do
     {
-        return malloc(size);
+        if (last_released_heapblock != NULL)
+        {
+            // reuse last released heapblock
+            heapblock = last_released_heapblock;
+            last_released_heapblock = NULL;
+
+            if (heapblock->size >= (int)((size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1))) break;
+
+            unmap_memory_32bit(heapblock->address, heapblock->size);
+        }
+        else
+        {
+            // allocate new heapblock header
+            heapblock = (heapblock_t *) malloc(sizeof(heapblock_t));
+            if (heapblock == NULL)
+            {
+                UNLOCK_MUTEX
+                errno = ENOMEM;
+                return NULL;
+            }
+        }
+
+        // allocate heapblock memory
+        heapblock->size = (size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1);
+        heapblock->address = (uint8_t *)map_memory_32bit(heapblock->size);
+        if (heapblock->address == NULL)
+        {
+            free(heapblock);
+            UNLOCK_MUTEX
+            errno = ENOMEM;
+            return NULL;
+        }
+
+#ifdef PR_SET_VMA_ANON_NAME
+        prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, heapblock->address, heapblock->size, "heap32");
+#endif
+    } while (0);
+
+    heapblock->prev_block = last_heapblock;
+    last_heapblock = heapblock;
+
+    // use the beginning of heapblock memory as allocated block
+    largestblock = (memblock_t *)heapblock->address;
+    largestblock->block_size = size;
+    largestblock->u.inverted_value = ~largestblock->block_size;
+
+    // use the rest of heapblock memory as free block
+    if ((int)size < heapblock->size)
+    {
+        heapblock->offset_first_free = size;
+        freeblock = (memblock_t *)(size + heapblock->address);
+        freeblock->block_size = heapblock->size - size;
+        freeblock->u.offset_next = heapblock->size;
     }
+    else heapblock->offset_first_free = -1;
+
+    heapblock->offset_largest_free = heapblock->offset_first_free;
+    heapblock->offset_largest_free_prev = -1;
+
+    UNLOCK_MUTEX
+    errno = 0;
+    return (void *)(sizeof(memblock_t) + (uint8_t *)largestblock);
 }
 
 void x86_free(void *ptr)
 {
-    if (sizeof(void *) > 4)
+    memblock_t *allocblock, *freeblock, *largestblock, *prevblock, *oldblock;
+    heapblock_t *heapblock, *prevheapblock;
+    int32_t offsetalloc, offsetprev, offsetfree;
+
+    if (ptr == NULL)
     {
-        memblock_t *allocblock, *freeblock, *largestblock, *prevblock, *oldblock;
-        heapblock_t *heapblock, *prevheapblock;
-        int32_t offsetalloc, offsetprev, offsetfree;
+        errno = 0;
+        return;
+    }
 
-        if (ptr == NULL)
+    allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
+
+    LOCK_MUTEX
+
+    heapblock = find_alloc_heap_block(allocblock);
+
+    offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
+
+    if (heapblock->offset_first_free < 0)
+    {
+        // no free blocks in heapblock -> freed block will be the only free block
+        allocblock->u.offset_next = heapblock->size;
+        heapblock->offset_first_free = offsetalloc;
+        heapblock->offset_largest_free = offsetalloc;
+    }
+    else if (heapblock->offset_first_free > offsetalloc)
+    {
+        // first free block in heapblock is after freed block -> freed block will be the first free block
+        freeblock = get_free_block(heapblock, heapblock->offset_first_free);
+
+        if (offsetalloc + allocblock->block_size == heapblock->offset_first_free)
         {
-            errno = 0;
-            return;
-        }
+            // freed block is adjacent to first free block -> coalesce free blocks
+            allocblock->u.offset_next = freeblock->u.offset_next;
+            allocblock->block_size += freeblock->block_size;
+            freeblock->u.offset_next = 0;
+            freeblock->block_size = 0;
+            get_free_block(heapblock, offsetalloc);
 
-        allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
-
-        LOCK_MUTEX
-
-        heapblock = find_alloc_heap_block(allocblock);
-
-        offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
-
-        if (heapblock->offset_first_free < 0)
-        {
-            // no free blocks in heapblock -> freed block will be the only free block
-            allocblock->u.offset_next = heapblock->size;
-            heapblock->offset_first_free = offsetalloc;
-            heapblock->offset_largest_free = offsetalloc;
-        }
-        else if (heapblock->offset_first_free > offsetalloc)
-        {
-            // first free block in heapblock is after freed block -> freed block will be the first free block
-            freeblock = get_free_block(heapblock, heapblock->offset_first_free);
-
-            if (offsetalloc + allocblock->block_size == heapblock->offset_first_free)
+            if (heapblock->offset_first_free == heapblock->offset_largest_free)
             {
-                // freed block is adjacent to first free block -> coalesce free blocks
-                allocblock->u.offset_next = freeblock->u.offset_next;
-                allocblock->block_size += freeblock->block_size;
-                freeblock->u.offset_next = 0;
-                freeblock->block_size = 0;
-                get_free_block(heapblock, offsetalloc);
-
-                if (heapblock->offset_first_free == heapblock->offset_largest_free)
-                {
-                    heapblock->offset_largest_free = offsetalloc;
-                }
-                else
-                {
-                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-
-                    if (allocblock->block_size >= largestblock->block_size)
-                    {
-                        heapblock->offset_largest_free = offsetalloc;
-                        heapblock->offset_largest_free_prev = -1;
-                    }
-                    else if (heapblock->offset_largest_free_prev == heapblock->offset_first_free)
-                    {
-                        heapblock->offset_largest_free_prev = offsetalloc;
-                    }
-                }
+                heapblock->offset_largest_free = offsetalloc;
             }
             else
             {
-                // freed block is not adjacent to first free block
-                allocblock->u.offset_next = heapblock->offset_first_free;
-                get_free_block(heapblock, offsetalloc);
-
-                if (heapblock->offset_first_free == heapblock->offset_largest_free)
-                {
-                    largestblock = freeblock;
-                }
-                else
-                {
-                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                }
+                largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
 
                 if (allocblock->block_size >= largestblock->block_size)
                 {
                     heapblock->offset_largest_free = offsetalloc;
                     heapblock->offset_largest_free_prev = -1;
                 }
-                else if (heapblock->offset_largest_free == heapblock->offset_first_free)
+                else if (heapblock->offset_largest_free_prev == heapblock->offset_first_free)
                 {
                     heapblock->offset_largest_free_prev = offsetalloc;
                 }
             }
-
-            heapblock->offset_first_free = offsetalloc;
         }
         else
         {
-            // first free block in heapblock is before freed block
-            prevblock = find_last_free_block_before(heapblock, offsetalloc);
+            // freed block is not adjacent to first free block
+            allocblock->u.offset_next = heapblock->offset_first_free;
+            get_free_block(heapblock, offsetalloc);
 
-            offsetprev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
-
-            if (offsetprev + prevblock->block_size == offsetalloc)
+            if (heapblock->offset_first_free == heapblock->offset_largest_free)
             {
-                // previous free block is adjacent to freed block -> coalesce free blocks
-                prevblock->block_size += allocblock->block_size;
-                allocblock->u.offset_next = 0;
-                allocblock->block_size = 0;
-
-                if (offsetprev + prevblock->block_size == prevblock->u.offset_next && prevblock->u.offset_next < heapblock->size)
-                {
-                    // next free block is adjacent to freed block -> coalesce free blocks
-                    offsetfree = prevblock->u.offset_next;
-                    freeblock = get_free_block(heapblock, prevblock->u.offset_next);
-                    prevblock->block_size += freeblock->block_size;
-                    prevblock->u.offset_next = freeblock->u.offset_next;
-                    oldblock = freeblock;
-
-                    if (heapblock->offset_largest_free != offsetprev)
-                    {
-                        if (heapblock->offset_largest_free == offsetfree)
-                        {
-                            largestblock = freeblock;
-                        }
-                        else
-                        {
-                            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        }
-
-                        if (prevblock->block_size > largestblock->block_size)
-                        {
-                            freeblock = find_last_free_block_before(heapblock, offsetprev);
-
-                            heapblock->offset_largest_free = offsetprev;
-                            heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetfree)
-                        {
-                            heapblock->offset_largest_free_prev = offsetprev;
-                        }
-                    }
-
-                    oldblock->u.offset_next = 0;
-                    oldblock->block_size = 0;
-                }
-                else
-                {
-                    // next free block is not adjacent to freed block
-
-                    if (heapblock->offset_largest_free != offsetprev)
-                    {
-                        largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        if (prevblock->block_size > largestblock->block_size)
-                        {
-                            freeblock = find_last_free_block_before(heapblock, offsetprev);
-
-                            heapblock->offset_largest_free = offsetprev;
-                            heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
-                        }
-                    }
-                }
+                largestblock = freeblock;
             }
             else
             {
-                // previous free block is not adjacent to freed block
-                allocblock->u.offset_next = prevblock->u.offset_next;
-                get_free_block(heapblock, offsetalloc);
-                prevblock->u.offset_next = offsetalloc;
+                largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
+            }
 
-                if (offsetalloc + allocblock->block_size == allocblock->u.offset_next && allocblock->u.offset_next < heapblock->size)
+            if (allocblock->block_size >= largestblock->block_size)
+            {
+                heapblock->offset_largest_free = offsetalloc;
+                heapblock->offset_largest_free_prev = -1;
+            }
+            else if (heapblock->offset_largest_free == heapblock->offset_first_free)
+            {
+                heapblock->offset_largest_free_prev = offsetalloc;
+            }
+        }
+
+        heapblock->offset_first_free = offsetalloc;
+    }
+    else
+    {
+        // first free block in heapblock is before freed block
+        prevblock = find_last_free_block_before(heapblock, offsetalloc);
+
+        offsetprev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
+
+        if (offsetprev + prevblock->block_size == offsetalloc)
+        {
+            // previous free block is adjacent to freed block -> coalesce free blocks
+            prevblock->block_size += allocblock->block_size;
+            allocblock->u.offset_next = 0;
+            allocblock->block_size = 0;
+
+            if (offsetprev + prevblock->block_size == prevblock->u.offset_next && prevblock->u.offset_next < heapblock->size)
+            {
+                // next free block is adjacent to freed block -> coalesce free blocks
+                offsetfree = prevblock->u.offset_next;
+                freeblock = get_free_block(heapblock, prevblock->u.offset_next);
+                prevblock->block_size += freeblock->block_size;
+                prevblock->u.offset_next = freeblock->u.offset_next;
+                oldblock = freeblock;
+
+                if (heapblock->offset_largest_free != offsetprev)
                 {
-                    // next free block is adjacent to freed block -> coalesce free blocks
-                    offsetfree = allocblock->u.offset_next;
-                    freeblock = get_free_block(heapblock, allocblock->u.offset_next);
-                    allocblock->block_size += freeblock->block_size;
-                    allocblock->u.offset_next = freeblock->u.offset_next;
-                    freeblock->u.offset_next = 0;
-                    freeblock->block_size = 0;
-
                     if (heapblock->offset_largest_free == offsetfree)
                     {
-                        heapblock->offset_largest_free = offsetalloc;
+                        largestblock = freeblock;
                     }
                     else
                     {
-                        if (heapblock->offset_largest_free == offsetprev)
-                        {
-                            largestblock = prevblock;
-                        }
-                        else
-                        {
-                            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        }
-
-                        if (allocblock->block_size >= largestblock->block_size)
-                        {
-                            heapblock->offset_largest_free = offsetalloc;
-                            heapblock->offset_largest_free_prev = offsetprev;
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetfree)
-                        {
-                            heapblock->offset_largest_free_prev = offsetalloc;
-                        }
+                        largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
                     }
+
+                    if (prevblock->block_size > largestblock->block_size)
+                    {
+                        freeblock = find_last_free_block_before(heapblock, offsetprev);
+
+                        heapblock->offset_largest_free = offsetprev;
+                        heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
+                    }
+                    else if (heapblock->offset_largest_free_prev == offsetfree)
+                    {
+                        heapblock->offset_largest_free_prev = offsetprev;
+                    }
+                }
+
+                oldblock->u.offset_next = 0;
+                oldblock->block_size = 0;
+            }
+            else
+            {
+                // next free block is not adjacent to freed block
+
+                if (heapblock->offset_largest_free != offsetprev)
+                {
+                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
+                    if (prevblock->block_size > largestblock->block_size)
+                    {
+                        freeblock = find_last_free_block_before(heapblock, offsetprev);
+
+                        heapblock->offset_largest_free = offsetprev;
+                        heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // previous free block is not adjacent to freed block
+            allocblock->u.offset_next = prevblock->u.offset_next;
+            get_free_block(heapblock, offsetalloc);
+            prevblock->u.offset_next = offsetalloc;
+
+            if (offsetalloc + allocblock->block_size == allocblock->u.offset_next && allocblock->u.offset_next < heapblock->size)
+            {
+                // next free block is adjacent to freed block -> coalesce free blocks
+                offsetfree = allocblock->u.offset_next;
+                freeblock = get_free_block(heapblock, allocblock->u.offset_next);
+                allocblock->block_size += freeblock->block_size;
+                allocblock->u.offset_next = freeblock->u.offset_next;
+                freeblock->u.offset_next = 0;
+                freeblock->block_size = 0;
+
+                if (heapblock->offset_largest_free == offsetfree)
+                {
+                    heapblock->offset_largest_free = offsetalloc;
                 }
                 else
                 {
-                    // next free block is not adjacent to freed block
-
                     if (heapblock->offset_largest_free == offsetprev)
                     {
                         largestblock = prevblock;
@@ -674,272 +622,276 @@ void x86_free(void *ptr)
                         heapblock->offset_largest_free = offsetalloc;
                         heapblock->offset_largest_free_prev = offsetprev;
                     }
-                    else if (heapblock->offset_largest_free_prev == offsetprev)
+                    else if (heapblock->offset_largest_free_prev == offsetfree)
                     {
                         heapblock->offset_largest_free_prev = offsetalloc;
                     }
                 }
             }
-        }
-
-        if (heapblock == last_heapblock && heapblock->offset_largest_free == 0)
-        {
-            largestblock = (memblock_t *)heapblock->address;
-            if (largestblock->block_size == heapblock->size)
+            else
             {
-                // last heapblock is empty -> unmap it
-                for (;;)
-                {
-                    prevheapblock = heapblock->prev_block;
-                    last_heapblock = prevheapblock;
-                    if (last_released_heapblock != NULL)
-                    {
-                        unmap_memory_32bit(last_released_heapblock->address, last_released_heapblock->size);
-                        free(last_released_heapblock);
-                    }
-                    if (prevheapblock == NULL)
-                    {
-                        last_released_heapblock = NULL;
-                        unmap_memory_32bit(heapblock->address, heapblock->size);
-                        free(heapblock);
-                        break;
-                    }
-                    else
-                    {
-                        last_released_heapblock = heapblock;
-                        heapblock->prev_block = NULL;
-                    }
+                // next free block is not adjacent to freed block
 
-                    if (prevheapblock->offset_largest_free != 0) break;
-                    largestblock = get_free_block(prevheapblock, 0);
-                    if (largestblock->block_size != prevheapblock->size) break;
-                    heapblock = prevheapblock;
+                if (heapblock->offset_largest_free == offsetprev)
+                {
+                    largestblock = prevblock;
+                }
+                else
+                {
+                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
+                }
+
+                if (allocblock->block_size >= largestblock->block_size)
+                {
+                    heapblock->offset_largest_free = offsetalloc;
+                    heapblock->offset_largest_free_prev = offsetprev;
+                }
+                else if (heapblock->offset_largest_free_prev == offsetprev)
+                {
+                    heapblock->offset_largest_free_prev = offsetalloc;
                 }
             }
         }
+    }
 
-        UNLOCK_MUTEX
-        errno = 0;
-        return;
-    }
-    else
+    if (heapblock == last_heapblock && heapblock->offset_largest_free == 0)
     {
-        free(ptr);
+        largestblock = (memblock_t *)heapblock->address;
+        if (largestblock->block_size == heapblock->size)
+        {
+            // last heapblock is empty -> unmap it
+            for (;;)
+            {
+                prevheapblock = heapblock->prev_block;
+                last_heapblock = prevheapblock;
+                if (last_released_heapblock != NULL)
+                {
+                    unmap_memory_32bit(last_released_heapblock->address, last_released_heapblock->size);
+                    free(last_released_heapblock);
+                }
+                if (prevheapblock == NULL)
+                {
+                    last_released_heapblock = NULL;
+                    unmap_memory_32bit(heapblock->address, heapblock->size);
+                    free(heapblock);
+                    break;
+                }
+                else
+                {
+                    last_released_heapblock = heapblock;
+                    heapblock->prev_block = NULL;
+                }
+
+                if (prevheapblock->offset_largest_free != 0) break;
+                largestblock = get_free_block(prevheapblock, 0);
+                if (largestblock->block_size != prevheapblock->size) break;
+                heapblock = prevheapblock;
+            }
+        }
     }
+
+    UNLOCK_MUTEX
+    errno = 0;
+    return;
 }
 
 void *x86_calloc(unsigned int nmemb, unsigned int size)
 {
-    if (sizeof(void *) > 4)
+    void *ptr;
+
+    if (size > 1)
     {
-        void *ptr;
-
-        if (size > 1)
+        if ((0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE)) / size < nmemb)
         {
-            if ((0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE)) / size < nmemb)
-            {
-                errno = ENOMEM;
-                return NULL;
-            }
+            errno = ENOMEM;
+            return NULL;
         }
+    }
 
-        ptr = x86_malloc(nmemb * size);
-        if (ptr != NULL)
-        {
-            memset(ptr, 0, nmemb * size);
-        }
+    ptr = x86_malloc(nmemb * size);
+    if (ptr != NULL)
+    {
+        memset(ptr, 0, nmemb * size);
+    }
 
+    errno = 0;
+    return ptr;
+}
+
+void *x86_realloc(void *ptr, unsigned int size)
+{
+    memblock_t *allocblock, *adjacentblock, *freeblock, *prevblock;
+    heapblock_t *heapblock;
+    int32_t offsetalloc, offsetadjacent, allocsize, copysize;
+    void *ptr2;
+
+    if (ptr == NULL)
+    {
+        return x86_malloc(size);
+    }
+
+
+    if (size == 0)
+    {
+        x86_free(ptr);
+        return NULL;
+    }
+
+    if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    // round up allocated size and add header size
+    allocsize = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
+
+    allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
+
+    LOCK_MUTEX
+
+    heapblock = find_alloc_heap_block(allocblock);
+
+    if (allocblock->block_size == allocsize)
+    {
+        // existing block size is the same as new size -> do nothing
+        UNLOCK_MUTEX
+        errno = 0;
+        return ptr;
+    }
+    else if (allocblock->block_size > allocsize)
+    {
+        // existing block size is larger than new size -> split block into two and free the second one
+        freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
+        freeblock->block_size = allocblock->block_size - allocsize;
+        freeblock->u.inverted_value = ~freeblock->block_size;
+        allocblock->block_size = allocsize;
+        allocblock->u.inverted_value = ~allocblock->block_size;
+
+        x86_free((void *)(sizeof(memblock_t) + (uint8_t *)freeblock));
+        UNLOCK_MUTEX
         errno = 0;
         return ptr;
     }
     else
     {
-        return calloc(nmemb, size);
-    }
-}
+        // existing block size is smaller than new size -> check if adjacent block is large enough free block
 
-void *x86_realloc(void *ptr, unsigned int size)
-{
-    if (sizeof(void *) > 4)
-    {
-        memblock_t *allocblock, *adjacentblock, *freeblock, *prevblock;
-        heapblock_t *heapblock;
-        int32_t offsetalloc, offsetadjacent, allocsize, copysize;
-        void *ptr2;
-
-        if (ptr == NULL)
+        offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
+        if (offsetalloc + allocblock->block_size < heapblock->size)
         {
-            return x86_malloc(size);
-        }
-
-
-        if (size == 0)
-        {
-            x86_free(ptr);
-            return NULL;
-        }
-
-        if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
-        {
-            errno = ENOMEM;
-            return NULL;
-        }
-
-        // round up allocated size and add header size
-        allocsize = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
-
-        allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
-
-        LOCK_MUTEX
-
-        heapblock = find_alloc_heap_block(allocblock);
-
-        if (allocblock->block_size == allocsize)
-        {
-            // existing block size is the same as new size -> do nothing
-            UNLOCK_MUTEX
-            errno = 0;
-            return ptr;
-        }
-        else if (allocblock->block_size > allocsize)
-        {
-            // existing block size is larger than new size -> split block into two and free the second one
-            freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
-            freeblock->block_size = allocblock->block_size - allocsize;
-            freeblock->u.inverted_value = ~freeblock->block_size;
-            allocblock->block_size = allocsize;
-            allocblock->u.inverted_value = ~allocblock->block_size;
-
-            x86_free((void *)(sizeof(memblock_t) + (uint8_t *)freeblock));
-            UNLOCK_MUTEX
-            errno = 0;
-            return ptr;
-        }
-        else
-        {
-            // existing block size is smaller than new size -> check if adjacent block is large enough free block
-
-            offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
-            if (offsetalloc + allocblock->block_size < heapblock->size)
+            adjacentblock = (memblock_t *)(allocblock->block_size + (uint8_t *)allocblock);
+            if (adjacentblock->u.inverted_value >= 0 && adjacentblock->block_size >= allocsize - allocblock->block_size)
             {
-                adjacentblock = (memblock_t *)(allocblock->block_size + (uint8_t *)allocblock);
-                if (adjacentblock->u.inverted_value >= 0 && adjacentblock->block_size >= allocsize - allocblock->block_size)
+                offsetadjacent = offsetalloc + allocblock->block_size;
+                adjacentblock = get_free_block(heapblock, offsetadjacent);
+
+                if (adjacentblock->block_size > allocsize - allocblock->block_size)
                 {
-                    offsetadjacent = offsetalloc + allocblock->block_size;
-                    adjacentblock = get_free_block(heapblock, offsetadjacent);
+                    // append beginning of the free block to existing block
+                    freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
+                    freeblock->u.offset_next = adjacentblock->u.offset_next;
+                    freeblock->block_size = allocblock->block_size + adjacentblock->block_size - allocsize;
+                    allocblock->block_size = allocsize;
+                    allocblock->u.inverted_value = ~allocblock->block_size;
+                    adjacentblock->u.offset_next = 0;
+                    adjacentblock->block_size = 0;
 
-                    if (adjacentblock->block_size > allocsize - allocblock->block_size)
+                    if (heapblock->offset_first_free == offsetadjacent)
                     {
-                        // append beginning of the free block to existing block
-                        freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
-                        freeblock->u.offset_next = adjacentblock->u.offset_next;
-                        freeblock->block_size = allocblock->block_size + adjacentblock->block_size - allocsize;
-                        allocblock->block_size = allocsize;
-                        allocblock->u.inverted_value = ~allocblock->block_size;
-                        adjacentblock->u.offset_next = 0;
-                        adjacentblock->block_size = 0;
+                        heapblock->offset_first_free = offsetalloc + allocsize;
+                    }
+                    else
+                    {
+                        prevblock = find_last_free_block_before(heapblock, offsetalloc);
+                        prevblock->u.offset_next = offsetalloc + allocsize;
+                    }
 
-                        if (heapblock->offset_first_free == offsetadjacent)
+                    if (heapblock->offset_largest_free == offsetadjacent)
+                    {
+                        if (freeblock->block_size >= heapblock->size >> 1)
                         {
-                            heapblock->offset_first_free = offsetalloc + allocsize;
+                            heapblock->offset_largest_free = offsetalloc + allocsize;
                         }
                         else
                         {
-                            prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                            prevblock->u.offset_next = offsetalloc + allocsize;
+                            find_largest_free_block(heapblock);
                         }
+                    }
+                    else if (heapblock->offset_largest_free_prev == offsetadjacent)
+                    {
+                        heapblock->offset_largest_free_prev = offsetalloc + allocsize;
+                    }
+                }
+                else
+                {
+                    // append whole free block to existing block
+                    allocblock->block_size += adjacentblock->block_size;
+                    allocblock->u.inverted_value = ~allocblock->block_size;
 
-                        if (heapblock->offset_largest_free == offsetadjacent)
+                    prevblock = NULL; // silence compiler warning
+
+                    if (heapblock->offset_first_free == offsetadjacent)
+                    {
+                        heapblock->offset_first_free = adjacentblock->u.offset_next;
+                        if (heapblock->offset_first_free >= heapblock->size)
                         {
-                            if (freeblock->block_size >= heapblock->size >> 1)
-                            {
-                                heapblock->offset_largest_free = offsetalloc + allocsize;
-                            }
-                            else
-                            {
-                                find_largest_free_block(heapblock);
-                            }
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetadjacent)
-                        {
-                            heapblock->offset_largest_free_prev = offsetalloc + allocsize;
+                            heapblock->offset_first_free = -1;
                         }
                     }
                     else
                     {
-                        // append whole free block to existing block
-                        allocblock->block_size += adjacentblock->block_size;
-                        allocblock->u.inverted_value = ~allocblock->block_size;
+                        prevblock = find_last_free_block_before(heapblock, offsetalloc);
+                        prevblock->u.offset_next = adjacentblock->u.offset_next;
+                    }
 
-                        prevblock = NULL; // silence compiler warning
+                    adjacentblock->u.offset_next = 0;
+                    adjacentblock->block_size = 0;
 
-                        if (heapblock->offset_first_free == offsetadjacent)
+                    if (heapblock->offset_largest_free == offsetadjacent)
+                    {
+                        find_largest_free_block(heapblock);
+                    }
+                    else if (heapblock->offset_largest_free_prev == offsetadjacent)
+                    {
+                        if (heapblock->offset_largest_free == heapblock->offset_first_free)
                         {
-                            heapblock->offset_first_free = adjacentblock->u.offset_next;
-                            if (heapblock->offset_first_free >= heapblock->size)
-                            {
-                                heapblock->offset_first_free = -1;
-                            }
+                            heapblock->offset_largest_free_prev = -1;
                         }
                         else
                         {
-                            prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                            prevblock->u.offset_next = adjacentblock->u.offset_next;
-                        }
-
-                        adjacentblock->u.offset_next = 0;
-                        adjacentblock->block_size = 0;
-
-                        if (heapblock->offset_largest_free == offsetadjacent)
-                        {
-                            find_largest_free_block(heapblock);
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetadjacent)
-                        {
-                            if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                            {
-                                heapblock->offset_largest_free_prev = -1;
-                            }
-                            else
-                            {
-                                // if execution gets here, then the same statement was executed above, so it doesn't need to be executed again
-                                //prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                                heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
-                            }
+                            // if execution gets here, then the same statement was executed above, so it doesn't need to be executed again
+                            //prevblock = find_last_free_block_before(heapblock, offsetalloc);
+                            heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
                         }
                     }
-
-                    UNLOCK_MUTEX
-                    errno = 0;
-                    return ptr;
                 }
+
+                UNLOCK_MUTEX
+                errno = 0;
+                return ptr;
             }
         }
-
-        copysize = allocblock->block_size - sizeof(memblock_t);
-
-        ptr2 = x86_malloc(size);
-        if (ptr2 == NULL)
-        {
-            UNLOCK_MUTEX
-            errno = ENOMEM;
-            return NULL;
-        }
-
-        memcpy(ptr2, ptr, copysize);
-        x86_free(ptr);
-        UNLOCK_MUTEX
-        errno = 0;
-        return ptr2;
     }
-    else
+
+    copysize = allocblock->block_size - sizeof(memblock_t);
+
+    ptr2 = x86_malloc(size);
+    if (ptr2 == NULL)
     {
-        return realloc(ptr, size);
+        UNLOCK_MUTEX
+        errno = ENOMEM;
+        return NULL;
     }
+
+    memcpy(ptr2, ptr, copysize);
+    x86_free(ptr);
+    UNLOCK_MUTEX
+    errno = 0;
+    return ptr2;
 }
 
 
-#if defined(PTROFS_64BIT) && !defined(__APPLE__)
 /* The guest window: the 2 GB of the host's address space from pointer_offset
  * up, which the guest sees as its addresses 0 .. 2 GB.  It is reserved whole
  * (no access: no memory and no commit charge until a part is used), so after
@@ -1140,18 +1092,15 @@ static int run_is_free(uint32_t first, uint32_t count)
     return 1;
 }
 
-static void *use_granules(uint32_t first, uint32_t count, int only_address_space)
+static void *use_granules(uint32_t first, uint32_t count)
 {
     void *want = (void *)(uintptr_t)(pointer_offset + first * GRANULE_SIZE);
 
-    if (!only_address_space)
-    {
 #ifdef _WIN32
-        if (VirtualAlloc(want, count * GRANULE_SIZE, MEM_COMMIT, PAGE_READWRITE) != want) return NULL;
+    if (VirtualAlloc(want, count * GRANULE_SIZE, MEM_COMMIT, PAGE_READWRITE) != want) return NULL;
 #else
-        if (mmap(want, count * GRANULE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != want) return NULL;
+    if (mmap(want, count * GRANULE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != want) return NULL;
 #endif
-    }
     set_granules(first, count, GRANULE_USED);
     return want;
 }
@@ -1163,7 +1112,7 @@ static uint32_t granules_of(uint64_t size)
 
 /* from the bottom up, above the low memory; a multiple of the heap's blocks
  * on a boundary of them */
-static void *window_map_memory(unsigned int size, int only_address_space)
+static void *window_map_memory(unsigned int size)
 {
     uint32_t count = granules_of(size), step, first;
     void *mem = NULL;
@@ -1175,7 +1124,7 @@ static void *window_map_memory(unsigned int size, int only_address_space)
     {
         if (run_is_free(first, count))
         {
-            mem = use_granules(first, count, only_address_space);
+            mem = use_granules(first, count);
             break;
         }
     }
@@ -1258,12 +1207,10 @@ static int window_from_host_ranges(uint64_t image_start, uint64_t image_end)
     window_ready = 1;
     return 1;
 }
-#endif
 
 /* stderr: the guest window, what is where in it, and what was wanted of it */
 void Game_MemoryReport(const char *what, uint64_t wanted)
 {
-#if defined(PTROFS_64BIT) && !defined(__APPLE__)
     uint32_t index, first;
     uint64_t free_bytes = 0, largest = 0;
 
@@ -1310,435 +1257,50 @@ void Game_MemoryReport(const char *what, uint64_t wanted)
         }
     }
 #endif
-#else
-    (void)what;
-    (void)wanted;
-#endif
 }
 
-void *map_memory_32bit(unsigned int size, int only_address_space)
+/* the guest's heap: size bytes of the window, from the bottom up */
+void *map_memory_32bit(unsigned int size)
 {
-#if defined(PTROFS_64BIT) && !defined(__APPLE__)
-    if (window_ready)
-    {
-        static int reported;
-        void *mem = window_map_memory(size, only_address_space);
-
-        if (mem == NULL && !reported)
-        {
-            reported = 1;
-            Game_MemoryReport("no room in the guest window", size);
-        }
-        return mem;
-    }
-#endif
-#ifdef _WIN32
-    uint64_t maddr, reg_base, reg_size;
+    static int reported;
     void *mem;
-    SYSTEM_INFO sinfo;
-    MEMORY_BASIC_INFORMATION minfo;
 
     if (size == 0) return NULL;
-
-    GetSystemInfo(&sinfo);
-
-    // round up requested size to the next page boundary
-    size = (size + (sinfo.dwPageSize - 1)) & ~(sinfo.dwPageSize - 1);
-
-    // set starting memory address
-    maddr = pointer_offset + 1024*1024 + 65536;
-
-    // round up starting memory address to the nearest multiple of the allocation granularity
-    maddr = (maddr + (sinfo.dwAllocationGranularity - 1)) & ~(uintptr_t)(sinfo.dwAllocationGranularity - 1);
-
-    // look for unused memory up to 2GB from pointer_offset
-    while (maddr < pointer_offset + UINT64_C(0x80000000) && maddr + size <= pointer_offset + UINT64_C(0x80000000))
+    mem = window_map_memory(size);
+    if (mem == NULL && !reported)
     {
-        if (0 == VirtualQuery((void *)maddr, &minfo, sizeof(minfo))) return NULL;
-
-        if (minfo.State == MEM_FREE)
-        {
-            reg_base = (((uintptr_t)minfo.BaseAddress) + (sinfo.dwAllocationGranularity - 1)) & ~(uintptr_t)(sinfo.dwAllocationGranularity - 1);
-            if (minfo.RegionSize >= reg_base - (uintptr_t)minfo.BaseAddress)
-            {
-                reg_size = minfo.RegionSize - (reg_base - (uintptr_t)minfo.BaseAddress);
-
-                if (reg_size >= size)
-                {
-                    mem = VirtualAlloc((void *)reg_base, size, MEM_RESERVE | (only_address_space ? 0 : MEM_COMMIT), only_address_space ? PAGE_NOACCESS : PAGE_READWRITE);
-                    if (mem != NULL) return mem;
-                }
-            }
-        }
-
-        maddr = ((minfo.RegionSize + (uintptr_t)minfo.BaseAddress) + (sinfo.dwAllocationGranularity - 1)) & ~(uintptr_t)(sinfo.dwAllocationGranularity - 1);
+        reported = 1;
+        Game_MemoryReport("no room in the guest window", size);
     }
-
-    return NULL;
-#elif defined(__APPLE__)
-    void *mem, *start, *start_aligned;
-    int prot, flags;
-    long page_size;
-    mach_port_t task;
-    mach_vm_address_t region_address, free_region_start, free_region_end;
-    mach_vm_size_t region_size;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t count;
-    mach_port_t object_name;
-
-    if (size == 0) return NULL;
-
-    prot = only_address_space ? PROT_NONE : (PROT_READ | PROT_WRITE);
-    flags = MAP_PRIVATE | MAP_ANONYMOUS | (only_address_space ? MAP_NORESERVE : 0);
-
-    // if platform supports MAP_32BIT, then try mapping memory with it
-#if defined(MAP_32BIT) && (MAP_32BIT != 0)
-#ifdef PTROFS_64BIT
-    if (pointer_offset == 0)
-#endif
-    {
-        mem = mmap(0, size, prot, MAP_32BIT | flags, -1, 0);
-        if (mem != MAP_FAILED)
-        {
-            if (((uintptr_t)mem >= UINT64_C(0x80000000)) || (size + (uintptr_t)mem > UINT64_C(0x80000000)))
-            {
-                // mapped memory is above 2GB
-                munmap(mem, size);
-            }
-            else
-            {
-                return mem;
-            }
-        }
-    }
-#endif
-
-    // look for unused memory up to 2GB from pointer_offset and try mapping memory there
-    page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) page_size = 4096;
-
-    task = current_task();
-
-    region_address = pointer_offset;
-    count = VM_REGION_BASIC_INFO_COUNT_64;
-    if (KERN_SUCCESS != mach_vm_region(task, &region_address, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &info, &count, &object_name)) return NULL;
-
-    // first free region (starting at address zero) belongs to segment __PAGEZERO, so don't try using memory here
-
-    if (region_address >= pointer_offset + UINT64_C(0x80000000)) return NULL;
-
-    free_region_start = region_address + region_size;
-    while (free_region_start < pointer_offset + UINT64_C(0x80000000))
-    {
-        region_address = free_region_start;
-        count = VM_REGION_BASIC_INFO_COUNT_64;
-        if (KERN_SUCCESS != mach_vm_region(task, &region_address, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &info, &count, &object_name))
-        {
-            region_address = free_region_end = pointer_offset + UINT64_C(0x80000000);
-            region_size = 0;
-        }
-        else
-        {
-            free_region_end = region_address;
-            if (free_region_end >= pointer_offset + UINT64_C(0x80000000))
-            {
-                free_region_end = pointer_offset + UINT64_C(0x80000000);
-                region_size = 0;
-            }
-        }
-
-        if (free_region_end - free_region_start >= size)
-        {
-            // try using memory at the end of the free region
-            start = (void *)((free_region_end - size) & ~(uintptr_t)(page_size - 1));
-            if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-            {
-                start_aligned = (void *)(((uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-                if ((uintptr_t)start_aligned >= free_region_start + HEAPBLOCK_BASE_SIZE) start = start_aligned;
-            }
-            if (start != (void *)free_region_start)
-            {
-                mem = mmap(start, size, prot, MAP_FIXED | flags, -1, 0);
-                if (mem == start) return mem;
-                if (mem != MAP_FAILED)
-                {
-                    munmap(start, size);
-                    goto error1;
-                }
-            }
-
-            // try using memory at the start of the free region
-            start = (void *)free_region_start;
-            if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-            {
-                start_aligned = (void *)(((HEAPBLOCK_BASE_SIZE - 1) + (uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-                if (size + (uintptr_t)start_aligned <= free_region_end) start = start_aligned;
-            }
-            mem = mmap(start, size, prot, MAP_FIXED | flags, -1, 0);
-            if (mem == start) return mem;
-            if (mem != MAP_FAILED)
-            {
-                munmap(start, size);
-                goto error1;
-            }
-        }
-
-        free_region_start = region_address + region_size;
-    }
-
-    return NULL;
-
-error1:
-    fprintf(stderr, "Error: memory mapped at different address\n");
-    return NULL;
-#else
-    void *mem, *start, *start_aligned;
-    int num_matches, prot, flags;
-    long page_size;
-    FILE *f;
-    uintmax_t num0, num1, num2;
-
-    if (size == 0) return NULL;
-
-    prot = only_address_space ? PROT_NONE : (PROT_READ | PROT_WRITE);
-
-#if !defined(MAP_NORESERVE) && defined(MAP_GUARD)
-    flags = only_address_space ? MAP_GUARD : (MAP_PRIVATE | MAP_ANONYMOUS);
-#else
-    flags = MAP_PRIVATE | MAP_ANONYMOUS | (only_address_space ? MAP_NORESERVE : 0);
-#endif
-
-    // if platform supports MAP_32BIT, then try mapping memory with it
-#if defined(MAP_32BIT) && (MAP_32BIT != 0)
-#ifdef PTROFS_64BIT
-    if (pointer_offset == 0)
-#endif
-    {
-        mem = mmap(0, size, prot, MAP_32BIT | flags, -1, 0);
-        if (mem != MAP_FAILED)
-        {
-            if (((uintptr_t)mem >= UINT64_C(0x80000000)) || (size + (uintptr_t)mem > UINT64_C(0x80000000)))
-            {
-                // mapped memory is above 2GB
-                munmap(mem, size);
-            }
-            else
-            {
-                return mem;
-            }
-        }
-    }
-#endif
-
-    // look for unused memory up to 2GB from pointer_offset in memory maps and try mapping memory there
-    f = fopen("/proc/self/maps", "rb");
-    if (f == NULL)
-    {
-        char mapname[32];
-        sprintf(mapname, "/proc/%" PRIuMAX "/map", (uintmax_t)getpid());
-        f = fopen(mapname, "rb");
-        if (f == NULL) return NULL;
-    }
-
-    page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) page_size = 4096;
-
-    mem = NULL;
-    num0 = (pointer_offset + 1024*1024 + 65536 + (page_size - 1)) & ~(uintptr_t)(page_size - 1);
-    while (num0 < pointer_offset + UINT64_C(0x80000000))
-    {
-        num_matches = fscanf(f, "%" SCNxMAX "%*[ -]%" SCNxMAX " %*[^\n^\r]%*[\n\r]", &num1, &num2);
-        if (num_matches == EOF) break;
-
-        if (num_matches < 2)
-        {
-            num0 = pointer_offset + UINT64_C(0x80000000);
-            break;
-        }
-
-        // num1-num2 block is used
-        // num0-num1 block is not used
-
-        if (num1 >= pointer_offset + UINT64_C(0x80000000)) break;
-
-        // num0-num1 block is below 2GB
-
-        if ((num0 < num1) && (num1 - num0 >= size))
-        {
-            // try using memory at the end of the block
-            start = (void *)((num1 - size) & ~(uintptr_t)(page_size - 1));
-            if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-            {
-                start_aligned = (void *)(((uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-                if ((uintptr_t)start_aligned >= num0 + HEAPBLOCK_BASE_SIZE) start = start_aligned;
-            }
-            if (start != (void *)num0)
-            {
-                mem = mmap(start, size, prot, MAP_FIXED_NOREPLACE | flags, -1, 0);
-                if (mem == start) break;
-                if (mem != MAP_FAILED)
-                {
-                    munmap(start, size);
-                    goto error2;
-                }
-            }
-
-            // try using memory at the start of the block
-            start = (void *)num0;
-            if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-            {
-                start_aligned = (void *)(((HEAPBLOCK_BASE_SIZE - 1) + (uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-                if (size + (uintptr_t)start_aligned <= num1) start = start_aligned;
-            }
-            mem = mmap(start, size, prot, MAP_FIXED_NOREPLACE | flags, -1, 0);
-            if (mem == start) break;
-            if (mem != MAP_FAILED)
-            {
-                munmap(start, size);
-                goto error2;
-            }
-
-            mem = NULL;
-        }
-
-        if (num2 > num0)
-        {
-            num0 = num2;
-        }
-    }
-
-    fclose(f);
-
-    if (mem != NULL) return mem;
-
-    if ((num0 < pointer_offset + UINT64_C(0x80000000)) && (num0 + size <= pointer_offset + UINT64_C(0x80000000)))
-    {
-        // try using memory at the end of 2GB
-        start = (void *)((pointer_offset + UINT64_C(0x80000000) - size) & ~(uintptr_t)(page_size - 1));
-        if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-        {
-            start_aligned = (void *)(((uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-            if ((uintptr_t)start_aligned >= num0 + HEAPBLOCK_BASE_SIZE) start = start_aligned;
-        }
-        if (start != (void *)num0)
-        {
-            mem = mmap(start, size, prot, MAP_FIXED_NOREPLACE | flags, -1, 0);
-            if (mem == start) return mem;
-            if (mem != MAP_FAILED)
-            {
-                munmap(start, size);
-                goto error1;
-            }
-        }
-
-        // try using memory after the end of the last block
-        start = (void *)num0;
-        if ((size & (HEAPBLOCK_BASE_SIZE - 1)) == 0)
-        {
-            start_aligned = (void *)(((HEAPBLOCK_BASE_SIZE - 1) + (uintptr_t)start) & ~(uintptr_t)(HEAPBLOCK_BASE_SIZE - 1));
-            if (size + (uintptr_t)start_aligned <= pointer_offset + UINT64_C(0x80000000)) start = start_aligned;
-        }
-        mem = mmap(start, size, prot, MAP_FIXED_NOREPLACE | flags, -1, 0);
-        if (mem == start) return mem;
-        if (mem != MAP_FAILED)
-        {
-            munmap(start, size);
-            goto error1;
-        }
-    }
-
-    fprintf(stderr, "Error: no free memory for %u bytes in [%" PRIuMAX ", %" PRIuMAX ")\n",
-            size, (uintmax_t)pointer_offset + 1024*1024 + 65536, (uintmax_t)pointer_offset + UINT64_C(0x80000000));
-    return NULL;
-
-error2:
-    fclose(f);
-
-error1:
-    fprintf(stderr, "Error: memory mapped at different address\n");
-    return NULL;
-#endif
+    return mem;
 }
 
 void unmap_memory_32bit(void *mem, unsigned int size)
 {
-    if (mem != NULL && size != 0)
-    {
-#if defined(PTROFS_64BIT) && !defined(__APPLE__)
-        if (window_ready && (uintptr_t)mem >= pointer_offset && (uintptr_t)mem < pointer_offset + GUEST_WINDOW_SIZE)
-        {
-            window_unmap_memory(mem, size);
-            return;
-        }
-#endif
-#ifdef _WIN32
-        VirtualFree(mem, 0, MEM_RELEASE);
-#else
-        munmap(mem, size);
-#endif
-    }
-}
-
-/* [guest, guest + size) as memory, if nothing else is there */
-static void *map_at(uint32_t guest, unsigned int size)
-{
-    void *want = (void *)GAME_GUEST32_TO_PTR(guest);
-#if defined(_WIN32)
-    return VirtualAlloc(want, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-#else
-#ifndef MAP_FIXED_NOREPLACE
-#define MAP_FIXED_NOREPLACE 0
-#endif
-    void *mem = mmap(want, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
-    if (mem == MAP_FAILED) return NULL;
-    if (mem != want)
-    {
-        munmap(mem, size);
-        return NULL;
-    }
-    return mem;
-#endif
+    if (mem != NULL && size != 0) window_unmap_memory(mem, size);
 }
 
 void *map_memory_32bit_top(unsigned int size, uint32_t above)
 {
-    uint32_t guest;
+    uint32_t count = granules_of(size), lowest = granules_of((uint64_t)above + GRANULE_SIZE), first;
+    void *mem = NULL;
 
-#if defined(PTROFS_64BIT) && !defined(__APPLE__)
-    if (window_ready)
+    if (size == 0 || count > GRANULE_COUNT) return NULL;
+    LOCK_MUTEX
+    for (first = GRANULE_COUNT - count + 1; first-- > lowest; )
     {
-        uint32_t count = granules_of(size), lowest = granules_of((uint64_t)above + GRANULE_SIZE), first;
-        void *mem = NULL;
-
-        if (count > GRANULE_COUNT) return NULL;
-        LOCK_MUTEX
-        for (first = GRANULE_COUNT - count + 1; first-- > lowest; )
+        if (run_is_free(first, count))
         {
-            if (run_is_free(first, count))
-            {
-                mem = use_granules(first, count, 0);
-                break;
-            }
+            mem = use_granules(first, count);
+            break;
         }
-        UNLOCK_MUTEX
-        return mem;
     }
-#endif
-    if (size == 0 || size > 0x80000000u) return NULL;
-    for (guest = 0x80000000u - size; guest >= above + 0x10000u; guest -= 0x10000u)
-    {
-        void *mem = map_at(guest, size);
-        if (mem != NULL) return mem;
-    }
-    return NULL;
+    UNLOCK_MUTEX
+    return mem;
 }
-
-
-#ifdef PTROFS_64BIT
 
 int initialize_pointer_offset(void)
 {
-#if !defined(__APPLE__)
     uint64_t image_start, image_end, low, base;
 
     pointer_offset = 0;
@@ -1765,16 +1327,6 @@ int initialize_pointer_offset(void)
         add_host_range(image_start, image_end);
     }
 #else
-    if (image_start <= 2 * low)
-    {
-        // the image in the low megabytes: the guest's addresses are the host's
-        if (ptr_initialize_pointers != NULL)
-        {
-            ptr_initialize_pointers(pointer_offset);
-        }
-        return 0;
-    }
-
     if (collect_host_ranges((image_start > GUEST_WINDOW_SIZE) ? image_start - GUEST_WINDOW_SIZE : 0, image_start + GUEST_WINDOW_SIZE) != 0)
     {
         return 3;
@@ -1826,88 +1378,6 @@ int initialize_pointer_offset(void)
         ptr_initialize_pointers(pointer_offset);
     }
     return 0;
-#elif defined(__APPLE__)
-    Dl_info info;
-    void *mem;
-    long page_size;
-    mach_port_t task;
-    mach_vm_address_t region_address, maddr, free_offset;
-    mach_vm_size_t region_size, min_length;
-    vm_region_basic_info_data_64_t rinfo;
-    mach_msg_type_number_t count;
-    mach_port_t object_name;
-
-    pointer_offset = 0;
-
-    if (!dladdr(&ptr_initialize_pointers, &info))
-    {
-        return 1;
-    }
-
-    if (info.dli_fbase == NULL)
-    {
-        return 2;
-    }
-
-    page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) page_size = 4096;
-
-    min_length = (1024*1024 + 65536 + (page_size - 1)) & ~(page_size - 1);
-
-    if ((uintptr_t)info.dli_fbase <= 2*min_length)
-    {
-        pointer_reserved_length = 0;
-        if (ptr_initialize_pointers != NULL)
-        {
-            ptr_initialize_pointers(pointer_offset);
-        }
-        return 0;
-    }
-
-    task = current_task();
-
-    maddr = free_offset = 0;
-    for (;;)
-    {
-        region_address = maddr;
-        count = VM_REGION_BASIC_INFO_COUNT_64;
-        if (KERN_SUCCESS != mach_vm_region(task, &region_address, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &rinfo, &count, &object_name)) break;
-
-        if (region_address - maddr >= min_length)
-        {
-            free_offset = region_address - min_length;
-        }
-
-        maddr = region_address + region_size;
-
-        if ((uintptr_t)info.dli_fbase < maddr)
-        {
-            if (free_offset == 0) break;
-
-            pointer_offset = free_offset;
-            pointer_reserved_length = 0;
-
-            // try reserving memory
-            mem = mmap((void *)free_offset, min_length, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-            if (mem == (void *)free_offset)
-            {
-                pointer_reserved_length = (unsigned int)min_length;
-            }
-            else
-            {
-                if (mem != MAP_FAILED) munmap(mem, min_length);
-            }
-
-            if (ptr_initialize_pointers != NULL)
-            {
-                ptr_initialize_pointers(pointer_offset);
-            }
-            return 0;
-        }
-    }
-
-    return 4;
-#endif
 }
 
 /* The guest's first size bytes, memory (zeros) while the process lives:
@@ -1927,7 +1397,4 @@ int commit_guest_low(unsigned int size)
 #endif
 }
 
-#endif /* PTROFS_64BIT */
-
 #endif /* __cplusplus */
-

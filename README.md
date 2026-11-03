@@ -208,7 +208,9 @@ the bottom up, the host's image at 64 MB (`android/gameloader.c` loads it there 
 Android), and a DOS program's own memory from the top down. What the host already
 had in the window (the image, the heap of `brk`) is left out. `SR_SDK_MEMORY_MAP=1`
 prints the map of the window at the start; a request that finds no room prints it
-as well.
+as well. The window is the only place of the guest's memory: there is no other way to
+find it, and a program that cannot set the window up stops with its map. The runtime
+is built for 64-bit hosts only (`PTROFS_64BIT`).
 
 The low memory is the same for every game, DOS or Windows: reserved with no access,
 so a NULL pointer faults, and the part a game needs becomes memory (zeros) with

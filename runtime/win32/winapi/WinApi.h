@@ -101,11 +101,7 @@ WINAPI_STORAGE __declspec(thread) unsigned int Winapi_LastError;
 #endif
 
 
-#ifdef PTROFS_64BIT
 #define INVALID_HANDLE32_VALUE (handle)(pointer_offset + 0xfffffffful)
-#else
-#define INVALID_HANDLE32_VALUE (handle)(0xfffffffful)
-#endif
 
 
 typedef enum _handle_types_ {

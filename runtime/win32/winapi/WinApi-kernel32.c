@@ -150,13 +150,8 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
-#ifdef PTROFS_64BIT
 #define PSEUDO_HANDLE_CURRENT_PROCESS ((void *)(pointer_offset + 0xfffffffful))
 #define PSEUDO_HANDLE_CURRENT_THREAD ((void *)(pointer_offset + 0xfffffffeul))
-#else
-#define PSEUDO_HANDLE_CURRENT_PROCESS ((void *)0xfffffffful)
-#define PSEUDO_HANDLE_CURRENT_THREAD ((void *)0xfffffffeul)
-#endif
 
 
 #if !defined(_WIN32)
@@ -607,11 +602,7 @@ static void Conv_filetime(filetime *ft, time_t seconds, long nanoseconds)
     ft->dwHighDateTime = (uint32_t) (dt_result >> 32);
 }
 
-#if defined(__APPLE__)
-#define STAT_NSEC(filestat, t) ((filestat)->st_##t##timensec)
-#else
 #define STAT_NSEC(filestat, t) ((filestat)->st_##t##tim.tv_nsec)
-#endif
 
 static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char *filename)
 {

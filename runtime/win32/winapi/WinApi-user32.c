@@ -270,11 +270,7 @@ static int post_command_redraw = 0;
 #define LR_LOADFROMFILE     0x0010
 #endif
 
-#ifdef PTROFS_64BIT
 #define PSEUDO_HANDLE_MAIN_WINDOW ((void *)(pointer_offset + 1ul))
-#else
-#define PSEUDO_HANDLE_MAIN_WINDOW ((void *)1ul)
-#endif
 
 
 typedef struct {

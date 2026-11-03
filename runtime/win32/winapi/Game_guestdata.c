@@ -37,8 +37,6 @@
 #include "Game_memory.h"
 #include "Game_guestdata.h"
 
-#ifdef PTROFS_64BIT
-
 extern "C" {
 extern uint32_t llasm_resolve_guest_code(uint32_t address, uint64_t ptrofs);
 extern void llasm_guest_data_range(uint32_t *range);
@@ -148,7 +146,5 @@ extern "C" void Game_GuestDataStart(void)
 
     llasm_copy_guest_data(pointer_offset);
 }
-
-#endif /* PTROFS_64BIT */
 
 #endif /* GAME_GUEST_DATA_IN_MEMORY */

@@ -43,9 +43,7 @@ static THREAD_LOCAL void *thread_stack_block = NULL;
 EXTERNCVAR uint32_t X86_InterruptFlag;
 EXTERNCVAR uint8_t stack_start;
 
-#ifdef PTROFS_64BIT
 extern uint64_t pointer_offset;
-#endif
 
 EXTERNC _cpu *x86_initialize_cpu(void)
 {
@@ -76,11 +74,7 @@ EXTERNC _cpu *x86_initialize_cpu(void)
     cpu->_st_sw_cond = 0;
     cpu->_st_cw = 0x037f;
 
-#ifdef PTROFS_64BIT
     cpu->_pointer_offset = pointer_offset;
-#else
-    cpu->_reserved1 = 0;
-#endif
 
     esp = PTR2REG(cpu->stack_top);
     eflags = 0x3202;

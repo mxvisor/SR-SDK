@@ -28,7 +28,9 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
+#if !defined(PTROFS_64BIT)
+#error "the guest's memory needs PTROFS_64BIT (a 64-bit host)"
+#endif
 
 int x86_init_malloc(void);
 void x86_deinit_malloc(void);
@@ -38,35 +40,20 @@ void x86_free(void *ptr);
 void *x86_calloc(unsigned int nmemb, unsigned int size);
 void *x86_realloc(void *ptr, unsigned int size);
 
-void *map_memory_32bit(unsigned int size, int only_address_space);
+/* the guest window (Game_memory.c): the 2 GB from pointer_offset up, which the
+ * guest sees as its addresses 0 .. 2 GB */
+int initialize_pointer_offset(void);
+/* size bytes of the window for the guest's heap, from the bottom up */
+void *map_memory_32bit(unsigned int size);
 void unmap_memory_32bit(void *mem, unsigned int size);
 /* size bytes at the highest free place of the guest's 2 GB that starts 64 KB
  * or more above the guest address above (a DOS program's own memory) */
 void *map_memory_32bit_top(unsigned int size, uint32_t above);
-/* stderr: the guest window, what is where in it, and what was wanted of it */
-void Game_MemoryReport(const char *what, uint64_t wanted);
-
-#ifdef PTROFS_64BIT
-
-int initialize_pointer_offset(void);
 /* the guest's first size bytes (its addresses from 0), readable and writable,
  * zeros: a part of the low memory of the guest window (pointer_reserved_length) */
 int commit_guest_low(unsigned int size);
-
-#endif
-
-#else
-
-#include <stdlib.h>
-
-#define x86_malloc malloc
-#define x86_free free
-#define x86_calloc calloc
-#define x86_realloc realloc
-
-#endif
-
-#ifdef PTROFS_64BIT
+/* stderr: the guest window, what is where in it, and what was wanted of it */
+void Game_MemoryReport(const char *what, uint64_t wanted);
 
 extern uint64_t pointer_offset;
 /* bytes at pointer_offset kept free for the guest's low memory (no access
@@ -77,13 +64,6 @@ extern unsigned int pointer_reserved_length;
 #define GAME_GUEST32_TO_PTR(value) ((uintptr_t)(pointer_offset + (uint32_t)(value)))
 /* host pointer -> guest flat address (32-bit) */
 #define GAME_PTR_TO_GUEST32(ptr) ((uint32_t)((uintptr_t)(ptr) - pointer_offset))
-
-#else
-
-#define GAME_GUEST32_TO_PTR(value) ((uintptr_t)(uint32_t)(value))
-#define GAME_PTR_TO_GUEST32(ptr) ((uint32_t)(uintptr_t)(ptr))
-
-#endif
 
 /* the same for an address that may be 0: a NULL pointer stays NULL */
 #define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? GAME_GUEST32_TO_PTR(a) : 0))
