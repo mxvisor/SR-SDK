@@ -41,6 +41,7 @@
 #include "tml.h"
 
 extern "C" int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel);
+extern "C" void Game_TsfLevelRegions(tsf *f);
 
 #define MIDI_LOG(...) do { if (getenv("GAME_MIDI_LOG") != NULL) fprintf(stderr, "midi: " __VA_ARGS__); } while (0)
 
@@ -413,6 +414,7 @@ static int midi_load_synth(void)
     if (path == NULL) { MIDI_LOG("no soundfont.sf2\n"); return 0; }
     midi_synth = tsf_load_filename(path);
     if (midi_synth == NULL) { MIDI_LOG("cannot load %s\n", path); return 0; }
+    Game_TsfLevelRegions(midi_synth);
 
     tsf_set_output(midi_synth,
                    Game_AudioChannels == 2 ? TSF_STEREO_INTERLEAVED : TSF_MONO,

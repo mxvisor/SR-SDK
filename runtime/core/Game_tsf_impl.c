@@ -31,6 +31,29 @@
 #define TML_IMPLEMENTATION
 #include "tml.h"
 
+/* The levels of the regions as fluidsynth (and the EMU cards the General MIDI
+ * banks were made on) gives them, called once after tsf_load_*:
+ * - the initial attenuation counts 0.4 of its centibels: TSF takes 0.01 dB per
+ *   centibel, 0.04 here (its clamp at 144 cB stays, fluidsynth's is the same);
+ *   with TSF's 0.01 the regions a bank attenuates the most (the cymbals and
+ *   the hi-hats) come out several dB too loud against the rest;
+ * - a resonant lowpass lowers the gain by half the height of its peak (SF2
+ *   2.01, 8.1.3, as fluidsynth's filter_gain); TSF keeps the full gain. */
+void Game_TsfLevelRegions(tsf *f)
+{
+    int p, r;
+
+    for (p = 0; p < f->presetNum; p++)
+    {
+        for (r = 0; r < f->presets[p].regionNum; r++)
+        {
+            struct tsf_region *region = &f->presets[p].regions[r];
+
+            region->attenuation = region->attenuation * 4.0f + region->initialFilterQ / 20.0f;
+        }
+    }
+}
+
 /* tsf_channel_note_on for presets whose regions share an exclusive class
  * (the hi-hats of the General MIDI drum kits are a left and a right sample in
  * one group): tsf_note_on makes each new region silence every voice of its
