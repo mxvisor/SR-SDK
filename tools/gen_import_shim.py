@@ -2,7 +2,7 @@
 """Generate the Win32 import shim of a port that does not use the SDK's winapi layer
 for everything (or, with winapi=yes, for the imports the layer lacks).
 
-Input: the game's tools/import_args.tsv, one import per line, tab separated:
+Input: the game's game/import_args.tsv, one import per line, tab separated:
 name, dll, argc (the stdcall argument count) and optionally `cdecl` (the caller
 removes the arguments, as with VFWAPIV functions such as ICDecompress).  Lines starting with '#' are
 settings or comments; the settings are:
@@ -49,7 +49,7 @@ while args:
     else:
         sys.exit(__doc__)
 GAME = os.path.join(ROOT, 'game')
-TSV = os.path.join(ROOT, 'tools', 'import_args.tsv')
+TSV = os.path.join(GAME, 'import_args.tsv')
 TODAY = datetime.date.today().isoformat()
 # the game leaves out the SDK's winapi layer (the key, not a comment that names it)
 NO_WINAPI = re.search(r'^\s*winapi\s*=\s*no\s*$', open(os.path.join(GAME, 'game.cfg')).read(), re.M) is not None

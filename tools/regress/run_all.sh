@@ -2,12 +2,13 @@
 # One command that answers "did I break anything?": SR's output for the reference
 # games, a build of every game, a smoke test of every port under Linux and Wine,
 # several runs of each port at different load addresses (ASLR), the hashes of
-# the llasm output, and the conversion of the disc images (tools/image). The result is compared with ref/results.tsv,
+# the llasm output, the conversion of the disc images (tools/image), and the names and the layout of the
+# game repositories. The result is compared with ref/results.tsv,
 # the reference run, and the differences are listed.
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke d3d aslr llasm image prefixes
+#   --only LIST      run only these checks, a comma list of: sr build smoke d3d aslr llasm image prefixes layout
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -22,11 +23,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, d3d, aslr, llasm-gen, llasm-llvm, image or prefixes; STATUS is ok, fail or
+# CHECK is sr, build, smoke, d3d, aslr, llasm-gen, llasm-llvm, image, prefixes or layout; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm image prefixes d3d"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
+ONLY="sr build smoke aslr llasm image prefixes layout d3d"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -162,6 +163,15 @@ if want prefixes; then
         out=$("$REGRESS_DIR/check_prefixes.py" "$id") && st=ok || st=fail
         [ "$st" = fail ] && printf '%s\n' "$out" | sed 's/^/    /' >&2
         add "$(printf 'prefixes\t%s\t%s\t%s' "$id" "$st" "$(printf '%s\n' "$out" | tail -1)")"
+    done
+fi
+
+if want layout; then
+    echo "## layout: ${GAMES[*]}" >&2
+    for id in "${GAMES[@]}"; do
+        out=$("$REGRESS_DIR/check_layout.py" "$id") && st=ok || st=fail
+        [ "$st" = fail ] && printf '%s\n' "$out" | sed 's/^/    /' >&2
+        add "$(printf 'layout\t%s\t%s\t%s' "$id" "$st" "$(printf '%s\n' "$out" | tail -1)")"
     done
 fi
 

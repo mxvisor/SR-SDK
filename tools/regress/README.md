@@ -1,7 +1,7 @@
 # tools/regress
 
 One command, `run_all.sh`, that answers "did I break anything?" after a change to
-SR, to `llasm.py` or to the SDK. It compares six things with a saved reference run:
+SR, to `llasm.py` or to the SDK. It compares these things with a saved reference run:
 
 | Check | What | Tool |
 |---|---|---|
@@ -12,6 +12,7 @@ SR, to `llasm.py` or to the SDK. It compares six things with a saved reference r
 | `image` | the disc images of `images.tsv` through `tools/image/image.py`: the hash of the cue sheet, the bin, the ISO and of every file of the data track must not change | `image_check.py` |
 | `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
 | `prefixes` | no tracked file of a game (name or text) carries another game's name or prefix (`markers.tsv`); the same for the SDK's `runtime/`, `scons/`, `android/` | `check_prefixes.py` |
+| `layout` | a game's repository holds no `research/`, no `tools/` and no `*.md` at its root, tracked or only on the disk: the notes of a port live in `<GAME>/` | `check_layout.py` |
 | `llasm-gen`, `llasm-llvm` | hashes of `build/gen/**` and of the LLVM IR that `llasm.py` makes of it | `llasm_hashes.py` |
 
 ```sh

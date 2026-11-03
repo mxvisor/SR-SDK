@@ -18,6 +18,11 @@ game repository
     └── SR/          SR itself, a submodule
 ```
 
+A game repository holds no notes and no research: no `research/`, no `tools/` and no
+`*.md` at its root. They go one level up, beside the repository. The input of
+`tools/gen_import_shim.py` is `game/import_args.tsv`. `tools/regress/check_layout.py`
+checks it (`run_all.sh --only layout`).
+
 SR is used as it is: the submodule `SR/` is the fork
 [mxvisor/SR](https://github.com/mxvisor/SR), branch `master`, which is upstream
 plus fixes that can be offered back to it. SR-SDK does not change SR.
@@ -358,7 +363,7 @@ tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
-tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (tools/import_args.tsv)
+tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
 tools/run_common.sh     the common part of a game's run-sdl.sh / run_sdl_wine.sh
 tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
