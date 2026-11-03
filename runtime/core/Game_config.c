@@ -189,12 +189,13 @@ void Game_ReadConfig(void)
             // digital sound
             read_on_off(param, &Game_Sound);
         }
-        else if ( strcasecmp(str, "Display_3D_Factor") == 0 ) // str equals "Display_3D_Factor"
+        else if ( strcasecmp(str, "Display_3D_Resolution") == 0 ) // str equals "Display_3D_Resolution"
         {
-            // the 3D at N times the resolution of the screen (1..8, Glide); <GAME>_3D_FACTOR wins
-            int n = 0;
-            if ((sscanf(param, "%i", &n) != 1) || (n < 1) || (n > 8)) fprintf(stderr, GAME_NAME ": unknown 3D factor: %s\n", param);
-            else Game_3DFactor = n;
+            // the 3D at WxH (Glide), off: the screen's; <GAME>_3D_RESOLUTION wins
+            int w = 0, h = 0;
+            if (strcasecmp(param, "off") == 0) Game_3DWidth = Game_3DHeight = 0;
+            else if ((sscanf(param, "%ix%i", &w, &h) != 2) || (w < 1) || (h < 1)) fprintf(stderr, GAME_NAME ": unknown 3D resolution: %s\n", param);
+            else { Game_3DWidth = w; Game_3DHeight = h; }
         }
 #ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"

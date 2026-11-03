@@ -31,11 +31,13 @@
  * Voodoo's LFB (2048 bytes) in memory it can address: a lock reads the buffer
  * into it, the unlock of a write lock puts it back. grBufferSwap shows the
  * front buffer scaled to the window, which the DirectDraw layer makes.
- * With Display_3D_Factor (or <GAME>_3D_FACTOR) N > 1 the colour buffers are N
- * times the size of the screen, and the coordinates of the guest stay those
- * of the screen: a lock reads a scaled down copy, and of what the guest wrote
- * only the pixels it changed go back, so the 3D under its 2D keeps the
- * resolution.
+ * The picture is 4:3, as a Voodoo's monitor showed every mode (640x400 has
+ * pixels 1.2 times as high as wide); the window opens 4:3. With
+ * Display_3D_Resolution=WxH (or <GAME>_3D_RESOLUTION) the colour buffers and
+ * the window are W x H, and the coordinates of the guest stay those of the
+ * screen: a lock reads a copy scaled down to the screen, and of what the
+ * guest wrote only the pixels it changed go back, so the 3D under its 2D
+ * keeps the resolution.
  * grAADrawPoint and grAADrawLine add the edges of glide2x's antialiasing
  * (the iterated alpha falls to 0 across them); the grAADrawPolygon* are drawn
  * without. Left out: the depth buffer, fog, alpha test, dithering, NCC (YIQ)
@@ -60,7 +62,7 @@
 #define FXFALSE 0
 
 /* of Game_vars.h, which cannot be included next to WinApi-config.h */
-extern int Game_3DFactor;
+extern int Game_3DWidth, Game_3DHeight;
 
 #ifdef __cplusplus
 extern "C" {
@@ -512,12 +514,14 @@ static SDL_Window *gl_window;
 static SDL_GLContext gl_context;
 static GLuint fbo[3], fbo_tex[3];
 static GLuint prog_draw;
-/* the 3D at k3d times the size of the screen: the buffers are fb_width x fb_height */
-static int k3d = 1;
+/* the buffers are fb_width x fb_height, sx x sy pixels of them a pixel of the
+ * screen; hires when that is not the screen's size */
+static int hires;
+static float sx = 1.0f, sy = 1.0f;
 static uint32_t fb_width, fb_height;
-static GLuint fbo_lo, fbo_lo_tex;   /* k3d > 1: a buffer at the size of the screen, for a lock */
-static GLuint lfb_tex;              /* k3d > 1: the pixels the guest changed */
-static uint16_t *base_mem[3];       /* k3d > 1: the shadow as GL has it (stride scr_width) */
+static GLuint fbo_lo, fbo_lo_tex;   /* hires: a buffer at the size of the screen, for a lock */
+static GLuint lfb_tex;              /* hires: the pixels the guest changed */
+static uint16_t *base_mem[3];       /* hires: the shadow as GL has it (stride scr_width) */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
@@ -593,31 +597,51 @@ static const char draw_fs[] =
     "    gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), a);\n"
     "}\n";
 
-/* Display_3D_Factor, <GAME>_3D_FACTOR over it; no more than GL can make */
-static int factor_3d(void)
+/* Display_3D_Resolution, <GAME>_3D_RESOLUTION over it (WxH); 0 x 0 when not set */
+static void resolution_3d(uint32_t *width, uint32_t *height)
 {
-    const char *e = getenv(GAME_ENV("3D_FACTOR"));
-    GLint max_size = 0;
-    int k = (e != NULL) ? atoi(e) : Game_3DFactor;
+    const char *e = getenv(GAME_ENV("3D_RESOLUTION"));
+    unsigned int w = 0, h = 0;
 
-    if (k < 1) k = 1;
-    if (k > 8) k = 8;
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
-    while (k > 1 && (scr_width * k > (uint32_t)max_size || scr_height * k > (uint32_t)max_size)) k--;
-    return k;
+    if (e != NULL)
+    {
+        if (sscanf(e, "%ux%u", &w, &h) != 2) w = h = 0;
+    }
+    else if (Game_3DWidth > 0 && Game_3DHeight > 0)
+    {
+        w = (unsigned int)Game_3DWidth;
+        h = (unsigned int)Game_3DHeight;
+    }
+    *width = w;
+    *height = h;
 }
 
 static void set_scissor(void)
 {
     glEnable(GL_SCISSOR_TEST);
-    glScissor(st.clip_minx * k3d, st.clip_miny * k3d, (st.clip_maxx - st.clip_minx) * k3d, (st.clip_maxy - st.clip_miny) * k3d);
+    int x0 = (int)lroundf(st.clip_minx * sx), y0 = (int)lroundf(st.clip_miny * sy);
+    int x1 = (int)lroundf(st.clip_maxx * sx), y1 = (int)lroundf(st.clip_maxy * sy);
+
+    glScissor(x0, y0, x1 - x0, y1 - y0);
 }
 
 static int gl_start(uint32_t nbuf)
 {
     uint32_t i;
+    GLint max_size = 0;
 
-    gl_window = Winapi_ScreenOpenGL(scr_width, scr_height);
+    resolution_3d(&fb_width, &fb_height);
+    if (fb_width == 0 || fb_height == 0)
+    {
+        fb_width = scr_width;
+        fb_height = scr_height;
+        /* the window 4:3 */
+        gl_window = Winapi_ScreenOpenGL(scr_width, scr_width * 3 / 4);
+    }
+    else
+    {
+        gl_window = Winapi_ScreenOpenGL(fb_width, fb_height);
+    }
     if (gl_window == NULL) return 0;
     gl_context = Game_GlCreateContext(gl_window, Display_VSync);
     if (gl_context == NULL) goto fail;
@@ -636,12 +660,19 @@ static int gl_start(uint32_t nbuf)
     u_chroma = glGetUniformLocation(prog_draw, "u_chroma");
     u_chroma_on = glGetUniformLocation(prog_draw, "u_chroma_on");
 
-    k3d = factor_3d();
-    fb_width = scr_width * k3d;
-    fb_height = scr_height * k3d;
-    if (k3d > 1)
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
+    if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
     {
-        eprintf("Glide: 3D at %ux%u (x%d)\n", fb_width, fb_height, k3d);
+        eprintf("Glide: %ux%u is more than OpenGL can make (%d)\n", fb_width, fb_height, max_size);
+        fb_width = scr_width;
+        fb_height = scr_height;
+    }
+    hires = (fb_width != scr_width || fb_height != scr_height);
+    sx = (float)fb_width / (float)scr_width;
+    sy = (float)fb_height / (float)scr_height;
+    if (hires)
+    {
+        eprintf("Glide: the 3D at %ux%u\n", fb_width, fb_height);
         if (!Game_GlFboCreate(&fbo_lo, &fbo_lo_tex, scr_width, scr_height, 0, NULL)) goto fail;
         glGenTextures(1, &lfb_tex);
         glBindTexture(GL_TEXTURE_2D, lfb_tex);
@@ -654,7 +685,7 @@ static int gl_start(uint32_t nbuf)
     for (i = 0; i < nbuf; i++)
     {
         if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], fb_width, fb_height, 0, NULL)) goto fail;
-        if (k3d > 1)
+        if (hires)
         {
             /* the colour buffers start black, as their shadows */
             base_mem[i] = (uint16_t *)calloc(scr_width * scr_height, 2);
@@ -703,7 +734,8 @@ static void gl_stop(void)
         free(base_mem[i]);
         base_mem[i] = NULL;
     }
-    k3d = 1;
+    hires = 0;
+    sx = sy = 1.0f;
     prog_draw = 0;
     gl_context = NULL;
     gl_ok = 0;
@@ -787,8 +819,8 @@ static void gl_flush(void)
 
     glUseProgram(prog_draw);
     glUniform2f(u_inv_size, 2.0f / (float)scr_width, 2.0f / (float)scr_height);
-    glUniform1f(u_psize, (float)k3d);
-    if (batch_mode == GL_LINES) glLineWidth((float)k3d);
+    glUniform1f(u_psize, sx);
+    if (batch_mode == GL_LINES) glLineWidth(sx);
     glUniform1i(u_cc, (int)cc);
     glUniform1i(u_asrc, (int)st.alpha_source);
     ccolor = color_to_argb(st.constant_color);
@@ -948,7 +980,7 @@ static void shadow_from_gl(int pi)
     uint32_t x, y;
 
     if (shadow_valid[pi]) return;
-    if (k3d > 1)
+    if (hires)
     {
         /* scaled down into the buffer of the screen's size */
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[pi]);
@@ -968,12 +1000,12 @@ static void shadow_from_gl(int pi)
         uint16_t *d = color_mem[pi] + y * scr_stride;
         const uint32_t *s = xfer + y * scr_width;
         for (x = 0; x < scr_width; x++) d[x] = argb_to_565(s[x]);
-        if (k3d > 1) memcpy(base_mem[pi] + y * scr_width, d, scr_width * 2);
+        if (hires) memcpy(base_mem[pi] + y * scr_width, d, scr_width * 2);
     }
     shadow_valid[pi] = 1;
 }
 
-/* k3d > 1: the pixels of the shadow the guest changed, drawn over the GL image */
+/* hires: the pixels of the shadow the guest changed, drawn over the GL image */
 static void shadow_changes_to_gl(int pi)
 {
     struct gl_vertex q[6];
@@ -1054,7 +1086,7 @@ static void shadow_to_gl(int pi)
 {
     uint32_t x, y;
 
-    if (k3d > 1)
+    if (hires)
     {
         shadow_changes_to_gl(pi);
         return;
@@ -1080,7 +1112,7 @@ static void present_front(void)
     if (!gl_ok) return;
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
-    Game_GlPresentTexture(gl_window, fbo_tex[pi], fb_width, fb_height,
+    Game_GlPresentTexture(gl_window, fbo_tex[pi], 4, 3,
                           (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
 }
 
@@ -1287,7 +1319,7 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
         {
             uint16_t *row = color_mem[pi] + y * scr_stride;
             for (x = 0; x < scr_width; x++) row[x] = c;
-            if (k3d > 1)
+            if (hires)
             {
                 for (x = 0; x < scr_width; x++) base_mem[pi][y * scr_width + x] = c;
             }

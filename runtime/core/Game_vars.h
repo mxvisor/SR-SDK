@@ -168,8 +168,8 @@ EXTERNAL_VARIABLE uint8_t *Game_ScreenViewpartOverlay[2];
 EXTERNAL_VARIABLE uint8_t *Game_ScreenViewpartOriginal[2];
 EXTERNAL_VARIABLE Game_OverlayInfo Game_OverlayDraw;
 EXTERNAL_VARIABLE Game_OverlayInfo Game_OverlayDisplay;
-EXTERNAL_VARIABLE int Game_3DFactor;            /* Display_3D_Factor: the 3D drawn at that many times
-                                                   the resolution of the screen (Glide); 0 or 1 = as is */
+EXTERNAL_VARIABLE int Game_3DWidth;             /* Display_3D_Resolution=WxH: the 3D drawn at that */
+EXTERNAL_VARIABLE int Game_3DHeight;            /* resolution (Glide); 0 = the screen's */
 
 EXTERNAL_VARIABLE int Game_ScreenshotFormat;    /* screenshot format
                                                     0: Original (LBM)
