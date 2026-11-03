@@ -292,7 +292,8 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 `Music` and the keys of the display, audio and input; with Direct3D also `3D=direct3d|software|off` and
 `Display_Antialiasing=off|on|2|4|8`, the multisampling of the scene on OpenGL, `on` 4 samples, the
 game's own `D3DRENDERSTATE_ANTIALIAS` 4 when the key is off; with Glide `Display_3D_Resolution=WxH|off`,
-the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION` over it). In `Game_hooks.h`, all optional:
+the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION` over it, and
+`Display_Antialiasing` too, the multisampling of the 3D, off unless set). In `Game_hooks.h`, all optional:
 
 | Macro | Meaning |
 |---|---|

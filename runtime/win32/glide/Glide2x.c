@@ -37,7 +37,9 @@
  * the window are W x H, and the coordinates of the guest stay those of the
  * screen: a lock reads a copy scaled down to the screen, and of what the
  * guest wrote only the pixels it changed go back, so the 3D under its 2D
- * keeps the resolution.
+ * keeps the resolution. Display_Antialiasing=2|4|8|16 (or <GAME>_ANTIALIASING)
+ * draws into multisampled buffers, resolved into the colour buffers before a
+ * lock reads or a swap shows them.
  * grAADrawPoint and grAADrawLine add the edges of glide2x's antialiasing
  * (the iterated alpha falls to 0 across them); the grAADrawPolygon* are drawn
  * without. Left out: the depth buffer, fog, alpha test, dithering, NCC (YIQ)
@@ -54,6 +56,7 @@
 #include "WinApi-config.h"
 #include "Game_memory.h"
 #include "WinApi-ddraw.h"
+#include "WinApi-d3d.h"
 #include "Game_hooks.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -522,6 +525,9 @@ static uint32_t fb_width, fb_height;
 static GLuint fbo_lo, fbo_lo_tex;   /* hires: a buffer at the size of the screen, for a lock */
 static GLuint lfb_tex;              /* hires: the pixels the guest changed */
 static uint16_t *base_mem[3];       /* hires: the shadow as GL has it (stride scr_width) */
+static int ms_samples;              /* antialiasing: the samples per pixel, 0 without */
+static GLuint ms_fbo[3], ms_color[3];
+static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
@@ -625,6 +631,75 @@ static void set_scissor(void)
     glScissor(x0, y0, x1 - x0, y1 - y0);
 }
 
+/* the frame buffer a colour buffer is drawn into */
+static GLuint draw_fbo(int pi)
+{
+    if (ms_samples == 0) return fbo[pi];
+    ms_dirty[pi] = 1;
+    return ms_fbo[pi];
+}
+
+/* antialiasing: the multisampled image into fbo[pi], for what reads it */
+static void ms_resolve(int pi)
+{
+    if (ms_samples == 0 || !ms_dirty[pi]) return;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, ms_fbo[pi]);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[pi]);
+    glDisable(GL_SCISSOR_TEST);
+    glBlitFramebuffer(0, 0, fb_width, fb_height, 0, 0, fb_width, fb_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    ms_dirty[pi] = 0;
+}
+
+/* the multisampled buffers of the colour buffers, up to the driver's samples;
+ * none (and ms_samples 0) if it makes none */
+static void ms_create(uint32_t nbuf)
+{
+    GLint max = 0;
+    int n = Winapi_Direct3DAntialiasing();
+    uint32_t i;
+
+    glGetIntegerv(GL_MAX_SAMPLES, &max);
+    if (n > max) n = max;
+    if (n < 2) return;
+    for (i = 0; i < nbuf; i++)
+    {
+        glGenFramebuffers(1, &ms_fbo[i]);
+        glGenRenderbuffers(1, &ms_color[i]);
+        glBindRenderbuffer(GL_RENDERBUFFER, ms_color[i]);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, n, GL_RGBA8, fb_width, fb_height);
+        glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo[i]);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, ms_color[i]);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            eprintf("Glide: no multisampled frame buffer (%d samples)\n", n);
+            return;
+        }
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ms_dirty[i] = 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    ms_samples = n;
+    eprintf("Glide: antialiasing, %d samples\n", n);
+}
+
+static void ms_delete(void)
+{
+    uint32_t i;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    for (i = 0; i < 3; i++)
+    {
+        if (ms_fbo[i] != 0) glDeleteFramebuffers(1, &ms_fbo[i]);
+        if (ms_color[i] != 0) glDeleteRenderbuffers(1, &ms_color[i]);
+        ms_fbo[i] = ms_color[i] = 0;
+        ms_dirty[i] = 0;
+    }
+    ms_samples = 0;
+}
+
 static int gl_start(uint32_t nbuf)
 {
     uint32_t i;
@@ -694,6 +769,8 @@ static int gl_start(uint32_t nbuf)
         shadow_valid[i] = 1;
         shadow_dirty[i] = 0;
     }
+    ms_create(nbuf);
+    if (ms_samples == 0) ms_delete();
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 #if !defined(GAME_GLES)
@@ -712,6 +789,7 @@ static void gl_stop(void)
 
     if (gl_context != NULL)
     {
+        ms_delete();
         for (i = 0; i < 3; i++)
         {
             Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
@@ -803,7 +881,7 @@ static void gl_flush(void)
     }
 
     if (shadow_dirty[pi]) shadow_to_gl(pi);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo[pi]);
+    glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(pi));
     glViewport(0, 0, fb_width, fb_height);
     set_scissor();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
@@ -980,6 +1058,7 @@ static void shadow_from_gl(int pi)
     uint32_t x, y;
 
     if (shadow_valid[pi]) return;
+    ms_resolve(pi);
     if (hires)
     {
         /* scaled down into the buffer of the screen's size */
@@ -1006,11 +1085,11 @@ static void shadow_from_gl(int pi)
 }
 
 /* hires: the pixels of the shadow the guest changed, drawn over the GL image */
+static void put_texture(GLuint target, GLuint tex, int blend);
+
 static void shadow_changes_to_gl(int pi)
 {
-    struct gl_vertex q[6];
     uint32_t x, y, changed = 0;
-    int i;
 
     for (y = 0; y < scr_height; y++)
     {
@@ -1039,7 +1118,17 @@ static void shadow_changes_to_gl(int pi)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     Game_GlTexSubImageBgra(scr_width, scr_height, xfer);
 
-    /* a quad of the screen: the texture's alpha picks the pixels */
+    /* the texture's alpha picks the pixels */
+    put_texture(draw_fbo(pi), lfb_tex, 1);
+}
+
+/* tex (the screen's rows, as xfer) over the whole of frame buffer target,
+ * blended by its alpha or not */
+static void put_texture(GLuint target, GLuint tex, int blend)
+{
+    struct gl_vertex q[6];
+    int i;
+
     memset(q, 0, sizeof(q));
     for (i = 0; i < 6; i++)
     {
@@ -1051,12 +1140,19 @@ static void shadow_changes_to_gl(int pi)
         q[i].tow = q[i].y;
         q[i].oow = 1.0f;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo[pi]);
+    glBindFramebuffer(GL_FRAMEBUFFER, target);
     glViewport(0, 0, fb_width, fb_height);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (blend)
+    {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    else
+    {
+        glDisable(GL_BLEND);
+    }
     glUseProgram(prog_draw);
     glUniform2f(u_inv_size, 2.0f / (float)scr_width, 2.0f / (float)scr_height);
     glUniform1f(u_psize, 1.0f);
@@ -1064,7 +1160,7 @@ static void shadow_changes_to_gl(int pi)
     glUniform1i(u_asrc, GR_ALPHASOURCE_TEXTURE_ALPHA);
     glUniform1i(u_chroma_on, 0);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, lfb_tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
     glUniform1i(u_tex, 0);
     glUniform2f(u_texscale, 1.0f / (float)scr_width, 1.0f / (float)scr_height);
     glUniform1i(u_usetex, 1);
@@ -1100,6 +1196,9 @@ static void shadow_to_gl(int pi)
     glBindTexture(GL_TEXTURE_2D, fbo_tex[pi]);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     Game_GlTexSubImageBgra(scr_width, scr_height, xfer);
+    /* antialiasing: the image drawn over the multisampled one too */
+    if (ms_samples != 0) put_texture(ms_fbo[pi], fbo_tex[pi], 0);
+    ms_dirty[pi] = 0;
     shadow_valid[pi] = 1;
     shadow_dirty[pi] = 0;
 }
@@ -1112,6 +1211,7 @@ static void present_front(void)
     if (!gl_ok) return;
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
+    ms_resolve(pi);
     Game_GlPresentTexture(gl_window, fbo_tex[pi], 4, 3,
                           (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
 }
@@ -1304,7 +1404,7 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
 
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo[pi]);
+    glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(pi));
     set_scissor();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(((argb >> 16) & 0xff) / 255.0f, ((argb >> 8) & 0xff) / 255.0f, (argb & 0xff) / 255.0f, 1.0f);

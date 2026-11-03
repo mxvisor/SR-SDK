@@ -206,7 +206,7 @@ void Game_ReadConfig(void)
         }
         else if ( strcasecmp(str, "Display_Antialiasing") == 0 ) // str equals "Display_Antialiasing"
         {
-            // the multisampling of the Direct3D scene on OpenGL; <GAME>_ANTIALIASING wins
+            // the multisampling of the Direct3D scene on OpenGL and of Glide; <GAME>_ANTIALIASING wins
             if (!Winapi_Direct3DSetAntialiasing(param)) fprintf(stderr, GAME_NAME ": unknown antialiasing: %s\n", param);
         }
 #endif
