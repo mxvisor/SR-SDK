@@ -152,6 +152,9 @@ uint32_t CCALL GetCommandLineA_c(void)
 #ifdef GAME_DIRECT3D_ARG
         length += sizeof(GAME_DIRECT3D_ARG) + 1;
 #endif
+#ifdef GAME_DIRECT3D_ANTIALIAS_ARG
+        length += sizeof(GAME_DIRECT3D_ANTIALIAS_ARG) + 1;
+#endif
         winapi_command_line = (char *)x86_malloc((unsigned int)length);
         if (winapi_command_line == NULL) return 0;
 
@@ -167,6 +170,11 @@ uint32_t CCALL GetCommandLineA_c(void)
 #ifdef GAME_DIRECT3D_ARG
         /* the switch with which the game takes its Direct3D device */
         if (Winapi_Direct3DEnabled()) strcat(text, " " GAME_DIRECT3D_ARG);
+#endif
+#ifdef GAME_DIRECT3D_ANTIALIAS_ARG
+        /* the game's own switch of the antialiasing (D3DRENDERSTATE_ANTIALIAS),
+         * given with Display_Antialiasing on */
+        if (Winapi_Direct3DEnabled() && (Winapi_Direct3DAntialiasing() != 0)) strcat(text, " " GAME_DIRECT3D_ANTIALIAS_ARG);
 #endif
     }
     return GUEST_ADDR(winapi_command_line);

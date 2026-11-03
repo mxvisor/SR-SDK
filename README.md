@@ -288,7 +288,9 @@ a console and the report of a crash. A game with its own window has its own `gam
 
 A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and its settings file in
 `runtime/core/Game_config.c` (`--config-file=`, else `<program>.cfg` in the game directory; `Sound`,
-`Music` and the keys of the display, audio and input). In `Game_hooks.h`, all optional:
+`Music` and the keys of the display, audio and input; with Direct3D also `3D=direct3d|software|off` and
+`Display_Antialiasing=off|on|2|4|8`, the multisampling of the scene on OpenGL, `on` 4 samples, the
+game's own `D3DRENDERSTATE_ANTIALIAS` 4 when the key is off). In `Game_hooks.h`, all optional:
 
 | Macro | Meaning |
 |---|---|
@@ -311,6 +313,7 @@ A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and it
 | `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D`; the log says which renderer runs |
 | `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
+| `GAME_DIRECT3D_ANTIALIAS_ARG` | the game's own switch of the antialiasing (it sets `D3DRENDERSTATE_ANTIALIAS`), added to its command line when Direct3D is on and `Display_Antialiasing` of the settings file (or `<ENVP>_ANTIALIASING`) asks for it |
 | `GAME_GUEST_LOW_MEMORY()` | the low memory of the guest window: how much of the guest's address space from `pointer_offset` up has to stay free of the host and of the guest's heap (default 1 MiB + 64 KiB, at most 64 MiB) |
 | `GAME_GUEST_PAGE0` | defined: the guest's page at address 0 reads as zeros and takes writes, as the DOS memory Windows 9x maps there |
 | `GAME_PROC_LOOKUP(name)` | `GetProcAddress` asks the game first: the guest address of the procedure, or 0 for the layer's table |

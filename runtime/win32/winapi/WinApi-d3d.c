@@ -101,6 +101,28 @@ int Winapi_Direct3DSetMode(const char *mode)
     return 1;
 }
 
+/* Display_Antialiasing of the config file: the samples per pixel of the GL scene
+ * (0 off); <GAME>_ANTIALIASING overrides it */
+static int d3d_cfg_antialiasing;
+
+int Winapi_Direct3DSetAntialiasing(const char *value)
+{
+    int n = 0;
+
+    if (strcasecmp(value, "off") == 0) n = 0;
+    else if (strcasecmp(value, "on") == 0) n = 4;
+    else if ((sscanf(value, "%i", &n) != 1) || ((n != 2) && (n != 4) && (n != 8) && (n != 16))) return 0;
+    d3d_cfg_antialiasing = n;
+    return 1;
+}
+
+int Winapi_Direct3DAntialiasing(void)
+{
+    const char *e = getenv(GAME_ENV("ANTIALIASING"));
+    if (e != NULL) return (strcasecmp(e, "on") == 0) ? 4 : atoi(e);
+    return d3d_cfg_antialiasing;
+}
+
 /* the OpenGL window could not be made: Direct3D goes on with the software rasteriser */
 void Winapi_Direct3DNoGL(void)
 {
@@ -660,12 +682,13 @@ uint32_t CCALL IDirect3DDevice2_BeginScene_c(void *lpThis)
     dev->vertices = 0;
 #ifdef GAME_D3D_GL
     /* the GL backend takes the scene when it can (else the software one) */
-    dev->gl_scene = Winapi_Direct3DGL() && Winapi_D3dGLBeginScene(dev->target);
-    if (dev->gl_scene)
+    /* the states first: the scene's frame buffer depends on RS_ANTIALIAS */
+    if (Winapi_Direct3DGL())
     {
         uint32_t s;
         for (s = 0; s < MAX_STATES; s++) Winapi_D3dGLSetState(s, dev->state[s]);
     }
+    dev->gl_scene = Winapi_Direct3DGL() && Winapi_D3dGLBeginScene(dev->target);
 #endif
     return D3D_OK;
 }

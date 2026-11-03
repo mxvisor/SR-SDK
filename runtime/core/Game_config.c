@@ -196,6 +196,11 @@ void Game_ReadConfig(void)
             // <GAME>_D3D and <GAME>_D3D_GL win (WinApi-d3d.c)
             if (!Winapi_Direct3DSetMode(param)) fprintf(stderr, GAME_NAME ": unknown 3D mode: %s\n", param);
         }
+        else if ( strcasecmp(str, "Display_Antialiasing") == 0 ) // str equals "Display_Antialiasing"
+        {
+            // the multisampling of the Direct3D scene on OpenGL; <GAME>_ANTIALIASING wins
+            if (!Winapi_Direct3DSetAntialiasing(param)) fprintf(stderr, GAME_NAME ": unknown antialiasing: %s\n", param);
+        }
 #endif
         else if ( strcasecmp(str, "Music") == 0 ) // str equals "Music"
         {

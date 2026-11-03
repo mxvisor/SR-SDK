@@ -31,6 +31,12 @@
  * fragment, u_mode is the blend mode, u_afunc the alpha test, u_fog the vertex
  * fog (its factor rides in a_pos.w), glBlendFunc the alpha blend.
  *
+ * Antialiasing (the game's RS_ANTIALIAS, or Display_Antialiasing of the
+ * config file): the scene is drawn into a multisampled FBO of the same size
+ * instead, the guest's picture goes into it as a quad of scene_tex, and every
+ * readback resolves it into scene_fbo first; the edges come out smoothed at
+ * the resolution of the target.
+ *
  * Compromises: the depth attachment is 24 bit, not the guest's 16; the depth
  * of the guest's Z-buffer is neither uploaded nor read back (a scene starts
  * with a clear one, the game clears it every frame); a flat primitive takes
@@ -45,8 +51,10 @@
 #include "WinApi-config.h"
 #include "WinApi-ddraw.h"
 #include "WinApi-ddraw-priv.h"
+#include "WinApi-d3d.h"
 #include "WinApi-d3dgl.h"
 
+#define RS_ANTIALIAS        2
 #define RS_TEXTUREADDRESS   3
 #define RS_TEXTUREPERSPECTIVE 4
 #define RS_ZENABLE          7
@@ -78,6 +86,10 @@ static SDL_Window *gl_window = NULL;
 
 static GLuint scene_fbo = 0, scene_tex = 0, scene_depth = 0;
 static int scene_w = 0, scene_h = 0;
+/* the multisampled frame buffer of an antialiased scene (ms_samples 0: none) */
+static GLuint ms_fbo = 0, ms_color = 0, ms_depth = 0;
+static int ms_samples = 0;
+static int scene_ms = 0;                /* the scene draws into ms_fbo */
 static struct IDirectDrawSurface_c *scene_target = NULL;
 static int scene_active = 0;
 static int scene_has_z = 0;             /* the target has a Z-buffer attached */
@@ -282,11 +294,107 @@ static void bgra_to_surface(const uint32_t *src, struct IDirectDrawSurface_c *s)
 
 /* ---- the scene's FBO ---- */
 
+static void ms_fbo_delete(void)
+{
+    if (ms_fbo == 0) return;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &ms_fbo);
+    glDeleteRenderbuffers(1, &ms_color);
+    glDeleteRenderbuffers(1, &ms_depth);
+    ms_fbo = ms_color = ms_depth = 0;
+    ms_samples = 0;
+}
+
 static void scene_fbo_delete(void)
 {
+    ms_fbo_delete();
     if ((scene_fbo == 0) && (scene_tex == 0)) return;
     Game_GlFboDelete(&scene_fbo, &scene_tex, 1, &scene_depth);
     scene_w = scene_h = 0;
+}
+
+/* the multisampled FBO of the scene's size with up to samples per pixel (the
+ * driver's maximum); 0 if the driver makes none */
+static int ms_fbo_create(int samples)
+{
+    GLint max = 0;
+
+    glGetIntegerv(GL_MAX_SAMPLES, &max);
+    if (samples > max) samples = max;
+    if (samples < 2) return 0;
+
+    glGenFramebuffers(1, &ms_fbo);
+    glGenRenderbuffers(1, &ms_color);
+    glGenRenderbuffers(1, &ms_depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, ms_color);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, scene_w, scene_h);
+    glBindRenderbuffer(GL_RENDERBUFFER, ms_depth);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, scene_w, scene_h);
+    glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, ms_color);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, ms_depth);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        fprintf(stderr, "Game_D3dGL: no multisampled frame buffer (%d samples)\n", samples);
+        ms_fbo_delete();
+        return 0;
+    }
+    ms_samples = samples;
+    fprintf(stderr, "Game_D3dGL: antialiasing, %d samples\n", samples);
+    return 1;
+}
+
+/* the frame buffer the scene draws into */
+static void scene_bind(void)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, scene_ms ? ms_fbo : scene_fbo);
+}
+
+/* scene_tex as a quad over the multisampled FBO: rows and texels as they are
+ * (row 0 of both is the screen's top), no depth, no blend */
+static void ms_put_scene_tex(void)
+{
+    static const gl_vertex quad_template[4] = {
+        { 0, 0, 0, 1, 0, 0, 1, 255, 255, 255, 255 },
+        { 1, 0, 0, 1, 1, 0, 1, 255, 255, 255, 255 },
+        { 0, 1, 0, 1, 0, 1, 1, 255, 255, 255, 255 },
+        { 1, 1, 0, 1, 1, 1, 1, 255, 255, 255, 255 },
+    };
+    gl_vertex quad[4];
+    int i;
+
+    for (i = 0; i < 4; i++)
+    {
+        quad[i] = quad_template[i];
+        quad[i].x *= (float)scene_w;
+        quad[i].y *= (float)scene_h;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo);
+    glViewport(0, 0, scene_w, scene_h);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glUseProgram(draw_prog);
+    glUniform2f(u_scale, 2.0f / (float)scene_w, 2.0f / (float)scene_h);
+    glUniform1i(u_mode, 1);
+    glUniform1i(u_alphatest, 0);
+    glUniform1i(u_afunc, 0);
+    glUniform1i(u_fog, 0);
+    glBindTexture(GL_TEXTURE_2D, scene_tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &quad[0].x);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &quad[0].s);
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), &quad[0].r);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+    glUseProgram(0);
 }
 
 static void scene_upload(struct IDirectDrawSurface_c *target)
@@ -297,6 +405,16 @@ static void scene_upload(struct IDirectDrawSurface_c *target)
     glBindTexture(GL_TEXTURE_2D, scene_tex);
     Game_GlTexSubImageBgra(scene_w, scene_h, buf);
     free(buf);
+    if (scene_ms) ms_put_scene_tex();
+    scene_bind();
+}
+
+/* the samples the scene wants: the setting's, else 4 when the game asks */
+static int scene_samples(void)
+{
+    int n = Winapi_Direct3DAntialiasing();
+    if (n == 0 && gl_state[RS_ANTIALIAS] != 0) n = 4;
+    return n;
 }
 
 int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
@@ -313,6 +431,20 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
         scene_h = (int)target->height;
     }
 
+    /* the multisampled FBO when the scene wants one (made again when the
+     * number changes); without it the plain one */
+    {
+        int want = scene_samples();
+        static int failed_for = -1;
+
+        if ((want < 2) || (want != ms_samples)) ms_fbo_delete();
+        if ((want >= 2) && (ms_fbo == 0) && (failed_for != want))
+        {
+            if (!ms_fbo_create(want)) failed_for = want;
+        }
+        scene_ms = (ms_fbo != 0);
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -320,7 +452,8 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
     glDisable(GL_CULL_FACE);
     glDepthMask(GL_FALSE);
 
-    /* the guest's picture (its clears and 2D blits) under whatever comes */
+    /* the guest's picture (its clears and 2D blits) under whatever comes;
+     * the scene's frame buffer is bound after it */
     scene_upload(target);
 
     /* screen row 0 of the D3D target is the first row of the FBO's memory */
@@ -345,6 +478,13 @@ static void scene_readback(struct IDirectDrawSurface_c *target)
     uint8_t *buf = (uint8_t *)malloc((size_t)scene_w * scene_h * 4);
     uint32_t i, n;
     if (buf == NULL) return;
+    if (scene_ms)
+    {
+        /* the samples resolved into scene_fbo, whose colour is read */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, ms_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_fbo);
+        glBlitFramebuffer(0, 0, scene_w, scene_h, 0, 0, scene_w, scene_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     /* GL_RGBA + GL_UNSIGNED_BYTE is the one readback every driver has;
@@ -368,6 +508,7 @@ static void scene_readback(struct IDirectDrawSurface_c *target)
     }
     bgra_to_surface((const uint32_t *)buf, target);
     free(buf);
+    scene_bind();
 }
 
 void Winapi_D3dGLEndScene(struct IDirectDrawSurface_c *target)
@@ -396,7 +537,6 @@ void Winapi_D3dGLUpload(struct IDirectDrawSurface_c *target)
     if (!scene_active || (target == NULL) || (target != scene_target)) return;
     if (scene_synced != target) return;
     scene_synced = NULL;
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
     scene_upload(target);
 }
 
@@ -412,7 +552,7 @@ void Winapi_D3dGLClear(struct IDirectDrawSurface_c *target,
     if (y2 > scene_h) y2 = scene_h;
     if ((x1 >= x2) || (y1 >= y2)) return;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+    scene_bind();
 
     /* the scissor's origin is the FBO's bottom, and the rows here are the
      * screen's top down */
@@ -730,7 +870,7 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
     else textured = 0;
     flat = (gl_state[RS_SHADEMODE] == 1);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+    scene_bind();
 
     if ((clip_w > 0) && (clip_h > 0))
     {
@@ -872,6 +1012,7 @@ void Winapi_D3dGLShutdown(void)
     present_w = present_h = 0;
     scene_fbo_delete();
     scene_active = 0;
+    scene_ms = 0;
     scene_has_z = 0;
     scene_target = NULL;
     if (gl_context != NULL)

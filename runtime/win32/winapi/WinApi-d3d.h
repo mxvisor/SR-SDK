@@ -44,6 +44,12 @@ int Winapi_Direct3DEnabled(void);
 /* the config file's 3D=direct3d|software|off; 0 if the value is unknown */
 int Winapi_Direct3DSetMode(const char *mode);
 
+/* the config file's Display_Antialiasing=off|on|2|4|8|16; 0 if the value is unknown */
+int Winapi_Direct3DSetAntialiasing(const char *value);
+/* the samples per pixel the setting asks of the GL scene, 0 for none
+ * (<GAME>_ANTIALIASING wins); the game's own D3DRENDERSTATE_ANTIALIAS takes 4 */
+int Winapi_Direct3DAntialiasing(void);
+
 /* the OpenGL window failed: go on with the software rasteriser */
 void Winapi_Direct3DNoGL(void);
 
