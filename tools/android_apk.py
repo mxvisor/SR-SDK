@@ -179,6 +179,11 @@ def main():
     text, count = re.subn(r'android:name="SDLActivity"', 'android:name=".GameActivity"', text)
     if count != 1:
         fail("SDL's AndroidManifest.xml: no SDLActivity to replace")
+    # landscape only, flipping by 180 degrees with the sensor (also with the auto-rotation
+    # of the phone off): the games have no portrait picture and the touch layout is a landscape one
+    text, count = re.subn(r'(<activity android:name="\.GameActivity")', r'\1\n            android:screenOrientation="sensorLandscape"', text)
+    if count != 1:
+        fail("SDL's AndroidManifest.xml: no activity to give an orientation")
     # SDL's template asks to be started when a USB device is plugged in
     text = re.sub(r'\s*<!-- Let Android know that we can handle some USB devices[^>]*-->'
                   r'\s*<intent-filter>\s*<action android:name="android\.hardware\.usb\.'
