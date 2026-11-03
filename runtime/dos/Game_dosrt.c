@@ -192,13 +192,14 @@ static uint8_t idt[2048];
 int Game_DosRuntimeInit(uint32_t lowmem_base, uint32_t lowmem_size, uint32_t first_free)
 {
     if (Game_FilesInit() != 0) return -1;
-    /* No interrupt vector table or BIOS data area at 0: the translated code
-     * reads neither, and address 0 cannot be mapped (vm.mmap_min_addr,
-     * Windows). */
+    /* No interrupt vector table or BIOS data area at 0, but the memory is
+     * there, zeros: on DOS a null pointer reads the vectors, and a game that
+     * reads through one goes on. */
     if (Game_DosMemInit(lowmem_base, lowmem_size, first_free) != 0) {
         fprintf(stderr, GAME_NAME ": could not map DOS memory (%u KiB)\n", lowmem_size / 1024u);
         return -1;
     }
+    if (lowmem_base != 0) Game_DosMapLow(0, lowmem_base);
     Game_DosIdtBase = GAME_PTR_TO_GUEST32(idt);
     Game_DosIntInit(GAME_PTR_TO_GUEST32(&c_Game_DosNullIsr));
     Game_DosFileInit();
