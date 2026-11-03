@@ -42,6 +42,7 @@
 
 extern "C" int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel);
 extern "C" void Game_TsfLevelRegions(tsf *f);
+extern "C" int Game_TsfChannelMidiControl(tsf *f, int channel, int controller, int value);
 
 #define MIDI_LOG(...) do { if (getenv("GAME_MIDI_LOG") != NULL) fprintf(stderr, "midi: " __VA_ARGS__); } while (0)
 
@@ -330,7 +331,7 @@ static void midi_dispatch(double until_ms)
             tsf_channel_set_presetnumber(midi_synth, ch, m->program, ch == 9);
             break;
         case TML_CONTROL_CHANGE:
-            tsf_channel_midi_control(midi_synth, ch, m->control, m->control_value);
+            Game_TsfChannelMidiControl(midi_synth, ch, m->control, m->control_value);
             break;
         case TML_PITCH_BEND:
             tsf_channel_set_pitchwheel(midi_synth, ch, m->pitch_bend);

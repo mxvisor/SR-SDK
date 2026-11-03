@@ -61,7 +61,7 @@ void Game_TsfLevelRegions(tsf *f)
  * sample of the pair sounds (the hi-hats come out on the right side alone).
  * Here the voices of earlier notes in the group are silenced first and the
  * note starts without groups, which leaves the pair whole. */
-int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel)
+static int tsf_note_on_groups(tsf *f, int channel, int key, float vel)
 {
     struct tsf_preset *preset;
     struct tsf_region *region, *end;
@@ -111,6 +111,49 @@ int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel)
         }
         result = tsf_channel_note_on(f, channel, key, vel);
         for (region = preset->regions, i = 0; i < n; region++, i++) region->group = saved[i];
+    }
+    return result;
+}
+
+/* The velocity of a note makes its level as the square of the velocity, 40 dB
+ * over the whole range, as the General MIDI synthesizers and the SoundFont
+ * specification have it; TinySoundFont has the velocity itself, 20 dB.  The
+ * voices of the note get the second half, and the exclusive classes work as in
+ * tsf_note_on_groups. */
+int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel)
+{
+    unsigned int first = f->voicePlayIndex;
+    struct tsf_voice *v, *vend;
+    int result = tsf_note_on_groups(f, channel, key, vel);
+
+    if (vel > 0.0f && vel < 1.0f)
+    {
+        float db = tsf_gainToDecibels(vel);
+
+        for (v = f->voices, vend = v + f->voiceNum; v != vend; v++)
+        {
+            if (v->playingPreset != -1 && v->playIndex >= first && v->playIndex < f->voicePlayIndex)
+                v->noteGainDB += db;
+        }
+    }
+    return result;
+}
+
+/* tsf_channel_midi_control with the volume (7) and expression (11) as the
+ * square of their values each, the curve of the General MIDI synthesizers (the
+ * level is 40 dB down at a tenth of the value); TinySoundFont raises the product
+ * to the third power, and a part at the volume 55 is 7 dB quieter than it
+ * should be next to the one at 127. */
+int Game_TsfChannelMidiControl(tsf *f, int channel, int controller, int value)
+{
+    int result = tsf_channel_midi_control(f, channel, controller, value);
+
+    if (result && (controller == 7 || controller == 39 || controller == 11 || controller == 43))
+    {
+        struct tsf_channel *c = &f->channels->channels[channel];
+        float x = (c->midiVolume / 16383.0f) * (c->midiExpression / 16383.0f);
+
+        tsf_channel_set_volume(f, channel, x * x);
     }
     return result;
 }
