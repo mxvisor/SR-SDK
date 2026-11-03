@@ -170,6 +170,7 @@ EXTERNAL_VARIABLE Game_OverlayInfo Game_OverlayDraw;
 EXTERNAL_VARIABLE Game_OverlayInfo Game_OverlayDisplay;
 EXTERNAL_VARIABLE int Game_3DWidth;             /* Display_3D_Resolution=WxH: the 3D drawn at that */
 EXTERNAL_VARIABLE int Game_3DHeight;            /* resolution (Glide); 0 = the screen's */
+EXTERNAL_VARIABLE char Game_Shader[16];         /* Display_Shader=none|smooth|pixelart|scanlines|crt: the 2D filter (Game_gl.h) */
 
 EXTERNAL_VARIABLE int Game_ScreenshotFormat;    /* screenshot format
                                                     0: Original (LBM)

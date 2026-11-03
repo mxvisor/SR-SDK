@@ -197,6 +197,11 @@ void Game_ReadConfig(void)
             else if ((sscanf(param, "%ix%i", &w, &h) != 2) || (w < 1) || (h < 1)) fprintf(stderr, GAME_NAME ": unknown 3D resolution: %s\n", param);
             else { Game_3DWidth = w; Game_3DHeight = h; }
         }
+        else if ( strcasecmp(str, "Display_Shader") == 0 ) // str equals "Display_Shader"
+        {
+            // the 2D filter of the picture, none or a name of Game_gl.h; <GAME>_SHADER wins
+            snprintf(Game_Shader, sizeof(Game_Shader), "%s", param);
+        }
 #ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
         {

@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <SDL.h>
 #include "Game_gl.h"
@@ -246,6 +247,103 @@ static const char present_fs[] =
     "    gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0);\n"
     "}\n";
 
+/* The 2D filters of Display_Shader (a mod): the fragment shaders of the picture of a
+ * game that draws a small bitmap (u_size texels) to a window (u_out pixels). 0 is the
+ * plain present above (nearest or linear, as the game asks). The texture is sampled
+ * with GL_LINEAR where the shader does its own sharpening. */
+
+static const char filter_head[] =
+    "uniform sampler2D u_tex;\n"
+    "uniform vec2 u_size;\n"
+    "uniform vec2 u_out;\n"
+    "varying vec2 v_uv;\n";
+
+/* bilinear only on the edges of the texels: crisp at any scale, no shimmering */
+static const char filter_smooth_fs[] =
+    "void main() {\n"
+    "    vec2 p = v_uv * u_size;\n"
+    "    vec2 i = floor(p);\n"
+    "    vec2 s = u_out / u_size;\n"
+    "    vec2 r = clamp((p - i - 0.5) * s + 0.5, 0.0, 1.0);\n"
+    "    gl_FragColor = vec4(texture2D(u_tex, (i + r) / u_size).rgb, 1.0);\n"
+    "}\n";
+
+/* Scale2x (EPX): the corners of a texel are rounded off where the neighbours say a diagonal line is */
+static const char filter_pixelart_fs[] =
+    "vec3 px(vec2 c) { return texture2D(u_tex, (c + 0.5) / u_size).rgb; }\n"
+    "bool eq(vec3 a, vec3 b) { return all(lessThan(abs(a - b), vec3(0.004))); }\n"
+    "void main() {\n"
+    "    vec2 p = v_uv * u_size;\n"
+    "    vec2 i = floor(p);\n"
+    "    vec2 f = p - i;\n"
+    "    vec3 P = px(i);\n"
+    "    vec3 A = px(i + vec2(0.0, -1.0));\n"
+    "    vec3 C = px(i + vec2(-1.0, 0.0));\n"
+    "    vec3 B = px(i + vec2(1.0, 0.0));\n"
+    "    vec3 D = px(i + vec2(0.0, 1.0));\n"
+    "    vec3 o = P;\n"
+    "    bool left = f.x < 0.5;\n"
+    "    bool up = f.y < 0.5;\n"
+    "    if (up && left) { if (eq(C, A) && !eq(C, D) && !eq(A, B)) o = A; }\n"
+    "    else if (up) { if (eq(A, B) && !eq(A, C) && !eq(B, D)) o = B; }\n"
+    "    else if (left) { if (eq(D, C) && !eq(D, B) && !eq(C, A)) o = C; }\n"
+    "    else { if (eq(B, D) && !eq(B, A) && !eq(D, C)) o = D; }\n"
+    "    gl_FragColor = vec4(o, 1.0);\n"
+    "}\n";
+
+/* a row of the picture is a lit line and a dark gap, as on a tube */
+static const char filter_scanlines_fs[] =
+    "void main() {\n"
+    "    vec2 p = v_uv * u_size;\n"
+    "    vec2 i = floor(p);\n"
+    "    vec2 s = u_out / u_size;\n"
+    "    float rx = clamp((p.x - i.x - 0.5) * s.x + 0.5, 0.0, 1.0);\n"
+    "    vec3 c = texture2D(u_tex, vec2(i.x + rx, i.y + 0.5) / u_size).rgb;\n"
+    "    float d = (fract(p.y) - 0.5) * 2.0;\n"
+    "    float beam = exp(-d * d * 2.2);\n"
+    "    gl_FragColor = vec4(c * (0.25 + 0.95 * beam), 1.0);\n"
+    "}\n";
+
+/* scanlines, the mask of the three colours, a darker edge of the screen */
+static const char filter_crt_fs[] =
+    "void main() {\n"
+    "    vec2 p = v_uv * u_size;\n"
+    "    vec2 i = floor(p);\n"
+    "    vec2 s = u_out / u_size;\n"
+    "    float rx = clamp((p.x - i.x - 0.5) * s.x + 0.5, 0.0, 1.0);\n"
+    "    vec3 c = texture2D(u_tex, vec2(i.x + rx, i.y + 0.5) / u_size).rgb;\n"
+    "    float d = (fract(p.y) - 0.5) * 2.0;\n"
+    "    float beam = exp(-d * d * 2.2);\n"
+    "    float m = mod(floor(gl_FragCoord.x), 3.0);\n"
+    "    vec3 mask = vec3(m < 1.0 ? 1.0 : 0.72, (m >= 1.0 && m < 2.0) ? 1.0 : 0.72, m >= 2.0 ? 1.0 : 0.72);\n"
+    "    vec2 q = v_uv - 0.5;\n"
+    "    float vig = 1.0 - 0.55 * dot(q, q);\n"
+    "    gl_FragColor = vec4(c * (0.25 + 0.95 * beam) * mask * 1.2 * vig, 1.0);\n"
+    "}\n";
+
+static const char *const filter_names[GAME_GL_SHADERS] = { "none", "smooth", "pixelart", "scanlines", "crt" };
+static const char *const filter_body[GAME_GL_SHADERS] = { NULL, filter_smooth_fs, filter_pixelart_fs, filter_scanlines_fs, filter_crt_fs };
+/* the filters sample by themselves; EPX needs the nearest texel */
+static const int filter_linear[GAME_GL_SHADERS] = { 0, 1, 0, 0, 0 };
+
+int Game_GlShaderParse(const char *name)
+{
+    int i;
+
+    if (name == NULL) return -1;
+    if (strcasecmp(name, "off") == 0) return 0;
+    for (i = 0; i < GAME_GL_SHADERS; i++)
+    {
+        if (strcasecmp(name, filter_names[i]) == 0) return i;
+    }
+    return -1;
+}
+
+const char *Game_GlShaderName(int shader)
+{
+    return ((shader >= 0) && (shader < GAME_GL_SHADERS)) ? filter_names[shader] : "none";
+}
+
 #if defined(GL_TOUCH_GAMEPAD)
 
 /* The buttons of the touch gamepad over the picture. touchgamepad.c draws with
@@ -338,27 +436,59 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
 
 #endif
 
-void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
-                           int width, int height, int origin_upper_left,
-                           int linear_filter)
+static void present_texture(SDL_Window *window, GLuint tex,
+                            int width, int height, int origin_upper_left,
+                            int linear_filter, int shader)
 {
     static const float pos[8] = { -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f, 1.0f,  1.0f, 1.0f };
-    static GLuint prog;
-    static GLint u_tex;
+    static GLuint progs[GAME_GL_SHADERS];
+    static GLint u_tex[GAME_GL_SHADERS], u_size[GAME_GL_SHADERS], u_out[GAME_GL_SHADERS];
     static SDL_GLContext prog_context;
+    GLuint prog;
     float uv[8], top, bottom;
-    int ww, wh, vx, vy, vw, vh;
+    int ww, wh, vx, vy, vw, vh, aw = width, ah = height, i;
 
     if (window == NULL || tex == 0) return;
+    if (shader < 0 || shader >= GAME_GL_SHADERS) shader = 0;
 
-    if (prog == 0 || prog_context != SDL_GL_GetCurrentContext())
+    if (prog_context != SDL_GL_GetCurrentContext())
     {
-        if (prog != 0) glDeleteProgram(prog);
-        prog = Game_GlProgram(present_vs, present_fs, "a_pos", "a_uv", NULL, "Game_Gl present");
-        u_tex = (prog != 0) ? glGetUniformLocation(prog, "u_tex") : 0;
+        for (i = 0; i < GAME_GL_SHADERS; i++)
+        {
+            if (progs[i] != 0) glDeleteProgram(progs[i]);
+            progs[i] = 0;
+        }
         prog_context = SDL_GL_GetCurrentContext();
-        if (prog == 0) return;
     }
+    if (progs[shader] == 0)
+    {
+        if (shader == 0)
+        {
+            progs[0] = Game_GlProgram(present_vs, present_fs, "a_pos", "a_uv", NULL, "Game_Gl present");
+        }
+        else
+        {
+            char *fs = (char *)malloc(strlen(filter_head) + strlen(filter_body[shader]) + 1);
+            if (fs == NULL) return;
+            strcpy(fs, filter_head);
+            strcat(fs, filter_body[shader]);
+            progs[shader] = Game_GlProgram(present_vs, fs, "a_pos", "a_uv", NULL, filter_names[shader]);
+            free(fs);
+            /* a filter that does not compile: the plain picture */
+            if (progs[shader] == 0) shader = 0;
+        }
+        if (progs[shader] == 0)
+        {
+            progs[0] = Game_GlProgram(present_vs, present_fs, "a_pos", "a_uv", NULL, "Game_Gl present");
+            shader = 0;
+            if (progs[0] == 0) return;
+        }
+        u_tex[shader] = glGetUniformLocation(progs[shader], "u_tex");
+        u_size[shader] = glGetUniformLocation(progs[shader], "u_size");
+        u_out[shader] = glGetUniformLocation(progs[shader], "u_out");
+    }
+    prog = progs[shader];
+    if (shader != 0) linear_filter = filter_linear[shader];
 
     SDL_GL_GetDrawableSize(window, &ww, &wh);
     if (ww < 1 || wh < 1) return;
@@ -404,7 +534,9 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear_filter ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear_filter ? GL_LINEAR : GL_NEAREST);
-    glUniform1i(u_tex, 0);
+    glUniform1i(u_tex[shader], 0);
+    if (u_size[shader] >= 0) glUniform2f(u_size[shader], (float)aw, (float)ah);
+    if (u_out[shader] >= 0) glUniform2f(u_out[shader], (float)vw, (float)vh);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos);
@@ -419,3 +551,18 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
 #endif
     SDL_GL_SwapWindow(window);
 }
+
+void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
+                           int width, int height, int origin_upper_left,
+                           int linear_filter)
+{
+    present_texture(window, tex, width, height, origin_upper_left, linear_filter, 0);
+}
+
+void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
+                            int width, int height, int origin_upper_left,
+                            int linear_filter, int shader)
+{
+    present_texture(window, tex, width, height, origin_upper_left, linear_filter, shader);
+}
+

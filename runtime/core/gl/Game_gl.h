@@ -77,4 +77,16 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
                            int width, int height, int origin_upper_left,
                            int linear_filter);
 
+/* The 2D filters (Display_Shader of a game's settings file, a mod): 0 none, 1 smooth
+ * (sharp bilinear), 2 pixelart (Scale2x), 3 scanlines, 4 crt. For a picture of a
+ * few hundred texels on a bigger window. */
+#define GAME_GL_SHADERS 5
+/* the number of a name ("off" is none), -1 for an unknown one */
+int Game_GlShaderParse(const char *name);
+const char *Game_GlShaderName(int shader);
+/* Game_GlPresentTexture with a filter; for the filters the sampling is theirs */
+void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
+                            int width, int height, int origin_upper_left,
+                            int linear_filter, int shader);
+
 #endif
