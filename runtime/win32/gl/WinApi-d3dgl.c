@@ -28,7 +28,8 @@
  * the colour read back into the guest's surface needs no flipping and 2D the
  * guest blits into that memory stays under the 3D.  One shader does the rest
  * (OpenGL ES has no fixed pipeline): rhw divides the texture coordinates per
- * fragment, u_mode is the blend mode, glBlendFunc the alpha blend.
+ * fragment, u_mode is the blend mode, u_fog the vertex fog (its factor rides in
+ * a_pos.w), glBlendFunc the alpha blend.
  *
  * Compromises: the depth attachment is 24 bit, not the guest's 16; the depth
  * of the guest's Z-buffer is neither uploaded nor read back (a scene starts
@@ -59,7 +60,10 @@
 #define RS_CULLMODE         22
 #define RS_ZFUNC            23
 #define RS_ALPHABLENDENABLE 27
+#define RS_FOGENABLE        28
 #define RS_SPECULARENABLE   29
+#define RS_FOGCOLOR         34
+#define RS_FOGTABLEMODE     35
 #define RS_COLORKEYENABLE   41
 
 #define MAX_GL_STATES       64
@@ -85,11 +89,11 @@ static int present_w = 0, present_h = 0;
 static uint32_t gl_state[MAX_GL_STATES];
 
 static GLuint draw_prog = 0;
-static GLint u_scale, u_mode, u_alphatest;
+static GLint u_scale, u_mode, u_alphatest, u_fog, u_fogcolor;
 
-/* what a primitive call gives is one glDrawArrays */
+/* what a primitive call gives is one glDrawArrays; f is the vertex fog, 1 no fog */
 typedef struct {
-    float x, y, z;
+    float x, y, z, f;
     float s, t, q;
     uint8_t r, g, b, a;
 } gl_vertex;
@@ -98,25 +102,31 @@ static uint32_t batch_n = 0, batch_max = 0;
 
 static const char draw_vs[] =
     "uniform vec2 u_scale;\n"
-    "attribute vec3 a_pos;\n"
+    "attribute vec4 a_pos;\n"
     "attribute vec3 a_stq;\n"
     "attribute vec4 a_col;\n"
     "varying vec3 v_stq;\n"
     "varying vec4 v_col;\n"
+    "varying float v_fog;\n"
     "void main() {\n"
     "    gl_Position = vec4(a_pos.xy * u_scale - 1.0, a_pos.z * 2.0 - 1.0, 1.0);\n"
     "    v_stq = a_stq;\n"
     "    v_col = a_col;\n"
+    "    v_fog = a_pos.w;\n"
     "}\n";
 
 /* u_mode: 0 no texture, 1 the texel, 2 DECALALPHA, 3 MODULATEALPHA, 4 MODULATE
- * (keeps the texel's alpha, so the colour key still tests as 0) */
+ * (keeps the texel's alpha, so the colour key still tests as 0); u_fog: the
+ * colour goes to u_fogcolor as v_fog goes to 0 */
 static const char draw_fs[] =
     "uniform sampler2D u_tex;\n"
     "uniform int u_mode;\n"
     "uniform int u_alphatest;\n"
+    "uniform int u_fog;\n"
+    "uniform vec3 u_fogcolor;\n"
     "varying vec3 v_stq;\n"
     "varying vec4 v_col;\n"
+    "varying float v_fog;\n"
     "void main() {\n"
     "    vec4 c = v_col;\n"
     "    if (u_mode != 0) {\n"
@@ -127,6 +137,7 @@ static const char draw_fs[] =
     "        else c = vec4(t.rgb * v_col.rgb, t.a);\n"
     "    }\n"
     "    if (u_alphatest != 0 && c.a <= 0.5) discard;\n"
+    "    if (u_fog != 0) c.rgb = mix(u_fogcolor, c.rgb, clamp(v_fog, 0.0, 1.0));\n"
     "    gl_FragColor = c;\n"
     "}\n";
 
@@ -152,6 +163,8 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
         u_scale = glGetUniformLocation(draw_prog, "u_scale");
         u_mode = glGetUniformLocation(draw_prog, "u_mode");
         u_alphatest = glGetUniformLocation(draw_prog, "u_alphatest");
+        u_fog = glGetUniformLocation(draw_prog, "u_fog");
+        u_fogcolor = glGetUniformLocation(draw_prog, "u_fogcolor");
     }
     if (draw_prog == 0) return 0;
     return 1;
@@ -594,6 +607,10 @@ static void gl_apply_draw_state(int textured)
 
     glUseProgram(draw_prog);
     glUniform2f(u_scale, 2.0f / (float)scene_w, 2.0f / (float)scene_h);
+    /* the vertex fog, as the software rasteriser: a fog table is not done */
+    glUniform1i(u_fog, (gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0));
+    glUniform3f(u_fogcolor, (float)((gl_state[RS_FOGCOLOR] >> 16) & 255) / 255.0f,
+                (float)((gl_state[RS_FOGCOLOR] >> 8) & 255) / 255.0f, (float)(gl_state[RS_FOGCOLOR] & 255) / 255.0f);
     if (textured)
     {
         int mode;
@@ -633,6 +650,7 @@ static void gl_put(const d3dgl_vert *v, float s_coord, float t_coord, float q, c
     o->x = v->x;
     o->y = v->y;
     o->z = v->z;
+    o->f = (float)v->f / 255.0f;
     o->s = s_coord;
     o->t = t_coord;
     o->q = q;
@@ -766,7 +784,7 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].x);
+        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].x);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].s);
         glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), &batch[0].r);
         glDrawArrays((type >= 4) ? GL_TRIANGLES : ((type == 3) ? GL_LINE_STRIP : GL_LINES), 0, (GLsizei)batch_n);

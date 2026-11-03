@@ -833,7 +833,8 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
  * drawn into the target surface and its Z-buffer directly: 2D blits, the 3D scene and the
  * overlay stay in one picture.  Done: Z test and write, flat and Gouraud colour, textures
  * (8 bit palette, 5-6-5, 1-5-5-5, 4-4-4-4) with perspective correction, wrap/mirror/clamp,
- * the colour key, the texture blend modes, alpha blending, culling, lines. */
+ * the colour key, the texture blend modes, alpha blending, culling, lines, vertex fog
+ * (the alpha of the specular colour is how much of the colour stays, 255 no fog). */
 
 #define RS_TEXTUREHANDLE    1
 #define RS_TEXTUREADDRESS   3
@@ -850,12 +851,15 @@ uint32_t CCALL IDirect3DDevice2_MultiplyTransform_c(void */*lpThis*/, uint32_t /
 #define RS_CULLMODE         22
 #define RS_ZFUNC            23
 #define RS_ALPHABLENDENABLE 27
+#define RS_FOGENABLE        28
 #define RS_SPECULARENABLE   29
+#define RS_FOGCOLOR         34
+#define RS_FOGTABLEMODE     35
 #define RS_COLORKEYENABLE   41
 
 typedef struct {
     float x, y, z, rhw, u, v;
-    int r, g, b, a, sr, sg, sb;
+    int r, g, b, a, sr, sg, sb, f;
 } rvert;
 
 #define RT_MAX_MIPS 16
@@ -1093,7 +1097,7 @@ static void load_vertex(rvert *o, const float *p)
 
     o->x = p[0]; o->y = p[1]; o->z = p[2]; o->rhw = p[3];
     o->a = (c >> 24) & 255; o->r = (c >> 16) & 255; o->g = (c >> 8) & 255; o->b = c & 255;
-    o->sr = (sp >> 16) & 255; o->sg = (sp >> 8) & 255; o->sb = sp & 255;
+    o->sr = (sp >> 16) & 255; o->sg = (sp >> 8) & 255; o->sb = sp & 255; o->f = (sp >> 24) & 255;
     o->u = p[6]; o->v = p[7];
 }
 
@@ -1118,6 +1122,9 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
     int blend = (st[RS_ALPHABLENDENABLE] != 0);
     int ckey = (st[RS_COLORKEYENABLE] != 0);
     int spec = (st[RS_SPECULARENABLE] != 0);
+    /* the vertex fog; a fog table (per pixel, from the depth) is not done */
+    int fog = (st[RS_FOGENABLE] != 0) && (st[RS_FOGTABLEMODE] == 0);
+    int fogr = (st[RS_FOGCOLOR] >> 16) & 255, fogg = (st[RS_FOGCOLOR] >> 8) & 255, fogb = st[RS_FOGCOLOR] & 255;
     uint32_t cull = st[RS_CULLMODE], tmb = st[RS_TEXTUREMAPBLEND], addr = st[RS_TEXTUREADDRESS];
     uint32_t mn = st[RS_TEXTUREMIN], mg = st[RS_TEXTUREMAG];
     float fminx, fmaxx, fminy, fmaxy;
@@ -1250,6 +1257,13 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
                 b += (int)(w0 * v0->sb + w1 * v1->sb + w2 * v2->sb);
             }
             r = clamp255(r); g = clamp255(g); b = clamp255(b); a = clamp255(a);
+            if (fog)
+            {
+                int f = clamp255((int)(w0 * v0->f + w1 * v1->f + w2 * v2->f + 0.5f));
+                r = (r * f + fogr * (255 - f)) / 255;
+                g = (g * f + fogg * (255 - f)) / 255;
+                b = (b * f + fogb * (255 - f)) / 255;
+            }
 
             if (blend)
             {

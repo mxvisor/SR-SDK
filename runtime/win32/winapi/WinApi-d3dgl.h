@@ -39,10 +39,11 @@ struct SDL_Window;
 extern "C" {
 #endif
 
-/* a transformed vertex: the Direct3D screen space the game sends, y down */
+/* a transformed vertex: the Direct3D screen space the game sends, y down; f is the
+ * alpha of the specular colour, the vertex fog (255 no fog) */
 typedef struct {
     float x, y, z, rhw, u, v;
-    int r, g, b, a, sr, sg, sb;
+    int r, g, b, a, sr, sg, sb, f;
 } d3dgl_vert;
 
 /* the context on the DirectDraw window; 0 and a message if it cannot be made */
