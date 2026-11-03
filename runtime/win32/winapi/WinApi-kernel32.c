@@ -91,7 +91,7 @@ static clockid_t monotonic_clock_id;
 
 #endif
 #include "WinApi-kernel32.h"
-#include "Game-Memory.h"
+#include "Game_memory.h"
 #include "Game_cdrom.h"
 #include "Game_hooks.h"
 #include "Game_vfs.h"

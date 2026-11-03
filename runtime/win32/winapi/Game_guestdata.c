@@ -34,12 +34,6 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/mman.h>
-#endif
-
 #include "Game_memory.h"
 #include "Game_guestdata.h"
 
@@ -125,28 +119,6 @@ extern "C" uint32_t x86_guest_code_add(uint32_t pointer, uint32_t offset)
     return target;
 }
 
-/* Maps the guest's memory: zeros, over whatever the runtime has reserved there. */
-static int map_guest_memory(uintptr_t address, size_t size)
-{
-#ifdef _WIN32
-    /* the part the runtime reserved is committed, the rest is reserved and committed */
-    if (VirtualAlloc((void *)address, size, MEM_COMMIT, PAGE_READWRITE) != NULL)
-    {
-        return 0;
-    }
-
-    return (VirtualAlloc((void *)address, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) != NULL) ? 0 : -1;
-#else
-    /* MAP_FIXED: the runtime reserves the area of the guest's memory
-     * (PROT_NONE) for the guest's heap, and the game needs the low part of
-     * it for its own data */
-    void *mem = mmap((void *)address, size, PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED, -1, 0);
-
-    return (mem == MAP_FAILED) ? -1 : 0;
-#endif
-}
-
 /* how much of the guest's memory the data of the game needs (GAME_GUEST_LOW_MEMORY
  * of Game_memory.c) */
 extern "C" unsigned int Game_GuestLowMemory(void)
@@ -160,19 +132,17 @@ extern "C" unsigned int Game_GuestLowMemory(void)
 
 extern "C" void Game_GuestDataStart(void)
 {
-    size_t size;
+    unsigned int size;
 
     /* The game was a 16-bit program in a 32-bit executable: it uses addresses
-     * of the low memory of Windows 95 as well, so the low area of the guest's
-     * address space is mapped (with zeros) and the data of the game is
-     * copied into it (llasm_copy_guest_data): the data and a margin, the low
-     * memory of the guest window (GAME_GUEST_LOW_MEMORY).  The guest's heap
-     * is above it from the start, so the mapping overwrites nothing. */
-    size = (size_t)Game_GuestLowMemory();
+     * of the low memory of Windows 95 as well, so the low memory of the guest
+     * window (GAME_GUEST_LOW_MEMORY: the data and a margin) becomes memory,
+     * zeros, and the data of the game is copied into it (llasm_copy_guest_data). */
+    size = Game_GuestLowMemory();
 
-    if (map_guest_memory((uintptr_t)pointer_offset, size) != 0)
+    if (commit_guest_low(size) != 0)
     {
-        fprintf(stderr, "could not map the guest's memory at %" PRIxPTR "\n", (uintptr_t)pointer_offset);
+        fprintf(stderr, "could not map the guest's memory 0-%Xh at %" PRIxPTR "\n", size, (uintptr_t)pointer_offset);
         return;
     }
 

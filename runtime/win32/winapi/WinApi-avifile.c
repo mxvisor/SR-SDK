@@ -31,18 +31,12 @@
 #include "WinApi-game.h"
 #include "Game_hooks.h"
 #include "CLIB.h"
+#include "Game_memory.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#endif
 
 #define AVIERR_UNSUPPORTED     0x80044065u
 #define AVIERR_BADFORMAT       0x80044066u

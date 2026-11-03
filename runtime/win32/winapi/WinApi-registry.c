@@ -31,15 +31,7 @@
 #include "platform.h"
 #include "ptr32.h"
 #include "Game_hooks.h"
-
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#define GUEST_ADDR(p) ((uint32_t)((p) ? ((uintptr_t)(p) - pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#define GUEST_ADDR(p) ((uint32_t)(uintptr_t)(p))
-#endif
+#include "Game_memory.h"
 
 #define ERROR_SUCCESS            0u
 #define ERROR_FILE_NOT_FOUND     2u

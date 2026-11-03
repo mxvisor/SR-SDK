@@ -33,15 +33,6 @@ extern "C" __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 extern "C" unsigned int CCALL Winapi_GetTicks(void);
 #endif
 
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#define GUEST_ADDR(p) ((uint32_t)((p) ? ((uintptr_t)(p) - pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#define GUEST_ADDR(p) ((uint32_t)(uintptr_t)(p))
-#endif
-
 #define DI_OK 0u
 #define DIERR_UNSUPPORTED 0x80004001u /* E_NOTIMPL */
 #define DIERR_INVALIDPARAM 0x80070057u

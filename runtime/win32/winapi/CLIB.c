@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include "CLIB.h"
 #include "Game_vfs.h"
-#include "Game-Memory.h"
+#include "Game_memory.h"
 
 #include <string.h>
 #include <ctype.h>

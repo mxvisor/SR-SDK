@@ -49,12 +49,6 @@
 #include "Game_cdrom.h"
 #include "Game_music.h"
 
-#if defined(PTROFS_64BIT)
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#endif
-
 #define MCI_OPEN                0x0803
 #define MCI_CLOSE               0x0804
 #define MCI_PLAY                0x0806

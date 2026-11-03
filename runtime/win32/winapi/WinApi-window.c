@@ -54,12 +54,6 @@
 extern "C" {
 #endif
 
-#if defined(PTROFS_64BIT)
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#endif
-
 /* ------------------------------------------------------------------ window */
 
 /* the guest's handle of the desktop (the main window is 1, WinApi-user32.c) */

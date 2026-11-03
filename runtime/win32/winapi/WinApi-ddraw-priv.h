@@ -31,15 +31,7 @@
 #include <SDL.h>
 #include "ptr32.h"
 #include "platform.h"
-
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_ADDR(p) ((uint32_t)((p) ? ((uintptr_t)(p) - pointer_offset) : 0))
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#else
-#define GUEST_ADDR(p) ((uint32_t)(uintptr_t)(p))
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#endif
+#include "Game_memory.h"
 
 struct IDirectDraw_c {
     PTR32(void) lpVtbl;

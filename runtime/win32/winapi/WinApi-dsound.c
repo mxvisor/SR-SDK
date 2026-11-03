@@ -33,7 +33,7 @@
 #include <stdio.h>
 #include "WinApi-dsound.h"
 #include "WinApi-config.h"
-#include "Game-Memory.h"
+#include "Game_memory.h"
 #include "Game_sound.h"
 #include "Game_hooks.h"
 #ifdef USE_SPEEXDSP_RESAMPLER

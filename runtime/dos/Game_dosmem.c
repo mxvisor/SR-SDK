@@ -30,12 +30,6 @@
 #include "Game_hooks.h"
 #include "Game_memory.h"
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <sys/mman.h>
-#endif
-
 uint32_t Game_DosMemLastBlock;
 
 #define DOS_LOW_END (DOS_VGA_ADDRESS + DOS_VGA_SIZE)
@@ -47,19 +41,9 @@ static uint32_t pool_next;
 int Game_DosMemInit(uint32_t first_free)
 {
 #ifdef PTROFS_64BIT
-    /* initialize_pointer_offset keeps the low memory of the guest window
-     * (pointer_reserved_length bytes) free, reserved with no access; the pages
-     * become memory here, zeros, and stay while the process lives */
-    uint8_t *low;
-
-    if (pointer_offset == 0 || pointer_reserved_length < DOS_LOW_END) return -1;
-    low = (uint8_t *)GAME_GUEST32_TO_PTR(0);
-#if defined(_WIN32)
-    if (VirtualAlloc(low, DOS_LOW_END, MEM_COMMIT, PAGE_READWRITE) == NULL) return -1;
-#else
-    if (mprotect(low, DOS_LOW_END, PROT_READ | PROT_WRITE) != 0) return -1;
-#endif
-    pool = low + DOS_PSP_ADDRESS;
+    /* the DOS memory is the low memory of the guest window */
+    if (commit_guest_low(DOS_LOW_END) != 0) return -1;
+    pool = (uint8_t *)GAME_GUEST32_TO_PTR(DOS_PSP_ADDRESS);
     Game_DosMemReset(first_free);
     return 0;
 #else

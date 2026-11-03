@@ -41,13 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "platform.h"
-
-#if defined(PTROFS_64BIT)
-extern uint64_t pointer_offset;
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#endif
+#include "Game_memory.h"
 
 static void StubLog(const char *name, int *calls)
 {

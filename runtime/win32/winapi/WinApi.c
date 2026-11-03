@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright (C) 2019-2026 Roman Pauer
+ *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -25,7 +26,7 @@
 #define WINAPI_DEFINE_VARIABLES
 #include "WinApi.h"
 #include <stdlib.h>
-#include "Game-Memory.h"
+#include "Game_memory.h"
 
 handle Winapi_AllocHandle(void)
 {

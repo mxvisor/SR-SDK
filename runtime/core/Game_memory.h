@@ -49,8 +49,9 @@ void Game_MemoryReport(const char *what, uint64_t wanted);
 #ifdef PTROFS_64BIT
 
 int initialize_pointer_offset(void);
-/* the guest's page at address 0 readable and writable (GAME_GUEST_PAGE0) */
-int commit_guest_page0(void);
+/* the guest's first size bytes (its addresses from 0), readable and writable,
+ * zeros: a part of the low memory of the guest window (pointer_reserved_length) */
+int commit_guest_low(unsigned int size);
 
 #endif
 
@@ -83,6 +84,10 @@ extern unsigned int pointer_reserved_length;
 #define GAME_PTR_TO_GUEST32(ptr) ((uint32_t)(uintptr_t)(ptr))
 
 #endif
+
+/* the same for an address that may be 0: a NULL pointer stays NULL */
+#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? GAME_GUEST32_TO_PTR(a) : 0))
+#define GUEST_ADDR(p) ((uint32_t)((p) ? GAME_PTR_TO_GUEST32(p) : 0))
 
 #endif /* _GAME_MEMORY_H_INCLUDED_ */
 

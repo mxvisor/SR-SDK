@@ -67,15 +67,6 @@
 extern "C" {
 #endif
 
-#if defined(PTROFS_64BIT)
-/* pointer_offset: Game_memory.h */
-#define GUEST_MEM(a) ((void *)(uintptr_t)((a) ? ((uint64_t)(a) + pointer_offset) : 0))
-#define GUEST_ADDR(p) ((uint32_t)((p) ? ((uintptr_t)(p) - pointer_offset) : 0))
-#else
-#define GUEST_MEM(a) ((void *)(uintptr_t)(a))
-#define GUEST_ADDR(p) ((uint32_t)(uintptr_t)(p))
-#endif
-
 /* ---------------------------------------------------------------- version */
 
 uint32_t CCALL GetVersion_c(void)

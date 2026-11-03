@@ -203,12 +203,21 @@ The base, `pointer_offset`, is the bottom of the guest window: the 2 GB the gues
 sees as its addresses 0 .. 2 GB, the same on Linux, Windows and Android
 (`runtime/core/Game_memory.c`). The window is reserved whole at the start (address
 space only, no memory), so nothing of the host's lands in it later. From the
-bottom: the guest's low memory (`GAME_GUEST_LOW_MEMORY()`: the DOS memory, the data
-of a `guest_data_in_memory` game), the guest's heap from the bottom up, the host's
-image at 64 MB (`android/gameloader.c` loads it there on Android), and a DOS
-program's own memory from the top down. What the host already had in the window
-(the image, the heap of `brk`) is left out. `SR_SDK_MEMORY_MAP=1` prints the map of
-the window at the start; a request that finds no room prints it as well.
+bottom: the guest's low memory (`GAME_GUEST_LOW_MEMORY()`), the guest's heap from
+the bottom up, the host's image at 64 MB (`android/gameloader.c` loads it there on
+Android), and a DOS program's own memory from the top down. What the host already
+had in the window (the image, the heap of `brk`) is left out. `SR_SDK_MEMORY_MAP=1`
+prints the map of the window at the start; a request that finds no room prints it
+as well.
+
+The low memory is the same for every game, DOS or Windows: reserved with no access,
+so a NULL pointer faults, and the part a game needs becomes memory (zeros) with
+`commit_guest_low(size)`: the DOS memory of a DOS game (`runtime/dos/Game_dosmem.c`,
+the PSP at 10000h and the VGA window at A0000h at their own addresses), the data of
+a `guest_data_in_memory` game, the page 0 of Windows 9x (`GAME_GUEST_PAGE0`). C code
+turns a guest address into a pointer and back with `GAME_GUEST32_TO_PTR` /
+`GAME_PTR_TO_GUEST32`, or `GUEST_MEM` / `GUEST_ADDR` when 0 has to stay NULL
+(`runtime/core/Game_memory.h`).
 
 - every `.c` of `runtime/core/` and `runtime/<platform>/`, unless `game/` has
   a file with the same relative path: the game's file replaces it;

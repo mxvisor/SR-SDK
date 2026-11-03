@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
-#include "Game-Memory.h"
+#include "Game_memory.h"
 #include "WinApi-ddraw.h"
 #include "WinApi-ddraw-priv.h"
 #include "WinApi-game.h"

@@ -148,8 +148,11 @@ static int Game_Run(int argc, char *argv[])
         return 1;
     }
 #ifdef GAME_GUEST_PAGE0
-    if (commit_guest_page0() != 0) fprintf(stderr, "Could not map the guest's page 0\n");
+    if (commit_guest_low(4096) != 0) fprintf(stderr, "Could not map the guest's page 0\n");
 #endif
+#endif
+#ifdef GAME_GUEST_DATA_IN_MEMORY
+    Game_GuestDataStart();
 #endif
 
     if (Game_RuntimeInit() != 0)
@@ -173,9 +176,6 @@ static int Game_Run(int argc, char *argv[])
         fprintf(stderr, "Renderer: DirectDraw (software)\n");
 #endif
 
-#ifdef GAME_GUEST_DATA_IN_MEMORY
-    Game_GuestDataStart();
-#endif
 #ifdef GAME_WIN_START
     GAME_WIN_START();
 #endif

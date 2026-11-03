@@ -1910,16 +1910,20 @@ int initialize_pointer_offset(void)
 #endif
 }
 
-/* The first page of the guest (its address 0) readable and writable, zeros:
- * Windows 9x maps the DOS memory there, and a program that reads it faults
- * on NT, under Wine and in the reserved low memory of the port. */
-int commit_guest_page0(void)
+/* The guest's first size bytes, memory (zeros) while the process lives:
+ * initialize_pointer_offset keeps the low memory of the guest window
+ * (pointer_reserved_length bytes) reserved with no access, and a program
+ * that needs a part of it commits it here.  Every program has the same low
+ * memory: the DOS memory of a DOS program, the data of a Windows program
+ * kept at its original addresses (GAME_GUEST_DATA_IN_MEMORY), the page 0
+ * of Windows 9x (GAME_GUEST_PAGE0). */
+int commit_guest_low(unsigned int size)
 {
-    if (pointer_reserved_length == 0) return 1;
+    if (pointer_offset == 0 || size > pointer_reserved_length) return 1;
 #ifdef _WIN32
-    return (VirtualAlloc((void *)pointer_offset, 4096, MEM_COMMIT, PAGE_READWRITE) == NULL) ? 2 : 0;
+    return (VirtualAlloc((void *)pointer_offset, size, MEM_COMMIT, PAGE_READWRITE) == NULL) ? 2 : 0;
 #else
-    return (mprotect((void *)pointer_offset, 4096, PROT_READ | PROT_WRITE) != 0) ? 2 : 0;
+    return (mprotect((void *)pointer_offset, size, PROT_READ | PROT_WRITE) != 0) ? 2 : 0;
 #endif
 }
 
