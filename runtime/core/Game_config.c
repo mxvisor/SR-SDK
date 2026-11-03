@@ -189,6 +189,13 @@ void Game_ReadConfig(void)
             // digital sound
             read_on_off(param, &Game_Sound);
         }
+        else if ( strcasecmp(str, "Display_3D_Factor") == 0 ) // str equals "Display_3D_Factor"
+        {
+            // the 3D at N times the resolution of the screen (1..8, Glide); <GAME>_3D_FACTOR wins
+            int n = 0;
+            if ((sscanf(param, "%i", &n) != 1) || (n < 1) || (n > 8)) fprintf(stderr, GAME_NAME ": unknown 3D factor: %s\n", param);
+            else Game_3DFactor = n;
+        }
 #ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
         {
