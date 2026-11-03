@@ -266,6 +266,15 @@ static int load_cue(const char *path)
         snprintf(out->path, sizeof(out->path), "%s", file->path);
     }
     if (rem_leadout >= 0) toc_leadout = rem_leadout;
+
+    /* A disc's tracks start at 1.  A copy that lists only its audio tracks
+     * (portable_cd.py) left the data track out: it is put back, with no
+     * file, so that a game that numbers the tracks from the first one of
+     * the table of contents sees them as on the disc. */
+    if (!tracks[1].present && Game_CdLastTrack() > 1) {
+        tracks[1].present = 1;
+        tracks[1].index1 = 0;
+    }
     return 0;
 }
 
@@ -481,7 +490,10 @@ static int open_volume(void)
 {
     const cd_track *data = NULL;
     for (int number = 1; number <= GAME_CD_MAX_TRACKS && data == NULL; number++) {
-        if (tracks[number].present && !tracks[number].audio && !tracks[number].compressed) data = &tracks[number];
+        if (tracks[number].present && !tracks[number].audio && !tracks[number].compressed &&
+            tracks[number].path[0] != 0) {
+            data = &tracks[number];
+        }
     }
     if (data == NULL) return -1;
     data_file = fopen(data->path, "rb");
