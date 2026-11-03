@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The common part of the launch scripts of a port: sourced by the game's own
-# run-sdl.sh (the native build) and run_sdl_wine.sh (the Windows build under Wine),
+# run-sdl.sh (the native build) and run-sdl-wine.sh (the Windows build under Wine),
 # which only say what is game-specific:
 #
 #   GAME_REPO      the game repository (the directory of the script)

@@ -53,7 +53,7 @@ version of SR's `llasm` that is developed here; on SR's reference games its outp
 `tools/new_game.sh DIR NAME dos|win32 [--exe PATH|disc:NAME] [--image IMAGE]` makes the skeleton of a game
 repository: `SConstruct`, `Makefile`, `.gitignore`, `game/game.cfg`,
 `game/Game_hooks.h`, `game/recomp/Game-main/default/` (`sha256`, `SR.cfg`), the
-launchers (`run-sdl.sh`, `run_sdl_wine.sh`, `run-orig-dosbox.sh` or
+launchers (`run-sdl.sh`, `run-sdl-wine.sh`, `run-orig-dosbox.sh` or
 `run-orig-wine.sh`), a git repository and SR-SDK (with SR) as a submodule. With
 `--exe` the original's sha256 is written, and `scons stage=input` then passes. With
 `--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
@@ -364,7 +364,7 @@ tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
 tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
-tools/run_common.sh     the common part of a game's run-sdl.sh / run_sdl_wine.sh
+tools/run_common.sh     the common part of a game's run-sdl.sh / run-sdl-wine.sh
 tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project

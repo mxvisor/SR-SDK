@@ -18,7 +18,7 @@
 #   --env   the prefix of the port's environment variables (default: NAME in capitals, no dashes)
 #
 # It writes SConstruct, Makefile, .gitignore, game/{game.cfg,Game_hooks.h,recomp/},
-# the launchers run-sdl.sh, run_sdl_wine.sh and run-orig-*.sh, makes a git repository and
+# the launchers run-sdl.sh, run-sdl-wine.sh and run-orig-*.sh, makes a git repository and
 # adds SR-SDK (with SR) as a submodule at the commit this script is in.  Nothing is
 # committed.  Then `scons stage=input` checks the original; main.c, the SR inputs
 # (SR.cfg, *.sci) and the game's hooks are the work of the port.
@@ -185,7 +185,7 @@ DATA_MARKER=$ORIG_NAME                    # a file the game directory (build/dis
 launcher run-sdl.sh "Run the native port ($TITLE)." run_common.sh "$COMMON
 
 run_native \"\$@\""
-launcher run_sdl_wine.sh "Run the Windows build of the port ($TITLE) under Wine." run_common.sh "$COMMON
+launcher run-sdl-wine.sh "Run the Windows build of the port ($TITLE) under Wine." run_common.sh "$COMMON
 
 run_wine \"\$@\""
 if [ "$PLATFORM" = dos ]; then
