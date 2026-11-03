@@ -32,6 +32,7 @@
 #include "ptr32.h"
 #include "Game_hooks.h"
 #include "Game_memory.h"
+#include "Game_vfs.h"
 
 #define ERROR_SUCCESS            0u
 #define ERROR_FILE_NOT_FOUND     2u
@@ -71,6 +72,8 @@ static int reg_logging(void)
     return v;
 }
 #define reg_log(...) do { if (reg_logging()) fprintf(stderr, __VA_ARGS__); } while (0)
+
+static void reg_load(void);
 
 static char *dup_string(const char *s)
 {
@@ -135,6 +138,7 @@ static int resolve(uint32_t hkey, const char *subkey, char *out, size_t size)
     const char *base;
     size_t length;
 
+    reg_load();
     if ((hkey & 0xfffffff8u) == 0x80000000u)
     {
         if ((hkey & 7) > 3) return 0;
@@ -190,6 +194,95 @@ static reg_value *find_value(const char *key, const char *name)
     return NULL;
 }
 
+static void set_value(const char *key, const char *name, uint32_t type, const void *data, uint32_t size);
+
+/* What the program writes stays from one run to the next (a game keeps its
+ * options there): the whole registry in <program>.reg of the write root, a
+ * text file, rewritten after every change the program makes.  It is read at
+ * the first use of the registry, so what the port sets before the program
+ * starts (Winapi_RegistrySet*) wins over the file. */
+#define REG_FILE_NAME GAME_PROGRAM_NAME ".reg"
+
+static int reg_loaded;
+
+static int reg_file(char *path, size_t size)
+{
+    const char *root = Game_WriteRoot();
+    if (root == NULL) return 0;
+    return snprintf(path, size, "%s/%s", root, REG_FILE_NAME) < (int)size;
+}
+
+static void reg_load(void)
+{
+    char path[1024], line[4096];
+    FILE *f;
+
+    if (reg_loaded) return;
+    if (!reg_file(path, sizeof(path))) return;      /* not yet: no write root */
+    reg_loaded = 1;
+    f = fopen(path, "rt");
+    if (f == NULL) return;
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        char *field[5];
+        int n = 0;
+        char *p = line;
+
+        line[strcspn(line, "\r\n")] = 0;
+        if ((line[0] == 0) || (line[0] == '#')) continue;
+        while ((n < 5) && (p != NULL))
+        {
+            field[n++] = p;
+            p = strchr(p, '\t');
+            if (p != NULL) *p++ = 0;
+        }
+        if ((n == 2) && (strcmp(field[0], "key") == 0))
+        {
+            key_create(field[1]);
+        }
+        else if ((n == 5) && (strcmp(field[0], "value") == 0))
+        {
+            size_t length = strlen(field[4]) / 2, i;
+            uint8_t *data = (uint8_t *)malloc(length ? length : 1);
+            if (data == NULL) continue;
+            for (i = 0; i < length; i++)
+            {
+                unsigned byte = 0;
+                sscanf(field[4] + 2 * i, "%2x", &byte);
+                data[i] = (uint8_t)byte;
+            }
+            set_value(field[1], field[2], (uint32_t)strtoul(field[3], NULL, 10), data, (uint32_t)length);
+            free(data);
+        }
+    }
+    fclose(f);
+    reg_log("registry: read %s\n", path);
+}
+
+static void reg_save(void)
+{
+    char path[1024], temp[1040];
+    FILE *f;
+    size_t i;
+    uint32_t j;
+
+    if (!reg_file(path, sizeof(path))) return;
+    snprintf(temp, sizeof(temp), "%s.new", path);
+    f = fopen(temp, "wt");
+    if (f == NULL) return;
+    fprintf(f, "# what the program keeps in its registry (the port reads it at the start)\n");
+    for (i = 0; i < key_count; i++) fprintf(f, "key\t%s\n", keys[i]);
+    for (i = 0; i < value_count; i++)
+    {
+        fprintf(f, "value\t%s\t%s\t%u\t", values[i].key, values[i].name, (unsigned)values[i].type);
+        for (j = 0; j < values[i].size; j++) fprintf(f, "%02x", values[i].data[j]);
+        fprintf(f, "\n");
+    }
+    if (fclose(f) != 0) { remove(temp); return; }
+    remove(path);       /* Windows' rename does not replace */
+    rename(temp, path);
+}
+
 static void set_value(const char *key, const char *name, uint32_t type, const void *data, uint32_t size)
 {
     reg_value *v = find_value(key, name);
@@ -218,11 +311,13 @@ static void set_value(const char *key, const char *name, uint32_t type, const vo
 
 void Winapi_RegistrySetDword(const char *key, const char *name, uint32_t value)
 {
+    reg_load();
     set_value(key, name, REG_DWORD, &value, 4);
 }
 
 void Winapi_RegistrySetString(const char *key, const char *name, const char *value)
 {
+    reg_load();
     set_value(key, name, REG_SZ, value, (uint32_t)strlen(value) + 1);
 }
 
@@ -249,7 +344,11 @@ uint32_t CCALL RegCreateKeyA_c(uint32_t hKey, uint32_t lpSubKey, uint32_t phkRes
     if (phkResult == 0) return ERROR_INVALID_PARAMETER;
     if (!resolve(hKey, (const char *)GUEST_MEM(lpSubKey), path, sizeof(path))) return ERROR_BADKEY;
     reg_log("registry: create %s\n", path);
-    key_create(path);
+    if (!key_exists(path))
+    {
+        key_create(path);
+        reg_save();
+    }
     return new_handle(path, (uint32_t *)GUEST_MEM(phkResult));
 }
 
@@ -308,7 +407,9 @@ uint32_t CCALL RegSetValueExA_c(uint32_t hKey, uint32_t lpValueName, uint32_t Re
     (void)Reserved;
     if (!resolve(hKey, NULL, path, sizeof(path))) return ERROR_BADKEY;
     if ((lpData == 0) && (cbData != 0)) return ERROR_INVALID_PARAMETER;
+    reg_log("registry: set %s \\ %s\n", path, (name != NULL) ? name : "");
     set_value(path, (name != NULL) ? name : "", dwType, GUEST_MEM(lpData), cbData);
+    reg_save();
     return ERROR_SUCCESS;
 }
 
@@ -337,6 +438,7 @@ uint32_t CCALL RegDeleteKeyA_c(uint32_t hKey, uint32_t lpSubKey)
         else values[kept++] = values[i];
     }
     value_count = kept;
+    reg_save();
     return ERROR_SUCCESS;
 }
 

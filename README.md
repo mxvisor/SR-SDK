@@ -113,10 +113,11 @@ android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
 ```
 
-The port puts four files into the game's directory, all named after `program`:
+The port puts its files into the game's directory, all named after `program`:
 `<program>` and `<program>.exe` (the programs), `<program>.cfg` (the port's settings,
-`Game_config.c`; `GAME_CONFIG_FILENAME` names another) and `<program>.log` (the log of a
-Windows program without a console, `Game_log.c`; `GAME_LOG_FILE` names another).  Windows
+`Game_config.c`; `GAME_CONFIG_FILENAME` names another), `<program>.log` (the log of a
+Windows program without a console, `Game_log.c`; `GAME_LOG_FILE` names another) and, in the
+write root, `<program>.reg` (what a Win32 game wrote into its registry, `WinApi-registry.c`).  Windows
 has one file for names that differ only in case, and the game's own files are there too, so
 `program` must not be a name of the game's: a portable release compares them
 (`stage_directory` of `scons/release.SConscript`) and fails with the pair of names.  A game

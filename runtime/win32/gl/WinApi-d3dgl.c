@@ -104,13 +104,16 @@ static int present_w = 0, present_h = 0;
 static uint32_t gl_state[MAX_GL_STATES];
 
 static GLuint draw_prog = 0;
-static GLint u_scale, u_mode, u_alphatest, u_afunc, u_aref, u_fog, u_fogcolor;
+static GLint u_scale, u_mode, u_alphatest, u_afunc, u_aref, u_fog, u_fogcolor, u_clampuv;
+static GLint a_box = -1;
 
-/* what a primitive call gives is one glDrawArrays; f is the vertex fog, 1 no fog */
+/* what a primitive call gives is one glDrawArrays; f is the vertex fog, 1 no fog;
+ * bu0..bv1 the box of the texture coordinates of the vertex's triangle */
 typedef struct {
     float x, y, z, f;
     float s, t, q;
     uint8_t r, g, b, a;
+    float bu0, bv0, bu1, bv1;
 } gl_vertex;
 static gl_vertex *batch = NULL;
 static uint32_t batch_n = 0, batch_max = 0;
@@ -120,12 +123,15 @@ static const char draw_vs[] =
     "attribute vec4 a_pos;\n"
     "attribute vec3 a_stq;\n"
     "attribute vec4 a_col;\n"
+    "attribute vec4 a_box;\n"
     "varying vec3 v_stq;\n"
     "varying vec4 v_col;\n"
     "varying float v_fog;\n"
+    "varying vec4 v_box;\n"
     "void main() {\n"
     "    gl_Position = vec4(a_pos.xy * u_scale - 1.0, a_pos.z * 2.0 - 1.0, 1.0);\n"
     "    v_stq = a_stq;\n"
+    "    v_box = a_box;\n"
     "    v_col = a_col;\n"
     "    v_fog = a_pos.w;\n"
     "}\n";
@@ -133,7 +139,10 @@ static const char draw_vs[] =
 /* u_mode: 0 no texture, 1 the texel, 2 DECALALPHA, 3 MODULATEALPHA, 4 MODULATE
  * (keeps the texel's alpha, so the colour key still tests as 0); u_afunc: the
  * D3DCMPFUNC of the alpha test against u_aref (0..255), 0 none; u_fog: the
- * colour goes to u_fogcolor as v_fog goes to 0 */
+ * colour goes to u_fogcolor as v_fog goes to 0; u_clampuv: the texture
+ * coordinates are kept in the box of the triangle's (a multisampled pixel on
+ * an edge is shaded at its centre, which may lie outside the triangle: the
+ * coordinates there would reach the neighbouring picture of a texture page) */
 static const char draw_fs[] =
     "uniform sampler2D u_tex;\n"
     "uniform int u_mode;\n"
@@ -142,13 +151,17 @@ static const char draw_fs[] =
     "uniform float u_aref;\n"
     "uniform int u_fog;\n"
     "uniform vec3 u_fogcolor;\n"
+    "uniform int u_clampuv;\n"
     "varying vec3 v_stq;\n"
     "varying vec4 v_col;\n"
     "varying float v_fog;\n"
+    "varying vec4 v_box;\n"
     "void main() {\n"
     "    vec4 c = v_col;\n"
     "    if (u_mode != 0) {\n"
-    "        vec4 t = texture2D(u_tex, v_stq.xy / v_stq.z);\n"
+    "        vec2 uv = v_stq.xy / v_stq.z;\n"
+    "        if (u_clampuv != 0) uv = clamp(uv, v_box.xy, v_box.zw);\n"
+    "        vec4 t = texture2D(u_tex, uv);\n"
     "        if (u_mode == 1) c = t;\n"
     "        else if (u_mode == 2) c = vec4(mix(v_col.rgb, t.rgb, t.a), t.a);\n"
     "        else if (u_mode == 3) c = t * v_col;\n"
@@ -191,6 +204,8 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
         u_aref = glGetUniformLocation(draw_prog, "u_aref");
         u_fog = glGetUniformLocation(draw_prog, "u_fog");
         u_fogcolor = glGetUniformLocation(draw_prog, "u_fogcolor");
+        u_clampuv = glGetUniformLocation(draw_prog, "u_clampuv");
+        a_box = glGetAttribLocation(draw_prog, "a_box");
     }
     if (draw_prog == 0) return 0;
     return 1;
@@ -355,10 +370,10 @@ static void scene_bind(void)
 static void ms_put_scene_tex(void)
 {
     static const gl_vertex quad_template[4] = {
-        { 0, 0, 0, 1, 0, 0, 1, 255, 255, 255, 255 },
-        { 1, 0, 0, 1, 1, 0, 1, 255, 255, 255, 255 },
-        { 0, 1, 0, 1, 0, 1, 1, 255, 255, 255, 255 },
-        { 1, 1, 0, 1, 1, 1, 1, 255, 255, 255, 255 },
+        { 0, 0, 0, 1, 0, 0, 1, 255, 255, 255, 255, 0, 0, 1, 1 },
+        { 1, 0, 0, 1, 1, 0, 1, 255, 255, 255, 255, 0, 0, 1, 1 },
+        { 0, 1, 0, 1, 0, 1, 1, 255, 255, 255, 255, 0, 0, 1, 1 },
+        { 1, 1, 0, 1, 1, 1, 1, 255, 255, 255, 255, 0, 0, 1, 1 },
     };
     gl_vertex quad[4];
     int i;
@@ -381,6 +396,7 @@ static void ms_put_scene_tex(void)
     glUniform1i(u_alphatest, 0);
     glUniform1i(u_afunc, 0);
     glUniform1i(u_fog, 0);
+    glUniform1i(u_clampuv, 0);
     glBindTexture(GL_TEXTURE_2D, scene_tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -390,10 +406,16 @@ static void ms_put_scene_tex(void)
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &quad[0].x);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &quad[0].s);
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), &quad[0].r);
+    if (a_box >= 0)
+    {
+        glEnableVertexAttribArray((GLuint)a_box);
+        glVertexAttribPointer((GLuint)a_box, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &quad[0].bu0);
+    }
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
+    if (a_box >= 0) glDisableVertexAttribArray((GLuint)a_box);
     glUseProgram(0);
 }
 
@@ -816,6 +838,24 @@ static void gl_put(const d3dgl_vert *v, float s_coord, float t_coord, float q, c
     o->g = (uint8_t)colour->g;
     o->b = (uint8_t)colour->b;
     o->a = (uint8_t)alpha;
+    o->bu0 = o->bv0 = o->bu1 = o->bv1 = 0.0f;
+}
+
+/* the box of the last three vertices' texture coordinates (a triangle) */
+static void gl_box_last3(const d3dgl_vert *v0, const d3dgl_vert *v1, const d3dgl_vert *v2)
+{
+    float u0 = fminf(v0->u, fminf(v1->u, v2->u)), u1 = fmaxf(v0->u, fmaxf(v1->u, v2->u));
+    float w0 = fminf(v0->v, fminf(v1->v, v2->v)), w1 = fmaxf(v0->v, fmaxf(v1->v, v2->v));
+    uint32_t i;
+
+    if (batch_n < 3) return;
+    for (i = batch_n - 3; i < batch_n; i++)
+    {
+        batch[i].bu0 = u0;
+        batch[i].bv0 = w0;
+        batch[i].bu1 = u1;
+        batch[i].bv1 = w1;
+    }
 }
 
 static void gl_vertex_of(const d3dgl_vert *v, int persp, const d3dgl_vert *flatfrom)
@@ -841,6 +881,7 @@ static void gl_triangle(const d3dgl_vert *v0, const d3dgl_vert *v1, const d3dgl_
     gl_vertex_of(v0, persp, flat ? v0 : NULL);
     gl_vertex_of(v1, persp, flat ? v0 : NULL);
     gl_vertex_of(v2, persp, flat ? v0 : NULL);
+    gl_box_last3(v0, v1, v2);
 }
 
 static const d3dgl_vert *gl_ith(const d3dgl_vert *verts, uint32_t nverts, const uint16_t *index, uint32_t i)
@@ -945,10 +986,18 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
         glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].x);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].s);
         glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), &batch[0].r);
+        if (a_box >= 0)
+        {
+            glEnableVertexAttribArray((GLuint)a_box);
+            glVertexAttribPointer((GLuint)a_box, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), &batch[0].bu0);
+        }
+        /* only a multisampled scene shades outside the triangles */
+        glUniform1i(u_clampuv, scene_ms && (type >= 4));
         glDrawArrays((type >= 4) ? GL_TRIANGLES : ((type == 3) ? GL_LINE_STRIP : GL_LINES), 0, (GLsizei)batch_n);
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
         glDisableVertexAttribArray(2);
+        if (a_box >= 0) glDisableVertexAttribArray((GLuint)a_box);
         batch_n = 0;
     }
 

@@ -33,8 +33,10 @@ extern "C" {
 
 /* The registry of the port: a tree of keys with values, kept in memory, that a program
  * reads and writes through the Reg* functions of advapi32.  There is no registry behind
- * it, so a program finds only what the port put there; the port's own code does that with
- * these functions before the program starts (from the game's configuration).
+ * it: a program finds what the port put there and what it wrote itself in an earlier run
+ * (<program>.reg of the write root, rewritten after every change the program makes, read
+ * at the first use).  The port's own code sets values with these functions before the
+ * program starts (from the game's configuration); they win over the file.
  * `key` is a path like "HKLM\\SOFTWARE\\Vendor\\Game" (HKCR, HKCU, HKLM and HKU are the roots);
  * the key is made if it does not exist. */
 void Winapi_RegistrySetDword(const char *key, const char *name, uint32_t value);

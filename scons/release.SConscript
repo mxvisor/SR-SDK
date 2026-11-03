@@ -123,13 +123,13 @@ if os.path.isfile(PORTABLE_CFG):
 
 def port_names(binaries, dlls, release_oses):
     """The files of the port in the game's directory: the programs, the DLLs and
-    the release files, and the settings file and the log the runtime names after
-    the program (scons/game.py's GAME_PROGRAM_NAME)."""
+    the release files, and the settings file, the log and the registry (a Win32
+    game's) the runtime names after the program (scons/game.py's GAME_PROGRAM_NAME)."""
     names = [os.path.basename(binary) for binary in binaries]
     names += [os.path.basename(dll) for dll in dlls]
     for release_os in release_oses:
         names += [os.path.basename(source) for source in release_files(release_os)]
-    names += [PROGRAM + '.cfg', PROGRAM + '.log']
+    names += [PROGRAM + '.cfg', PROGRAM + '.log', PROGRAM + '.reg']
     return names
 
 
