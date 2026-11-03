@@ -116,7 +116,6 @@ EOF
 
 cat > .gitignore <<'EOF'
 /build/
-.sconsign.dblite
 EOF
 
 {

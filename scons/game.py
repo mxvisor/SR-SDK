@@ -71,13 +71,11 @@ SDK_ROOT = os.path.dirname(Dir('.').srcnode().abspath)
 SR_ROOT = os.path.join(SDK_ROOT, 'SR')
 CFG = read_cfg(os.path.join(ROOT, 'game', 'game.cfg'))
 
-# `scons clean` (and distclean, the same) builds nothing: the build tree, the
-# run directory and SCons's own database go.
+# `scons clean` (and distclean, the same) builds nothing: the build tree (with
+# SCons's own database) and the run directory go.
 if {'clean', 'distclean'} & set(COMMAND_LINE_TARGETS):
     for path in ('build', 'run'):
         shutil.rmtree(os.path.join(ROOT, path), ignore_errors=True)
-    for path in glob.glob(os.path.join(ROOT, '.sconsign.dblite*')):
-        os.remove(path)
     print('scons: cleaned build/ run/')
     Exit(0)
 
@@ -147,6 +145,9 @@ HOST = host_key()
 BUILD = ARGUMENTS.get('BUILD_DIR', os.environ.get('BUILD_DIR', os.path.join(ROOT, 'build')))
 if not os.path.isabs(BUILD):
     BUILD = os.path.normpath(os.path.join(ROOT, BUILD))
+# SCons's own database goes into the build tree too, not into the repository
+os.makedirs(BUILD, exist_ok=True)
+SConsignFile(os.path.join(BUILD, '.sconsign'))
 
 HOST_SR = os.path.join(BUILD, 'host', HOST, 'sr-' + ARCH)
 
