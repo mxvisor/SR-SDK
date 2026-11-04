@@ -82,6 +82,11 @@
 #ifndef GAME_D3D_FOG_HIDDEN
 #define GAME_D3D_FOG_HIDDEN 0
 #endif
+/* a fog table of the port by the W of the vertex (Game_hooks.h, WinApi-d3d.c): drawn whatever
+ * RS_FOGENABLE says */
+#ifndef GAME_D3D_FOG_TABLE_W
+#define GAME_D3D_FOG_TABLE_W NULL
+#endif
 
 #define MAX_GL_STATES       64
 /* a game may load more than a thousand small textures */
@@ -812,7 +817,7 @@ static void gl_apply_draw_state(int textured)
                          ? (GLint)gl_state[RS_ALPHAFUNC] : 0);
     glUniform1f(u_aref, (float)(gl_state[RS_ALPHAREF] & 255));
     /* the vertex fog, as the software rasteriser: a fog table is not done */
-    glUniform1i(u_fog, (gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0) && !GAME_D3D_FOG_HIDDEN);
+    glUniform1i(u_fog, (((gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0)) || (GAME_D3D_FOG_TABLE_W != NULL)) && !GAME_D3D_FOG_HIDDEN);
     glUniform3f(u_fogcolor, (float)((gl_state[RS_FOGCOLOR] >> 16) & 255) / 255.0f,
                 (float)((gl_state[RS_FOGCOLOR] >> 8) & 255) / 255.0f, (float)(gl_state[RS_FOGCOLOR] & 255) / 255.0f);
     if (textured)

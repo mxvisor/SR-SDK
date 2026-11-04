@@ -51,6 +51,17 @@
 #ifndef GAME_DIRECT3D
 #define GAME_DIRECT3D 0     /* a game that uses Direct3D says so in Game_hooks.h */
 #endif
+/* the fog hooks of Game_hooks.h, as in WinApi-d3dgl.c */
+#ifndef GAME_D3D_FOG_HIDDEN
+#define GAME_D3D_FOG_HIDDEN 0
+#endif
+/* GAME_D3D_FOG_TABLE_W: an expression, the 64 bytes of a fog table as the one of Glide's grFogTable
+ * (0 no fog, 255 all; index i is the W of guFogTableIndexToW, 2^(3 + i/4) / (8 - i%4)), or NULL.
+ * With a table the fog of a vertex comes from its W (1/rhw), not from its specular alpha, and
+ * it is drawn whatever RS_FOGENABLE says: a driver that has such a table but looks it up by z */
+#ifndef GAME_D3D_FOG_TABLE_W
+#define GAME_D3D_FOG_TABLE_W NULL
+#endif
 
 #define D3D_OK              0u
 #define D3DERR_GENERIC      0x80004005u     /* E_FAIL */
@@ -1186,14 +1197,32 @@ static void get_pixel(const struct IDirectDrawSurface_c *t, int x, int y, int *r
     }
 }
 
+/* the fog of 0..255 (255 none) at the W of a vertex in a table of GAME_D3D_FOG_TABLE_W */
+static int fog_of_w(const uint8_t *table, float rhw)
+{
+    float w, k, x;
+    int i;
+
+    w = (rhw > 0.0f) ? 1.0f / rhw : 1.0e9f;
+    if (w < 1.0f) w = 1.0f;
+    k = floorf(log2f(w));
+    x = 4.0f * k + 8.0f - exp2f(3.0f + k) / w;
+    if (x <= 0.0f) return 255 - table[0];
+    if (x >= 63.0f) return 255 - table[63];
+    i = (int)x;
+    return 255 - (int)(table[i] + (x - (float)i) * (float)(table[i + 1] - table[i]) + 0.5f);
+}
+
 static void load_vertex(rvert *o, const float *p)
 {
     uint32_t c = ((const uint32_t *)p)[4], sp = ((const uint32_t *)p)[5];
+    const uint8_t *fog_table = GAME_D3D_FOG_TABLE_W;
 
     o->x = p[0]; o->y = p[1]; o->z = p[2]; o->rhw = p[3];
     o->a = (c >> 24) & 255; o->r = (c >> 16) & 255; o->g = (c >> 8) & 255; o->b = c & 255;
     o->sr = (sp >> 16) & 255; o->sg = (sp >> 8) & 255; o->sb = sp & 255; o->f = (sp >> 24) & 255;
     o->u = p[6]; o->v = p[7];
+    if (fog_table != NULL) o->f = fog_of_w(fog_table, o->rhw);
 }
 
 typedef struct {
@@ -1219,7 +1248,7 @@ static void raster_triangle(rctx *c, const rvert *v0, const rvert *v1, const rve
     int spec = (st[RS_SPECULARENABLE] != 0);
     int atest = (st[RS_ALPHATESTENABLE] != 0);
     /* the vertex fog; a fog table (per pixel, from the depth) is not done */
-    int fog = (st[RS_FOGENABLE] != 0) && (st[RS_FOGTABLEMODE] == 0);
+    int fog = (((st[RS_FOGENABLE] != 0) && (st[RS_FOGTABLEMODE] == 0)) || (GAME_D3D_FOG_TABLE_W != NULL)) && !GAME_D3D_FOG_HIDDEN;
     int fogr = (st[RS_FOGCOLOR] >> 16) & 255, fogg = (st[RS_FOGCOLOR] >> 8) & 255, fogb = st[RS_FOGCOLOR] & 255;
     uint32_t cull = st[RS_CULLMODE], tmb = st[RS_TEXTUREMAPBLEND], addr = st[RS_TEXTUREADDRESS];
     uint32_t mn = st[RS_TEXTUREMIN], mg = st[RS_TEXTUREMAG];

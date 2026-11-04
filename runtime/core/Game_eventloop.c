@@ -98,18 +98,28 @@ static SDL_mutex *Game_PumpMutex;
  * thread draws there, and the message functions pump on it, so this one must
  * not (the surface would die under the renderer: black screen on resume). */
 
+/* On Windows (and Wine) it is the other way round: the window belongs to the thread that
+ * made it, this one, and showing, hiding or resizing it from another thread waits until this
+ * thread's pump takes the messages; with the pump held off both threads would wait for ever
+ * (a game whose driver changes the mode from a thread of its own). */
+#ifdef _WIN32
+#define PUMP_HELD_FOR_WINDOW 0
+#else
+#define PUMP_HELD_FOR_WINDOW 1
+#endif
+
 void Game_ShowWindow(SDL_Window *window)
 {
-    if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
     SDL_ShowWindow(window);
-    if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
 }
 
 void Game_HideWindow(SDL_Window *window)
 {
-    if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
     SDL_HideWindow(window);
-    if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
 }
 
 void Game_Event_Loop(void)

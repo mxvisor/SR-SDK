@@ -59,6 +59,11 @@
 #include "WinApi-d3d.h"
 #include "Game_hooks.h"
 
+/* a toggle of the port that hides the fog the program turns on (Game_hooks.h) */
+#ifndef GAME_GLIDE_FOG_HIDDEN
+#define GAME_GLIDE_FOG_HIDDEN 0
+#endif
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define FXTRUE 1
@@ -846,9 +851,11 @@ static const char draw_fs[] =
     "    else if (u_asrc == 3) a = tex.a * col.a;\n"
     "    else a = col.a;\n"
     "    if (u_fog == 1) {\n"
-    "        /* the table runs over the W in steps of a quarter of an octave: index i is the W of 2^(3 + i/4) - 1 */\n"
-    "        float w = (v_stq.z > 0.0) ? 1.0 / v_stq.z : 1.0e9;\n"
-    "        float x = clamp(4.0 * (log2(w + 1.0) - 3.0), 0.0, 63.0);\n"
+    "        /* index i of the table is the W of guFogTableIndexToW, 2^(3 + i/4) / (8 - i%4): in the\n"
+    "         * octave k (W 2^k up to 2^(k+1)) the index is 4k + 8 - 2^(3+k) / W */\n"
+    "        float w = (v_stq.z > 0.0) ? max(1.0 / v_stq.z, 1.0) : 1.0e9;\n"
+    "        float k = floor(log2(w));\n"
+    "        float x = clamp(4.0 * k + 8.0 - exp2(3.0 + k) / w, 0.0, 63.0);\n"
     "        int i0 = int(floor(x));\n"
     "        float f0 = u_fogtab[i0];\n"
     "        float f1 = u_fogtab[(i0 < 63) ? i0 + 1 : 63];\n"
@@ -1232,7 +1239,7 @@ static void gl_flush(void)
     glUniform1i(u_ac_oth, (int)st.ac_other);
     glUniform1i(u_ac_inv, (int)st.ac_invert);
     glUniform1i(u_atest, (int)st.alpha_test_function);
-    glUniform1i(u_fog, (int)st.fog_mode);
+    glUniform1i(u_fog, GAME_GLIDE_FOG_HIDDEN ? 0 : (int)st.fog_mode);
     if (st.fog_mode != 0)
     {
         uint32_t fc = color_to_argb(st.fog_color);
@@ -2202,6 +2209,7 @@ uint32_t CCALL grFogMode_c(uint32_t mode)
 {
     gl_flush();
     DEBUG("grFogMode: %u\n", mode);
+    mode &= 0xff;       /* without GR_FOG_MULT2 0x100 and GR_FOG_ADD2 0x200 */
     st.fog_mode = (mode == 1) ? 2 : (mode == 2) ? 1 : 0;
     return 0;
 }
