@@ -81,6 +81,8 @@ if {'clean', 'distclean'} & set(COMMAND_LINE_TARGETS):
 
 ARCHS = _keys(CFG, 'archs')
 MODULES = _keys(CFG, 'modules')
+# DLLs of the original recompiled as modules of their own (say, the 3D drivers a game loads)
+DLL_MODULES = _keys(CFG, 'dll_modules') if 'dll_modules' in CFG else []
 VARIANTS = _keys(CFG, 'variants')
 DEVICES = _keys(CFG, 'devices')
 PROGRAM = CFG.get('program', '-'.join(MODULES).lower())
@@ -155,11 +157,6 @@ HOST_SR = os.path.join(BUILD, 'host', HOST, 'sr-' + ARCH)
 # layout in "Каталоги сборки": the game's own inputs are read from game/, the
 # results of running SR and compact_source are written to build/ and stay
 # there, so two SDK versions can be compared with a plain diff -r.
-RECOMP_SRC = os.path.join(ROOT, 'game', 'recomp', MODULE, VARIANT)
-INPUT_DIR = os.path.join(BUILD, 'input', MODULE)
-INPUT_EXE = os.path.join(INPUT_DIR, MODULE + '.EXE')
-RECOMP_DIR = os.path.join(BUILD, 'recomp', MODULE, ARCH)
-GEN_SRC_DIR = os.path.join(BUILD, 'gen', MODULE, ARCH)
 LLASM_SRC_DIR = os.path.join(ROOT, 'game', 'llasm')
 
 # The shared code: the SDK's runtime (core, then the original's platform from
@@ -518,156 +515,181 @@ def shell_quote(path):
     return "'" + path.replace("'", "'\\''") + "'"
 
 
-# Everything SR writes beside <module>.asm, from
-# game/recomp/<module>/<variant>/outputs: the segments of this EXE, and the
-# list is game data, not something this file may guess at.
-SR_EXTRAS = []
-_compact = os.path.join(RECOMP_SRC, 'compact')
-_outputs = os.path.join(RECOMP_SRC, 'outputs')
-if os.path.exists(_compact):
-    with open(_compact, 'rt') as stream:
-        SR_EXTRAS = [line.strip() for line in stream
-                     if line.strip() and not line.lstrip().startswith('#')]
-elif os.path.exists(_outputs):
-    with open(_outputs, 'rt') as stream:
-        SR_EXTRAS = [line.strip() for line in stream
-                     if line.strip() and not line.lstrip().startswith('#')]
+def module_pipeline(MODULE, EXT, input_key):
+    """Stages input, recomp and gen of one module of the game: the main exe, or
+    a DLL of dll_modules= (its own game/recomp/<module>/<variant>/, and its own
+    build/{input,recomp,gen}/<module>/). Returns the generated master .llasm, its
+    directory and what the master's object depends on."""
+    global defaults
+    RECOMP_SRC = os.path.join(ROOT, 'game', 'recomp', MODULE, VARIANT)
+    INPUT_DIR = os.path.join(BUILD, 'input', MODULE)
+    INPUT_EXE = os.path.join(INPUT_DIR, MODULE + EXT)
+    RECOMP_DIR = os.path.join(BUILD, 'recomp', MODULE, ARCH)
+    GEN_SRC_DIR = os.path.join(BUILD, 'gen', MODULE, ARCH)
 
-GEN_MAIN = os.path.join(GEN_SRC_DIR, MODULE + '.llasm')
-RECOMP_ASM = os.path.join(RECOMP_DIR, MODULE + '.asm')
-SR_SEGMENTS = os.path.join(RECOMP_DIR, 'segments.sha256')
+    # Everything SR writes beside <module>.asm, from
+    # game/recomp/<module>/<variant>/outputs: the segments of this EXE, and the
+    # list is game data, not something this file may guess at.
+    SR_EXTRAS = []
+    _compact = os.path.join(RECOMP_SRC, 'compact')
+    _outputs = os.path.join(RECOMP_SRC, 'outputs')
+    if os.path.exists(_compact):
+        with open(_compact, 'rt') as stream:
+            SR_EXTRAS = [line.strip() for line in stream
+                         if line.strip() and not line.lstrip().startswith('#')]
+    elif os.path.exists(_outputs):
+        with open(_outputs, 'rt') as stream:
+            SR_EXTRAS = [line.strip() for line in stream
+                         if line.strip() and not line.lstrip().startswith('#')]
 
-if want('input'):
-    # Stage 0: the original, checked against the hash the variant records.
-    # The check runs here rather than in build.sh so that it cannot be
-    # skipped: nothing downstream ever reads an EXE that is not the recorded one.
-    with open(os.path.join(RECOMP_SRC, 'sha256'), 'rt') as stream:
-        expected = stream.read().split()[0].lower()
+    GEN_MAIN = os.path.join(GEN_SRC_DIR, MODULE + '.llasm')
+    RECOMP_ASM = os.path.join(RECOMP_DIR, MODULE + '.asm')
+    SR_SEGMENTS = os.path.join(RECOMP_DIR, 'segments.sha256')
 
-    if not (os.path.exists(INPUT_EXE) and sha256_of(INPUT_EXE) == expected):
-        source = ARGUMENTS.get('input_exe', CFG.get('input_exe', ''))
-        if source.startswith('disc:'):
-            # the exe is a file of the game's disc, as game/portable.cfg makes it
-            # (the image with its patch= archives over it): build/disc/
-            source = disc_file(source[len('disc:'):])
-        elif source and not os.path.isabs(source):
-            source = os.path.join(ROOT, source)
-        if not source or not os.path.exists(source):
-            raise Exception(
-                'stage 0: %s is not there and no original to take it from '
-                '(scons input_exe=/path/to/the/original, or game.cfg input_exe=%s)'
-                % (INPUT_EXE, CFG.get('input_exe', '')))
-        actual = sha256_of(source)
-        if actual != expected:
-            raise Exception('stage 0: sha256 of %s is %s, expected %s (game/recomp/%s/%s/sha256)'
-                            % (source, actual, expected, MODULE, VARIANT))
-        if not os.path.isdir(INPUT_DIR):
-            os.makedirs(INPUT_DIR)
-        if os.path.exists(INPUT_EXE):
-            os.remove(INPUT_EXE)
-        shutil.copy2(source, INPUT_EXE)
+    if want('input'):
+        # Stage 0: the original, checked against the hash the variant records.
+        # The check runs here rather than in build.sh so that it cannot be
+        # skipped: nothing downstream ever reads an EXE that is not the recorded one.
+        with open(os.path.join(RECOMP_SRC, 'sha256'), 'rt') as stream:
+            expected = stream.read().split()[0].lower()
 
-# What SR.cfg of a DOS4GW program holds whatever the game: the extender keeps
-# its stack and its work tables dword-aligned, and its flat DS lets the game
-# store into its code object (without code_writable SR's output makes the
-# code sections "constant").  Found by the extender's name in the exe (its
-# stub carries it).
-DOS4GW_SR_CFG = (
-    '# SR-SDK: the defaults of a DOS4GW program (scons/game.py); the keys of the game follow\n'
-    'esp_dword_aligned=yes\n'
-    'ebp_dword_aligned=yes\n'
-    'code_writable=yes\n')
+        if not (os.path.exists(INPUT_EXE) and sha256_of(INPUT_EXE) == expected):
+            source = ARGUMENTS.get(input_key, CFG.get(input_key, ''))
+            if not source and input_key != 'input_exe':
+                source = 'disc:' + MODULE + EXT      # a DLL: the file of that name on the disc
+            if source.startswith('disc:'):
+                # the exe is a file of the game's disc, as game/portable.cfg makes it
+                # (the image with its patch= archives over it): build/disc/
+                source = disc_file(source[len('disc:'):])
+            elif source and not os.path.isabs(source):
+                source = os.path.join(ROOT, source)
+            if not source or not os.path.exists(source):
+                raise Exception(
+                    'stage 0: %s is not there and no original to take it from '
+                    '(scons input_exe=/path/to/the/original, or game.cfg %s=%s)'
+                    % (INPUT_EXE, input_key, CFG.get(input_key, '')))
+            actual = sha256_of(source)
+            if actual != expected:
+                raise Exception('stage 0: sha256 of %s is %s, expected %s (game/recomp/%s/%s/sha256)'
+                                % (source, actual, expected, MODULE, VARIANT))
+            if not os.path.isdir(INPUT_DIR):
+                os.makedirs(INPUT_DIR)
+            if os.path.exists(INPUT_EXE):
+                os.remove(INPUT_EXE)
+            shutil.copy2(source, INPUT_EXE)
 
-def make_sr_cfg(target, source, env):
-    with open(str(source[0]), 'rb') as exe:
-        is_dos4gw = PLATFORM == 'dos' and re.search(rb'(?i)dos/?4g', exe.read()) is not None
-    with open(str(source[1])) as game_cfg:
-        text = game_cfg.read()
-    with open(str(target[0]), 'w') as out:
-        out.write((DOS4GW_SR_CFG if is_dos4gw else '') + text)
+    # What SR.cfg of a DOS4GW program holds whatever the game: the extender keeps
+    # its stack and its work tables dword-aligned, and its flat DS lets the game
+    # store into its code object (without code_writable SR's output makes the
+    # code sections "constant").  Found by the extender's name in the exe (its
+    # stub carries it).
+    DOS4GW_SR_CFG = (
+        '# SR-SDK: the defaults of a DOS4GW program (scons/game.py); the keys of the game follow\n'
+        'esp_dword_aligned=yes\n'
+        'ebp_dword_aligned=yes\n'
+        'code_writable=yes\n')
 
-if want('recomp'):
-    # Stage 2: SR's working directory. SR.cfg, bssborder.csv and the .sci
-    # files are read from the current directory, so the .sci files of
-    # game/recomp/.../llasm/ land beside them here, the way build-llasm.sh
-    # copies them in.
-    # bssborder.csv is optional, SR goes on without it (SR_loader.c)
-    if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
-        copy_if_newer(os.path.join(RECOMP_SRC, 'bssborder.csv'), os.path.join(RECOMP_DIR, 'bssborder.csv'))
-    for sci in sorted(glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci'))):
-        copy_if_newer(sci, os.path.join(RECOMP_DIR, os.path.basename(sci)))
+    def make_sr_cfg(target, source, env):
+        with open(str(source[0]), 'rb') as exe:
+            is_dos4gw = PLATFORM == 'dos' and re.search(rb'(?i)dos/?4g', exe.read()) is not None
+        with open(str(source[1])) as game_cfg:
+            text = game_cfg.read()
+        with open(str(target[0]), 'w') as out:
+            out.write((DOS4GW_SR_CFG if is_dos4gw else '') + text)
 
-    if not os.path.isdir(RECOMP_DIR):
-        os.makedirs(RECOMP_DIR)
+    if want('recomp'):
+        # Stage 2: SR's working directory. SR.cfg, bssborder.csv and the .sci
+        # files are read from the current directory, so the .sci files of
+        # game/recomp/.../llasm/ land beside them here, the way build-llasm.sh
+        # copies them in.
+        # bssborder.csv is optional, SR goes on without it (SR_loader.c)
+        if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
+            copy_if_newer(os.path.join(RECOMP_SRC, 'bssborder.csv'), os.path.join(RECOMP_DIR, 'bssborder.csv'))
+        for sci in sorted(glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci'))):
+            copy_if_newer(sci, os.path.join(RECOMP_DIR, os.path.basename(sci)))
 
-    sr_exe = os.path.join(HOST_SR, SR_EXE_NAME)
-    sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
-    sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
-    # Without a list scons does not know the seg*.llinc SR wrote, so a changed
-    # segment would leave stage gen "up to date": their hashes stand for them.
-    if not SR_EXTRAS:
-        sr_targets.append(SR_SEGMENTS)
-    # SR.cfg is the game's own, with the defaults of its extender before it
-    # (a DOS4GW program: what every such game needs, which the game's file
-    # may still override)
-    sr_cfg = os.path.join(RECOMP_DIR, 'SR.cfg')
-    defaults += env.Command(sr_cfg, [INPUT_EXE, File(os.path.join(RECOMP_SRC, 'SR.cfg'))],
-                            Action(make_sr_cfg, 'SR.cfg  $TARGET'))
-    sr_sources = [INPUT_EXE, File(sr_exe), File(sr_cfg)]
-    if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
-        sr_sources.append(File(os.path.join(RECOMP_SRC, 'bssborder.csv')))
-    sr_sources += [File(path) for path in sorted(
-        glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci')))]
-    if os.path.exists(_outputs):
-        sr_sources.append(File(_outputs))
+        if not os.path.isdir(RECOMP_DIR):
+            os.makedirs(RECOMP_DIR)
 
-    # SRW reads relocations.csv from its working directory, but only for a PE
-    # whose relocations were stripped (SRW_loader.c); a PE with its .reloc
-    # section never needs it, so the file is optional.
-    _relocs = os.path.join(RECOMP_SRC, 'relocations.csv')
-    if os.path.exists(_relocs):
-        copy_if_newer(_relocs, os.path.join(RECOMP_DIR, 'relocations.csv'))
-        sr_sources.append(File(_relocs))
+        sr_exe = os.path.join(HOST_SR, SR_EXE_NAME)
+        sr_logs = [os.path.join(RECOMP_DIR, 'sr.out'), os.path.join(RECOMP_DIR, 'sr.err')]
+        sr_targets = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] + sr_logs
+        # Without a list scons does not know the seg*.llinc SR wrote, so a changed
+        # segment would leave stage gen "up to date": their hashes stand for them.
+        if not SR_EXTRAS:
+            sr_targets.append(SR_SEGMENTS)
+        # SR.cfg is the game's own, with the defaults of its extender before it
+        # (a DOS4GW program: what every such game needs, which the game's file
+        # may still override)
+        sr_cfg = os.path.join(RECOMP_DIR, 'SR.cfg')
+        defaults += env.Command(sr_cfg, [INPUT_EXE, File(os.path.join(RECOMP_SRC, 'SR.cfg'))],
+                                Action(make_sr_cfg, 'SR.cfg  $TARGET'))
+        sr_sources = [INPUT_EXE, File(sr_exe), File(sr_cfg)]
+        if os.path.exists(os.path.join(RECOMP_SRC, 'bssborder.csv')):
+            sr_sources.append(File(os.path.join(RECOMP_SRC, 'bssborder.csv')))
+        sr_sources += [File(path) for path in sorted(
+            glob.glob(os.path.join(RECOMP_SRC, 'llasm', '*.sci')))]
+        if os.path.exists(_outputs):
+            sr_sources.append(File(_outputs))
 
-    if PLATFORM == 'dos' and ARCH == 'llasm':
-        # SR finds the handlers the program gives to INT 21h AH=25h itself
-        # (tools/sr_run.py: a second run takes them as code)
-        game_fixup = os.path.join(RECOMP_SRC, 'llasm', 'fixup_interpret_as_code.sci')
-        sr_command = 'cd %s && python3 %s %s %s %s %s' % (
-            shell_quote(RECOMP_DIR), shell_quote(os.path.join(SDK_ROOT, 'tools', 'sr_run.py')),
-            shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'), shell_quote(game_fixup))
-    else:
-        sr_command = 'cd %s && %s %s %s > sr.out 2> sr.err' % (
-            shell_quote(RECOMP_DIR), shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'))
-    if not SR_EXTRAS:
-        sr_command += ' && { sha256sum seg*.llinc || :; } > %s' % shell_quote(os.path.basename(SR_SEGMENTS))
-    defaults += env.Command(sr_targets, sr_sources, sr_command)
+        # SRW reads relocations.csv from its working directory, but only for a PE
+        # whose relocations were stripped (SRW_loader.c); a PE with its .reloc
+        # section never needs it, so the file is optional.
+        _relocs = os.path.join(RECOMP_SRC, 'relocations.csv')
+        if os.path.exists(_relocs):
+            copy_if_newer(_relocs, os.path.join(RECOMP_DIR, 'relocations.csv'))
+            sr_sources.append(File(_relocs))
 
-if want('gen'):
-    # Stage 3: compact_source renames <module>.asm and compacts the data
-    # segments, and does it in place -- so the raw SR output is copied into
-    # build/gen/... first, and build/recomp/... keeps what SR wrote for
-    # diffing against another SDK.
-    compact = os.path.join(SDK_ROOT, 'tools', 'compact_source.py')
-    if not os.path.isdir(GEN_SRC_DIR):
-        os.makedirs(GEN_SRC_DIR)
+        if PLATFORM == 'dos' and ARCH == 'llasm':
+            # SR finds the handlers the program gives to INT 21h AH=25h itself
+            # (tools/sr_run.py: a second run takes them as code)
+            game_fixup = os.path.join(RECOMP_SRC, 'llasm', 'fixup_interpret_as_code.sci')
+            sr_command = 'cd %s && python3 %s %s %s %s %s' % (
+                shell_quote(RECOMP_DIR), shell_quote(os.path.join(SDK_ROOT, 'tools', 'sr_run.py')),
+                shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'), shell_quote(game_fixup))
+        else:
+            sr_command = 'cd %s && %s %s %s > sr.out 2> sr.err' % (
+                shell_quote(RECOMP_DIR), shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'))
+        if not SR_EXTRAS:
+            sr_command += ' && { sha256sum seg*.llinc || :; } > %s' % shell_quote(os.path.basename(SR_SEGMENTS))
+        defaults += env.Command(sr_targets, sr_sources, sr_command)
 
-    gen_targets = [GEN_MAIN] + [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS]
-    gen_sources = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] \
-        + ([] if SR_EXTRAS else [SR_SEGMENTS]) + [File(compact)]
+    if want('gen'):
+        # Stage 3: compact_source renames <module>.asm and compacts the data
+        # segments, and does it in place -- so the raw SR output is copied into
+        # build/gen/... first, and build/recomp/... keeps what SR wrote for
+        # diffing against another SDK.
+        compact = os.path.join(SDK_ROOT, 'tools', 'compact_source.py')
+        if not os.path.isdir(GEN_SRC_DIR):
+            os.makedirs(GEN_SRC_DIR)
 
-    # A game that lists its segments (compact / outputs) is built from that list.
-    # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.
-    take_all_segments = '' if SR_EXTRAS else \
-        ' && rm -f seg*.llinc && cp %s/seg*.llinc .' % shell_quote(RECOMP_DIR)
-    gen_cmd = 'mkdir -p %s && cd %s && cp %s %s .%s && python3 compact_source.py --dialect llasm --module %s' % (
-        shell_quote(GEN_SRC_DIR), shell_quote(GEN_SRC_DIR),
-        shell_quote(compact),
-        ' '.join(shell_quote(path) for path in [RECOMP_ASM]
-                 + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS]),
-        take_all_segments,
-        shell_quote(MODULE))
-    defaults += env.Command(gen_targets, gen_sources, gen_cmd)
+        gen_targets = [GEN_MAIN] + [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS]
+        gen_sources = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] \
+            + ([] if SR_EXTRAS else [SR_SEGMENTS]) + [File(compact)]
+
+        # A game that lists its segments (compact / outputs) is built from that list.
+        # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.
+        take_all_segments = '' if SR_EXTRAS else \
+            ' && rm -f seg*.llinc && cp %s/seg*.llinc .' % shell_quote(RECOMP_DIR)
+        gen_cmd = 'mkdir -p %s && cd %s && cp %s %s .%s && python3 compact_source.py --dialect llasm --module %s' % (
+            shell_quote(GEN_SRC_DIR), shell_quote(GEN_SRC_DIR),
+            shell_quote(compact),
+            ' '.join(shell_quote(path) for path in [RECOMP_ASM]
+                     + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS]),
+            take_all_segments,
+            shell_quote(MODULE))
+        defaults += env.Command(gen_targets, gen_sources, gen_cmd)
+
+    gen_deps = [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS] if SR_EXTRAS else [SR_SEGMENTS]
+    return GEN_MAIN, GEN_SRC_DIR, gen_deps
+
+
+GEN_MAIN, GEN_SRC_DIR, gen_deps = module_pipeline(MODULE, '.EXE', 'input_exe')
+# a DLL of the game recompiled as a module of its own: a master .llasm of its own
+DLL_MASTERS = []
+for DLL_MODULE in DLL_MODULES:
+    DLL_MASTERS.append(module_pipeline(DLL_MODULE, '.DLL', 'input_' + DLL_MODULE))
+
 
 # ------------------------------------------------- stage 4: obj, stage 5: bin --
 
@@ -682,10 +704,7 @@ if want('obj'):
     # in this order -- the game's own first, so a same-named file there wins
     gen_src_dir = GEN_SRC_DIR
     gen_main = GEN_MAIN
-    # the master includes the segments stage 3 copied beside it; they are no
-    # target of it, so SCons reads them before the copy and keeps an object of
-    # the old ones: the master's object depends on what stands for them
-    gen_deps = [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS] if SR_EXTRAS else [SR_SEGMENTS]
+    # (gen_deps: what the master's object depends on, from module_pipeline)
     llasm_inc_dirs = LLASM_INC_DIRS
 
     # The game's sources, then the SDK's runtime, then SR's shared code. A .c
@@ -771,12 +790,13 @@ if want('obj'):
                                         'gen_src_dir gen_main llasm_inc_dirs')
     else:
         game_llasm_dir = os.path.join(obj_game, 'llasm')
+        dll_masters = DLL_MASTERS
         sdk_llasm_dirs = SDK_LLASM_DIRS
         sdk_root = SDK_ROOT
         obj_runtime = os.path.join(obj_device, 'runtime')
         game_objs += SConscript(os.path.join(SDK_ROOT, 'scons', 'llasm.SConscript'),
                                 exports='device env gen_dir llasm_tool llasm_deps '
-                                        'gen_src_dir gen_main gen_deps llasm_inc_dirs game_llasm_dir '
+                                        'gen_src_dir gen_main gen_deps dll_masters llasm_inc_dirs game_llasm_dir '
                                         'sdk_llasm_dirs sdk_root obj_runtime')
     defaults += game_objs
 

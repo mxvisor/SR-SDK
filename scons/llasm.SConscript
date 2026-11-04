@@ -32,7 +32,7 @@ import sys
 #                    and runtime/win32/winapi/llasm); a file the game has under the
 #                    same name replaces the runtime's
 #   obj_runtime      where the objects of the runtime's .c go
-Import('device', 'env', 'gen_dir', 'llasm_tool', 'llasm_deps', 'gen_src_dir', 'gen_main', 'gen_deps', 'llasm_inc_dirs',
+Import('device', 'env', 'gen_dir', 'llasm_tool', 'llasm_deps', 'gen_src_dir', 'gen_main', 'gen_deps', 'dll_masters', 'llasm_inc_dirs',
        'game_llasm_dir', 'sdk_llasm_dirs', 'sdk_root', 'obj_runtime')
 
 llasm_include_re = re.compile(r'^include\s+(\S+)\r?$', re.M)
@@ -42,7 +42,7 @@ llasm_include_re = re.compile(r'^include\s+(\S+)\r?$', re.M)
 # it shares with the hand-written .llasm (llasm.llinc, extern.llinc,
 # macros.llinc) stay in game/llasm/, so a scan has to know both -- otherwise
 # SCons either loses the dependency or demands a file nobody builds.
-include_dirs = [gen_src_dir] + llasm_inc_dirs
+include_dirs = [gen_src_dir] + [dll[1] for dll in dll_masters] + llasm_inc_dirs
 
 def llasmfile_scan(node, env, path):
     contents = node.get_text_contents()
@@ -117,6 +117,9 @@ for sdk_dir in sdk_llasm_dirs:
 # where a file comes from.
 if gen_main:
     llasm_files.append(str(gen_main))
+# the masters of the DLLs recompiled as modules (dll_modules= of game.cfg)
+dll_deps = {str(master): deps for master, _, deps in dll_masters}
+llasm_files += list(dll_deps)
 llasm_files.sort(key = os.path.basename)
 
 for llasm_file in llasm_files:
@@ -127,6 +130,8 @@ for llasm_file in llasm_files:
     env.Depends(llasm_obj, llasm_deps)
     if gen_main and llasm_file == str(gen_main):
         env.Depends(llasm_obj, gen_deps)
+    if llasm_file in dll_deps:
+        env.Depends(llasm_obj, dll_deps[llasm_file])
     obj += llasm_obj
 
 Return('obj')
