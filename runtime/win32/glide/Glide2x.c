@@ -252,6 +252,7 @@ struct glide_state {
      * filter modes of grTexClampMode and grTexFilterMode */
     uint32_t tex_raw, tex_addr, tex_format, tex_small, tex_large, tex_aspect;
     uint32_t tex_sclamp, tex_tclamp, tex_minfilter, tex_magfilter;
+    uint32_t fog_mode, fog_color;
 };
 
 struct glide_texture {
@@ -276,6 +277,7 @@ static void front_drawn(void);
 static void shadow_to_gl(int pi);
 
 static struct glide_state st;
+static float fog_table[64];         /* grFogTable: the fog of 0..1 at the W of 64 steps */
 
 /* The program may open the window in one thread and draw in another (a driver DLL of the program does): the
  * OpenGL context belongs to the thread that made it current.  grSstWinOpen lets it go, and a
@@ -691,7 +693,7 @@ static void free_textures(void)
 /* what the shaders get of a vertex: the position in pixels, the colour in 0..1,
  * and sow, tow, oow (screen-linear, as a Voodoo interpolates them) */
 struct gl_vertex {
-    float x, y;
+    float x, y, z;
     float r, g, b, a;
     float sow, tow, oow;
 };
@@ -699,6 +701,7 @@ struct gl_vertex {
 #define BATCH_MAX 3072
 
 static GLuint fbo[3], fbo_tex[3];
+static GLuint depth_rb, ms_depth_rb;    /* the depth buffer: one for the colour buffers, as the board has */
 static GLuint prog_draw;
 /* the buffers are fb_width x fb_height, sx x sy pixels of them a pixel of the
  * screen; hires when that is not the screen's size */
@@ -713,7 +716,7 @@ static GLuint ms_fbo[3], ms_color[3];
 static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
 static GLint u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv, u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;
-static GLint u_atest, u_atest_ref;
+static GLint u_atest, u_atest_ref, u_fog, u_fogcolor, u_fogtab;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
@@ -727,13 +730,13 @@ static GLenum batch_mode;
 static const char draw_vs[] =
     "uniform vec2 inv_size;\n"
     "uniform float u_psize;\n"
-    "attribute vec2 a_pos;\n"
+    "attribute vec3 a_pos;\n"
     "attribute vec4 a_col;\n"
     "attribute vec3 a_stq;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
     "void main() {\n"
-    "    gl_Position = vec4(a_pos * inv_size - 1.0, 0.0, 1.0);\n"
+    "    gl_Position = vec4(a_pos.xy * inv_size - 1.0, a_pos.z * 2.0 - 1.0, 1.0);\n"
     "    gl_PointSize = u_psize;\n"
     "    v_col = a_col;\n"
     "    v_stq = a_stq;\n"
@@ -752,6 +755,9 @@ static const char draw_fs[] =
     "uniform int u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv;\n"
     "uniform int u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;\n"
     "uniform int u_atest;\n"
+    "uniform int u_fog;\n"
+    "uniform vec3 u_fogcolor;\n"
+    "uniform float u_fogtab[64];\n"
     "uniform float u_atest_ref;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
@@ -839,6 +845,17 @@ static const char draw_fs[] =
     "    else if (u_asrc == 2) a = tex.a;\n"
     "    else if (u_asrc == 3) a = tex.a * col.a;\n"
     "    else a = col.a;\n"
+    "    if (u_fog == 1) {\n"
+    "        /* the table runs over the W in steps of a quarter of an octave: index i is the W of 2^(3 + i/4) - 1 */\n"
+    "        float w = (v_stq.z > 0.0) ? 1.0 / v_stq.z : 1.0e9;\n"
+    "        float x = clamp(4.0 * (log2(w + 1.0) - 3.0), 0.0, 63.0);\n"
+    "        int i0 = int(floor(x));\n"
+    "        float f0 = u_fogtab[i0];\n"
+    "        float f1 = u_fogtab[(i0 < 63) ? i0 + 1 : 63];\n"
+    "        rgb = mix(rgb, u_fogcolor, mix(f0, f1, x - float(i0)));\n"
+    "    } else if (u_fog == 2) {\n"
+    "        rgb = mix(rgb, u_fogcolor, col.a);\n"
+    "    }\n"
     "    if (u_atest != 7) {\n"
     "        float ref = u_atest_ref;\n"
     "        float av = floor(clamp(a, 0.0, 1.0) * 255.0 + 0.5);\n"
@@ -916,6 +933,13 @@ static void ms_create(uint32_t nbuf)
         glRenderbufferStorageMultisample(GL_RENDERBUFFER, n, GL_RGBA8, fb_width, fb_height);
         glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo[i]);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, ms_color[i]);
+        if (ms_depth_rb == 0)
+        {
+            glGenRenderbuffers(1, &ms_depth_rb);
+            glBindRenderbuffer(GL_RENDERBUFFER, ms_depth_rb);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, n, GL_DEPTH_COMPONENT24, fb_width, fb_height);
+        }
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, ms_depth_rb);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         {
             eprintf("Glide: no multisampled frame buffer (%d samples)\n", n);
@@ -943,6 +967,8 @@ static void ms_delete(void)
         ms_fbo[i] = ms_color[i] = 0;
         ms_dirty[i] = 0;
     }
+    if (ms_depth_rb != 0) glDeleteRenderbuffers(1, &ms_depth_rb);
+    ms_depth_rb = 0;
     ms_samples = 0;
 }
 
@@ -994,6 +1020,9 @@ static int gl_start(uint32_t nbuf)
     u_ac_inv = glGetUniformLocation(prog_draw, "u_ac_inv");
     u_atest = glGetUniformLocation(prog_draw, "u_atest");
     u_atest_ref = glGetUniformLocation(prog_draw, "u_atest_ref");
+    u_fog = glGetUniformLocation(prog_draw, "u_fog");
+    u_fogcolor = glGetUniformLocation(prog_draw, "u_fogcolor");
+    u_fogtab = glGetUniformLocation(prog_draw, "u_fogtab");
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
     if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
@@ -1029,6 +1058,15 @@ static int gl_start(uint32_t nbuf)
         shadow_valid[i] = 1;
         shadow_dirty[i] = 0;
     }
+    glGenRenderbuffers(1, &depth_rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, fb_width, fb_height);
+    for (i = 0; i < nbuf; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) goto fail;
+    }
     ms_create(nbuf);
     if (ms_samples == 0) ms_delete();
     glDisable(GL_DEPTH_TEST);
@@ -1055,6 +1093,8 @@ static void gl_stop(void)
             Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
         }
         if (fbo_lo != 0) Game_GlFboDelete(&fbo_lo, &fbo_lo_tex, 0, NULL);
+        if (depth_rb != 0) glDeleteRenderbuffers(1, &depth_rb);
+        if (ms_depth_rb != 0) glDeleteRenderbuffers(1, &ms_depth_rb);
         if (lfb_tex != 0) glDeleteTextures(1, &lfb_tex);
         for (i = 0; i < num_textures; i++)
         {
@@ -1067,6 +1107,7 @@ static void gl_stop(void)
     memset(fbo, 0, sizeof(fbo));
     memset(fbo_tex, 0, sizeof(fbo_tex));
     fbo_lo = fbo_lo_tex = lfb_tex = 0;
+    depth_rb = ms_depth_rb = 0;
     for (i = 0; i < 3; i++)
     {
         free(base_mem[i]);
@@ -1161,6 +1202,17 @@ static void gl_flush(void)
         glBlendFunc(blend_gl(st.rgb_sf, 1), blend_gl(st.rgb_df, 0));
     }
 
+    if (st.depth_mode != GR_DEPTHBUFFER_DISABLE)
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_NEVER + (st.depth_function & 7));        /* GR_CMP_* run as GL_NEVER.. */
+        glDepthMask(st.depth_mask ? GL_TRUE : GL_FALSE);
+    }
+    else
+    {
+        glDisable(GL_DEPTH_TEST);
+    }
+
     glUseProgram(prog_draw);
     glUniform2f(u_inv_size, 2.0f / (float)scr_width, 2.0f / (float)scr_height);
     glUniform1f(u_psize, sx);
@@ -1180,6 +1232,13 @@ static void gl_flush(void)
     glUniform1i(u_ac_oth, (int)st.ac_other);
     glUniform1i(u_ac_inv, (int)st.ac_invert);
     glUniform1i(u_atest, (int)st.alpha_test_function);
+    glUniform1i(u_fog, (int)st.fog_mode);
+    if (st.fog_mode != 0)
+    {
+        uint32_t fc = color_to_argb(st.fog_color);
+        glUniform3f(u_fogcolor, ((fc >> 16) & 0xff) / 255.0f, ((fc >> 8) & 0xff) / 255.0f, (fc & 0xff) / 255.0f);
+        glUniform1fv(u_fogtab, 64, fog_table);
+    }
     glUniform1f(u_atest_ref, (float)st.alpha_test_reference);
     ccolor = color_to_argb(st.constant_color);
     glUniform4f(u_ccolor, ((ccolor >> 16) & 0xff) / 255.0f, ((ccolor >> 8) & 0xff) / 255.0f, (ccolor & 0xff) / 255.0f, (ccolor >> 24) / 255.0f);
@@ -1216,7 +1275,7 @@ static void gl_flush(void)
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].x);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].x);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].r);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].sow);
     glDrawArrays(batch_mode, 0, batch_n);
@@ -1224,10 +1283,28 @@ static void gl_flush(void)
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
     glUseProgram(0);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
 
     shadow_valid[pi] = 0;
     batch_n = 0;
     if (st.render_buffer == GR_BUFFER_FRONTBUFFER) front_drawn();
+}
+
+/* the depth of a vertex in 0..1 (0 the nearest): ooz of the vertex in the Z buffer's mode, 1/oow in the W buffer's,
+ * the bias alone when the depth is compared to it */
+static float vertex_depth(const struct gr_vertex *v)
+{
+    float d;
+
+    switch (st.depth_mode)
+    {
+        case GR_DEPTHBUFFER_ZBUFFER: d = v->ooz / 65535.0f + (float)st.depth_bias / 65535.0f; break;
+        case GR_DEPTHBUFFER_WBUFFER: d = (v->oow > 0.0f ? 1.0f / v->oow : 65535.0f) / 65535.0f + (float)st.depth_bias / 65535.0f; break;
+        case 3: case 4: d = (float)st.depth_bias / 65535.0f; break;
+        default: d = 0.0f; break;
+    }
+    return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
 }
 
 static void batch_vertex(GLenum mode, const struct gr_vertex *v, int pixel_centre)
@@ -1239,6 +1316,7 @@ static void batch_vertex(GLenum mode, const struct gr_vertex *v, int pixel_centr
     o = &batch[batch_n++];
     o->x = pixel_centre ? floorf(v->x) + 0.5f : v->x;
     o->y = pixel_centre ? floorf(v->y) + 0.5f : v->y;
+    o->z = vertex_depth(v);
     o->r = v->r / 255.0f;
     o->g = v->g / 255.0f;
     o->b = v->b / 255.0f;
@@ -1712,7 +1790,6 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
     int pi = phys_of(st.render_buffer);
 
     (void)alpha;
-    (void)depth;
     DEBUG("grBufferClear: 0x%x, 0x%x, 0x%x\n", color, alpha, depth);
     if (!win_open || pi < 0) return 0;
     gl_acquire();
@@ -1723,7 +1800,16 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
     set_scissor();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(((argb >> 16) & 0xff) / 255.0f, ((argb >> 8) & 0xff) / 255.0f, (argb & 0xff) / 255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    if (st.depth_mode != GR_DEPTHBUFFER_DISABLE)
+    {
+        glDepthMask(GL_TRUE);
+        glClearDepth((double)(depth & 0xffff) / 65535.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
+    else
+    {
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
     if (st.clip_minx == 0 && st.clip_miny == 0 && st.clip_maxx == (int32_t)scr_width && st.clip_maxy == (int32_t)scr_height)
     {
@@ -2111,11 +2197,12 @@ uint32_t CCALL grAlphaCombine_c(uint32_t function, uint32_t factor, uint32_t loc
     return 0;
 }
 
+/* GR_FOG_DISABLE 0, GR_FOG_WITH_ITERATED_ALPHA 1, GR_FOG_WITH_TABLE 2 (the shader's 2 and 1) */
 uint32_t CCALL grFogMode_c(uint32_t mode)
 {
     gl_flush();
     DEBUG("grFogMode: %u\n", mode);
-    // Note: This is a stub; real fog handling needs depth buffer
+    st.fog_mode = (mode == 1) ? 2 : (mode == 2) ? 1 : 0;
     return 0;
 }
 
@@ -2123,17 +2210,22 @@ uint32_t CCALL grFogColorValue_c(uint32_t value)
 {
     gl_flush();
     DEBUG("grFogColorValue: 0x%x\n", value);
+    st.fog_color = value;
     return 0;
 }
 
 uint32_t CCALL grFogTable_c(void *table)
 {
-    (void)table;
+    const uint8_t *t = (const uint8_t *)table;
+    int i;
+
     gl_flush();
     DEBUG("grFogTable\n");
+    if (t != NULL) for (i = 0; i < 64; i++) fog_table[i] = t[i] / 255.0f;
     return 0;
 }
 
+/* guFogGenerateExp makes no table yet (no program of ours calls it) */
 uint32_t CCALL guFogGenerateExp_c(void *table, uint32_t mode)
 {
     (void)table; (void)mode;
