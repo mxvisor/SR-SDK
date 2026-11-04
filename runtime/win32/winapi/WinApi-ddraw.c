@@ -851,7 +851,10 @@ uint32_t CCALL IDirectDraw_Release_c(struct IDirectDraw_c *lpThis)
     if (lpThis->RefCount == 0)
     {
         if (winapi_dd_screen == lpThis) winapi_dd_screen = NULL;
-        if (lpThis->Window != NULL)
+        /* the OpenGL window of Direct3D is the screen's, the next display mode shows it again: a
+         * program that releases DirectDraw between modes (from a thread that did not make the
+         * window) would hide it, and the hide waits for the thread that made it */
+        if ((lpThis->Window != NULL) && !(Winapi_Direct3DEnabled() && Winapi_Direct3DGL()))
         {
             Game_HideWindow(lpThis->Window);
         }
