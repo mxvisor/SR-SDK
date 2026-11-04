@@ -42,6 +42,7 @@
 #include <string.h>
 #include "platform.h"
 #include "Game_memory.h"
+#include "WinApi-ui.h"
 
 static void StubLog(const char *name, int *calls)
 {
@@ -390,15 +391,6 @@ uint32_t CCALL DestroyAcceleratorTable_c(uint32_t a0)
 }
 #endif
 
-#ifdef STUB_DialogBoxParamA
-uint32_t CCALL DialogBoxParamA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("DialogBoxParamA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_DirectDrawCreate
 uint32_t CCALL DirectDrawCreate_c(uint32_t a0, uint32_t a1, uint32_t a2)
 {
@@ -476,15 +468,6 @@ uint32_t CCALL EnableWindow_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("EnableWindow");
-    return 0;
-}
-#endif
-
-#ifdef STUB_EndDialog
-uint32_t CCALL EndDialog_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("EndDialog");
     return 0;
 }
 #endif
@@ -762,15 +745,6 @@ uint32_t CCALL GetDeviceCaps_c(uint32_t a0, uint32_t a1)
 {
     (void)a0; (void)a1;
     GAME_STUBLOG("GetDeviceCaps");
-    return 0;
-}
-#endif
-
-#ifdef STUB_GetDlgItem
-uint32_t CCALL GetDlgItem_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("GetDlgItem");
     return 0;
 }
 #endif
@@ -1312,19 +1286,13 @@ uint32_t CCALL ScreenToClient_c(uint32_t a0, uint32_t a1)
 }
 #endif
 
-#ifdef STUB_SendDlgItemMessageA
-uint32_t CCALL SendDlgItemMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
-{
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("SendDlgItemMessageA");
-    return 0;
-}
-#endif
-
 #ifdef STUB_SendMessageA
 uint32_t CCALL SendMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
 {
-    (void)a0; (void)a1; (void)a2; (void)a3;
+    uint32_t result;
+
+    /* a control of a dialog (WinApi-dialog.c) */
+    if (Winapi_DialogMessage(a0, a1, a2, a3, &result)) return result;
     GAME_STUBLOG("SendMessageA");
     return 0;
 }

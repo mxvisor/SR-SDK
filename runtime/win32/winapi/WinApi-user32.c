@@ -27,6 +27,8 @@
 #include <inttypes.h>
 #endif
 #include "WinApi-user32.h"
+#include "WinApi-ui.h"
+#include "Game_ui.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
@@ -83,6 +85,12 @@
  * the mouse's (default 0) */
 #ifndef GAME_WINAPI_TOUCH_GAMEPAD
 #define GAME_WINAPI_TOUCH_GAMEPAD 0
+#endif
+/* GAME_WINAPI_DESTROY_MESSAGE 1: DestroyWindow sends the window WM_DESTROY, as
+ * Windows does (a game that ends its message loop there, with PostQuitMessage,
+ * and writes its settings after the loop); default 0: it only succeeds */
+#ifndef GAME_WINAPI_DESTROY_MESSAGE
+#define GAME_WINAPI_DESTROY_MESSAGE 0
 #endif
 /* GAME_WINAPI_COMMAND_ON_IDLE: the command id the program gets when the user
  * picks the first item of its menu (the game asks "start a new game?" and
@@ -170,6 +178,7 @@ static int post_command_redraw = 0;
 #define WM_COMMAND 0x0111
 #define PM_NOREMOVE 0
 #define PM_REMOVE 1
+#define WM_DESTROY 0x0002
 #define WM_QUIT 0x0012
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
@@ -1263,11 +1272,20 @@ static int find_event(SDL_Event *event, int remove, int wait)
             if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             return FIND_EVENT_WAKE;
         }
+        if ((num_events > 0) && (Winapi_DialogEvent(event) || Winapi_MenuBarEvent(event)))
+        {
+            /* a dialog or the window menu took it (WinApi-ui.h); when it has closed,
+             * the caller looks at its queue again */
+            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+            if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen()) return FIND_EVENT_WAKE;
+            continue;
+        }
         if (num_events == 0) // no events
         {
             if (Thread_Exit) Game_StopMain();
 
-            if (wait)
+            /* an open menu or dialog holds the game: no message, no idle turn */
+            if (wait || Winapi_MenuBarOpen() || Winapi_DialogOpen())
             {
                 /* not for ever: a close of the window sets Thread_Exit and may send no
                  * further event to wake this thread (under Wine it does not) */
@@ -3065,7 +3083,19 @@ uint32_t CCALL DestroyWindow_c(void *hWnd)
 
     /* Every window is the one pseudo window (CreateWindowExA), whose SDL window
      * belongs to DirectDraw and goes with it; the program destroys its window on
-     * the way out, so there is nothing left to do but succeed. */
+     * the way out, so there is nothing left to do but succeed, and, for a game
+     * that waits for it, to send WM_DESTROY (once). */
+#if GAME_WINAPI_DESTROY_MESSAGE
+    {
+        static int destroyed;
+
+        if (!destroyed && lpfnWndProc != NULL)
+        {
+            destroyed = 1;
+            RunWndProc_asm(hWnd, WM_DESTROY, 0, 0, (uint32_t (*)(void *, uint32_t, uint32_t, uint32_t))lpfnWndProc);
+        }
+    }
+#endif
     (void)hWnd;
     return 1;
 }
@@ -3426,6 +3456,16 @@ uint32_t CCALL MessageBoxA_c(void *hWnd, const char *lpText, const char *lpCapti
     eprintf("MessageBoxA: \"%s\" / \"%s\" (0x%x)\n", lpText ? lpText : "", lpCaption ? lpCaption : "", uType);
 
     if (answer) return (uint32_t)answer;
+#if defined(GAME_WINAPI_DIALOGS) && GAME_WINAPI_DIALOGS
+    /* once the game shows its picture: a dialog over it (WinApi-dialog.c); the
+     * keys reach the window procedure without a window, so hWnd says nothing */
+    {
+        int ui_w, ui_h;
+
+        Game_UiSize(&ui_w, &ui_h);
+        if (ui_w > 0 && ui_h > 0) return Winapi_MessageBoxDialog(lpText, lpCaption, uType);
+    }
+#endif
 
     data.window = NULL;
     data.title = lpCaption;
@@ -3692,6 +3732,26 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
 
     eprintf("Unsupported method: %s hWnd=%p min=%u max=%u remove=%u\n", "PeekMessageA", hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
     exit(1);
+}
+
+/* A modal dialog (WinApi-dialog.c) inside the window procedure: the events go
+ * to it through find_event, which returns when it has closed or with an event
+ * nobody took (that one is dropped: the game does not run meanwhile) */
+void Winapi_ModalLoop(int (*done)(void))
+{
+    while (!done())
+    {
+        SDL_Event event;
+
+        if (Thread_Exit) Game_StopMain();
+        find_event(&event, 1, 1);
+    }
+}
+
+/* the item of the window menu chosen in WinApi-menubar.c */
+void Winapi_PostCommand(uint32_t id)
+{
+    PostMessageA_c(PSEUDO_HANDLE_MAIN_WINDOW, WM_COMMAND, id & 0xffff, 0);
 }
 
 uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)

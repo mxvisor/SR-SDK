@@ -96,6 +96,10 @@ uint32_t CCALL InsertMenuA_c(uint32_t hMenu, uint32_t uPosition, uint32_t uFlags
 /* for an overlay that shows the menu: the item at pos (0: none); text is NULL
  * for a separator, flags are MF_*, id is the command or the popup's handle */
 int Winapi_MenuItem(uint32_t hMenu, unsigned int pos, uint32_t *flags, uint32_t *id, const char **text);
+/* a copy (malloc) of a resource of the game's EXE: lpName is an id below 0x10000,
+ * else the guest's name ("#123" is an id); NULL if there is none */
+uint8_t *Winapi_LoadResource(uint32_t type, uint32_t lpName, uint32_t *size);
+unsigned char Winapi_AnsiChar(uint32_t ch);
 
 #ifdef __cplusplus
 }

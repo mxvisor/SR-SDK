@@ -61,7 +61,7 @@
 #include "Game_vars.h"
 #include "display.h"
 #include "main.h"
-#include "touchgamepad.h"
+#include "Game_ui.h"
 #include "palette32bgra.h"
 #if defined(GAME_WINAPI)
 #include "WinApi-ddraw.h"
@@ -311,6 +311,6 @@ void Game_Display_Flip(void)
 #ifdef GAME_DISPLAY_OVERLAY
     GAME_DISPLAY_OVERLAY(&picture);
 #endif
-    TouchGamepad_Draw(Game_Renderer);
+    Game_UiDraw(Game_Renderer);
     SDL_RenderPresent(Game_Renderer);
 }

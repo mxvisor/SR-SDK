@@ -29,9 +29,9 @@
 #include <SDL.h>
 #include "Game_gl.h"
 #include "Game_hooks.h"
+#include "Game_ui.h"
 
 #if defined(__ANDROID__) && GAME_WINAPI_TOUCH_GAMEPAD
-#include "touchgamepad.h"
 #define GL_TOUCH_GAMEPAD 1
 #endif
 
@@ -344,13 +344,13 @@ const char *Game_GlShaderName(int shader)
     return ((shader >= 0) && (shader < GAME_GL_SHADERS)) ? filter_names[shader] : "none";
 }
 
-#if defined(GL_TOUCH_GAMEPAD)
-
-/* The buttons of the touch gamepad over the picture. touchgamepad.c draws with
- * an SDL_Renderer and a GL window has none: it draws into a surface the size
- * of the window, by SDL's software renderer, and the surface is a texture over
- * the window, loaded again only when a button changes. Blending over the
- * surface's clear alpha leaves premultiplied colour. */
+/* The screen interface over the picture (Game_ui.h: the touch gamepad, the
+ * window menu). It draws with an SDL_Renderer and a GL window has none: it
+ * draws into a surface the size of the window, by SDL's software renderer, and
+ * the surface is a texture over the window, loaded again only when what it
+ * shows changes. Blending over the surface's clear alpha leaves premultiplied
+ * colour. Without the touch gamepad the pass runs only while there is
+ * something to show. */
 
 static const char overlay_fs[] =
     "uniform sampler2D u_tex;\n"
@@ -387,7 +387,7 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
 
     if ((surface == NULL) || (surface->w != ww) || (surface->h != wh))
     {
-        TouchGamepad_ForgetRenderer();
+        Game_UiForgetRenderer();
         if (renderer != NULL) SDL_DestroyRenderer(renderer);
         if (surface != NULL) SDL_FreeSurface(surface);
         renderer = NULL;
@@ -395,7 +395,7 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
         if (surface != NULL) renderer = SDL_CreateSoftwareRenderer(surface);
         if (renderer == NULL)
         {
-            eprintf("Game_Gl: the touch gamepad's surface: %s\n", SDL_GetError());
+            eprintf("Game_Gl: the surface of the screen interface: %s\n", SDL_GetError());
             if (surface != NULL) SDL_FreeSurface(surface);
             surface = NULL;
             return;
@@ -403,13 +403,13 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
         new_texture = 1;
     }
 
-    if (new_texture || (drawn_stamp != TouchGamepad_Stamp()))
+    if (new_texture || (drawn_stamp != Game_UiStamp()))
     {
-        drawn_stamp = TouchGamepad_Stamp();
+        drawn_stamp = Game_UiStamp();
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
-        TouchGamepad_Draw(renderer);
+        Game_UiDraw(renderer);
         SDL_RenderFlush(renderer);
         glBindTexture(GL_TEXTURE_2D, tex);
         if (new_texture) Game_GlTexImageBgra(0, ww, wh, surface->pixels);
@@ -433,8 +433,6 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
     glUseProgram(0);
     glDisable(GL_BLEND);
 }
-
-#endif
 
 static void present_texture(SDL_Window *window, GLuint tex,
                             int width, int height, int origin_upper_left,
@@ -548,6 +546,8 @@ static void present_texture(SDL_Window *window, GLuint tex,
 
 #if defined(GL_TOUCH_GAMEPAD)
     present_overlay(ww, wh, pos, prog_context);
+#else
+    if (Game_UiVisible()) present_overlay(ww, wh, pos, prog_context);
 #endif
     SDL_GL_SwapWindow(window);
 }

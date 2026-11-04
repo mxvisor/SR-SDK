@@ -73,11 +73,16 @@ void * CCALL CreateSolidBrush_c(uint32_t /*crColor*/)
 //    return CreateSolidBrush(crColor);
 }
 
-uint32_t CCALL DeleteDC_c(void */*hdc*/)
+/* The port's DCs and GDI objects are handles without Windows objects behind
+ * them (a WinG game makes its own, game/WinApi-wing.c): deleting one, on the
+ * way out, has nothing to free */
+uint32_t CCALL DeleteDC_c(void *hdc)
 {
-    eprintf("Unimplemented: %s\n", "DeleteDC");
-    exit(1);
-//    return DeleteDC((HDC)hdc);
+#if defined(DEBUG_GDI32)
+    eprintf("DeleteDC: 0x%" PRIxPTR "\n", (uintptr_t)hdc);
+#endif
+
+    return (hdc != NULL) ? 1 : 0;
 }
 
 uint32_t CCALL DeleteObject_c(void *hObject)
@@ -86,11 +91,7 @@ uint32_t CCALL DeleteObject_c(void *hObject)
     eprintf("DeleteObject: 0x%" PRIxPTR "\n", (uintptr_t)hObject);
 #endif
 
-    if (hObject == NULL) return 0;
-
-    eprintf("Unimplemented: %s\n", "DeleteObject");
-    exit(1);
-//    return DeleteObject((HGDIOBJ)hObject);
+    return (hObject != NULL) ? 1 : 0;
 }
 
 uint32_t CCALL FillRgn_c(void */*hdc*/, void */*hrgn*/, void */*hbr*/)

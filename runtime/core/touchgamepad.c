@@ -585,6 +585,19 @@ int TouchGamepad_Event(SDL_Event *event)
     return 1;
 }
 
+/* Another part of the port takes the touches (the window menu, a dialog): what
+ * is held is let go, its fingers will not come back here */
+void TouchGamepad_ReleaseAll(void)
+{
+    int i;
+
+    for (i = 0; i < gp_npads; i++) gp_pad[i].finger = -1;
+    for (i = 0; i < GP_NBUTTONS; i++)
+    {
+        if (gp_buttons[i].finger >= 0) gp_release(i);
+    }
+}
+
 int TouchGamepad_ButtonAt(float x, float y)
 {
     return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0 || gp_pad_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
@@ -617,6 +630,10 @@ int TouchGamepad_Event(SDL_Event *event)
 {
     (void)event;
     return 0;
+}
+
+void TouchGamepad_ReleaseAll(void)
+{
 }
 
 int TouchGamepad_ButtonAt(float x, float y)

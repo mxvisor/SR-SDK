@@ -40,7 +40,7 @@
 #include "WinApi-d3d.h"
 #include "Game_defs.h"
 #include "Game_thread.h"
-#include "touchgamepad.h"
+#include "Game_ui.h"
 
 /* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android every mode fills a
  * 4:3 display, as on the monitor of the game's time (320x200 is not 4:3 in
@@ -470,7 +470,7 @@ static void CopyToDisplay(struct IDirectDraw_c *dd)
         SDL_SetRenderDrawColor(dd->Renderer, 0, 0, 0, 255);
         SDL_RenderClear(dd->Renderer);
         SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, &picture);
-        TouchGamepad_Draw(dd->Renderer);
+        Game_UiDraw(dd->Renderer);
     }
 }
 #else

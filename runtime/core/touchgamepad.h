@@ -38,6 +38,7 @@ void TouchGamepad_ForgetRenderer(void);
 int  TouchGamepad_Stamp(void);
 int  TouchGamepad_Event(SDL_Event *event);
 /* is a button at this place of the window (0..1)? */
+void TouchGamepad_ReleaseAll(void);
 int  TouchGamepad_ButtonAt(float x, float y);
 /* the button `index`: 0 past the last one, otherwise *key is what it holds
  * down (SDLK_UNKNOWN: nothing); EmulateKey does not reach SDL's key state */

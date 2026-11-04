@@ -29,9 +29,10 @@
  * The menus are the game's own: LoadMenuA reads the RT_MENU resource of the
  * original EXE (GAME_MAIN_FILENAME in the game directory; the recompiled image
  * has no .rsrc) into a tree that the game can change (CheckMenuItem,
- * EnableMenuItem, InsertMenuA, ...).  The port draws no menu bar: an overlay
- * reads the window's menu through GetMenu_c, GetMenuItemCount_c and
- * Winapi_MenuItem.
+ * EnableMenuItem, InsertMenuA, ...).  The menu bar is drawn over the picture by
+ * WinApi-menubar.c, which reads the window's menu through GetMenu_c,
+ * GetMenuItemCount_c and Winapi_MenuItem; the dialogs (WinApi-dialog.c) read their
+ * templates through Winapi_LoadResource.
  *
  * The functions take the guest's raw 32-bit arguments; the game's import shim
  * bridges them (tools/gen_import_shim.py). */
@@ -382,7 +383,24 @@ static int resource_find(span exe, uint32_t type, uint32_t id, const char *name,
     return 1;
 }
 
-/* a UTF-16 string of the template, to the game's ANSI text (Latin-1; others: '?') */
+/* a UTF-16 character in the game's ANSI text: Latin-1 and the quotes and dashes
+ * of Windows-1252; others are '?' */
+unsigned char Winapi_AnsiChar(uint32_t ch)
+{
+    switch (ch)
+    {
+        case 0x2018: return 0x91;
+        case 0x2019: return 0x92;
+        case 0x201c: return 0x93;
+        case 0x201d: return 0x94;
+        case 0x2013: return 0x96;
+        case 0x2014: return 0x97;
+        case 0x2122: return 0x99;
+    }
+    return (ch < 0x100) ? (unsigned char)ch : '?';
+}
+
+/* a UTF-16 string of the template, to the game's ANSI text (Winapi_AnsiChar) */
 static int read_text(span s, uint32_t *offset, char **text)
 {
     uint32_t start = *offset, length = 0, ch, i;
@@ -398,7 +416,7 @@ static int read_text(span s, uint32_t *offset, char **text)
     for (i = 0; i < length; i++)
     {
         rd16(s, start + 2 * i, &ch);
-        (*text)[i] = (ch < 0x100) ? (char)ch : '?';
+        (*text)[i] = (char)Winapi_AnsiChar(ch);
     }
     (*text)[length] = 0;
     *offset = start + 2 * (length + 1);
@@ -488,17 +506,16 @@ static uint32_t parse_menu(span s)
     return hMenu;
 }
 
-uint32_t CCALL LoadMenuA_c(uint32_t hInstance, uint32_t lpMenuName)
+uint8_t *Winapi_LoadResource(uint32_t type, uint32_t lpName, uint32_t *size)
 {
     const char *name = NULL;
-    uint32_t id = lpMenuName, size = 0, hMenu = 0;
-    uint8_t *data;
+    uint32_t id = lpName, exe_size = 0;
+    uint8_t *data, *copy = NULL;
     span exe, resource;
 
-    (void)hInstance;                                /* the EXE's own resources */
-    if (lpMenuName >= 0x10000)
+    if (lpName >= 0x10000)
     {
-        name = (const char *)GUEST_MEM(lpMenuName);
+        name = (const char *)GUEST_MEM(lpName);
         if (name[0] == '#')
         {
             id = (uint32_t)strtoul(name + 1, NULL, 10);
@@ -506,12 +523,33 @@ uint32_t CCALL LoadMenuA_c(uint32_t hInstance, uint32_t lpMenuName)
         }
     }
 
-    data = exe_read(&size);
+    data = exe_read(&exe_size);
+    if (data == NULL) return NULL;
+    exe.data = data;
+    exe.size = exe_size;
+    if (resource_find(exe, type, id, name, &resource) && (copy = (uint8_t *)malloc(resource.size ? resource.size : 1)) != NULL)
+    {
+        memcpy(copy, resource.data, resource.size);
+        *size = resource.size;
+    }
+    free(data);
+    return copy;
+}
+
+uint32_t CCALL LoadMenuA_c(uint32_t hInstance, uint32_t lpMenuName)
+{
+    uint32_t size = 0, hMenu = 0;
+    uint8_t *data;
+
+    (void)hInstance;                                /* the EXE's own resources */
+    data = Winapi_LoadResource(4 /* RT_MENU */, lpMenuName, &size);
     if (data != NULL)
     {
-        exe.data = data;
-        exe.size = size;
-        if (resource_find(exe, 4 /* RT_MENU */, id, name, &resource)) hMenu = parse_menu(resource);
+        span resource;
+
+        resource.data = data;
+        resource.size = size;
+        hMenu = parse_menu(resource);
         free(data);
     }
     if (hMenu == 0) Winapi_SetLastError(ERROR_RESOURCE_NAME_NOT_FOUND_c);
@@ -564,7 +602,7 @@ uint32_t CCALL GetMenu_c(uint32_t hWnd)
     return 0;
 }
 
-/* the port draws no menu bar (an overlay reads the menu when it shows it) */
+/* the port draws no menu bar (WinApi-menubar.c reads the menu when it shows it) */
 uint32_t CCALL DrawMenuBar_c(uint32_t hWnd)
 {
     (void)hWnd;
