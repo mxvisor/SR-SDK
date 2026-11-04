@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
+#include "Game_hooks.h"
 #include "Game_gl.h"
 #include "WinApi-config.h"
 #include "WinApi-ddraw.h"
@@ -77,6 +78,11 @@
 #define RS_FOGTABLEMODE     35
 #define RS_COLORKEYENABLE   41
 
+/* a toggle of the port that hides the fog the program turns on (Game_hooks.h) */
+#ifndef GAME_D3D_FOG_HIDDEN
+#define GAME_D3D_FOG_HIDDEN 0
+#endif
+
 #define MAX_GL_STATES       64
 /* a game may load more than a thousand small textures */
 #define MAX_GL_TEXTURES     4096
@@ -92,6 +98,20 @@ static int ms_samples = 0;
 static int scene_ms = 0;                /* the scene draws into ms_fbo */
 static struct IDirectDrawSurface_c *scene_target = NULL;
 static int scene_active = 0;
+
+/* A program may draw from another thread than the one that opened the window (a driver
+ * that makes its own): the context is current in one thread at a time, so a call takes it
+ * and the end of a scene or a present gives it back. */
+static void gl_acquire(void)
+{
+    if ((gl_context != NULL) && (SDL_GL_GetCurrentContext() != gl_context)) SDL_GL_MakeCurrent(gl_window, gl_context);
+}
+
+static void gl_release(void)
+{
+    if ((gl_context != NULL) && !scene_active && (SDL_GL_GetCurrentContext() == gl_context)) SDL_GL_MakeCurrent(gl_window, NULL);
+}
+
 static int scene_has_z = 0;             /* the target has a Z-buffer attached */
 /* the surface read back mid-scene: only it may be uploaded back (the guest
  * wrote it after the readback; a Lock that predates the scene may not) */
@@ -208,6 +228,7 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
         a_box = glGetAttribLocation(draw_prog, "a_box");
     }
     if (draw_prog == 0) return 0;
+    gl_acquire();
     return 1;
 }
 
@@ -541,6 +562,7 @@ void Winapi_D3dGLEndScene(struct IDirectDrawSurface_c *target)
     scene_readback(target);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     scene_target = NULL;
+    gl_release();
 }
 
 void Winapi_D3dGLSync(struct IDirectDrawSurface_c *target)
@@ -738,8 +760,10 @@ void Winapi_D3dGLTextureFree(const struct IDirectDrawSurface_c *s)
         {
             if (gl_context != NULL)
             {
+                gl_acquire();
                 glDeleteTextures(1, &texcache[i].plain);
                 glDeleteTextures(1, &texcache[i].keyed);
+                gl_release();
             }
             memset(&texcache[i], 0, sizeof(texcache[i]));
         }
@@ -788,7 +812,7 @@ static void gl_apply_draw_state(int textured)
                          ? (GLint)gl_state[RS_ALPHAFUNC] : 0);
     glUniform1f(u_aref, (float)(gl_state[RS_ALPHAREF] & 255));
     /* the vertex fog, as the software rasteriser: a fog table is not done */
-    glUniform1i(u_fog, (gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0));
+    glUniform1i(u_fog, (gl_state[RS_FOGENABLE] != 0) && (gl_state[RS_FOGTABLEMODE] == 0) && !GAME_D3D_FOG_HIDDEN);
     glUniform3f(u_fogcolor, (float)((gl_state[RS_FOGCOLOR] >> 16) & 255) / 255.0f,
                 (float)((gl_state[RS_FOGCOLOR] >> 8) & 255) / 255.0f, (float)(gl_state[RS_FOGCOLOR] & 255) / 255.0f);
     if (textured)
@@ -1036,6 +1060,7 @@ void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window 
     glBindTexture(GL_TEXTURE_2D, present_tex);
     Game_GlTexSubImageBgra(present_w, present_h, present_buf);
     Game_GlPresentTexture(window, present_tex, present_w, present_h, 1, Display_ScalingQuality != 0);
+    gl_release();
 }
 
 void Winapi_D3dGLShutdown(void)

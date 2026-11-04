@@ -315,6 +315,7 @@ the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION
 | `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: the host pointer is hidden and held in the window from the first click in it until the focus is lost |
 | `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D`; the log says which renderer runs |
+| `GAME_D3D_FOG_HIDDEN` | optional: an expression, non-zero while a toggle of the port hides the fog the program turns on (read at every draw; Direct3D on OpenGL) |
 | `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
 | `GAME_DIRECT3D_ANTIALIAS_ARG` | the game's own switch of the antialiasing (it sets `D3DRENDERSTATE_ANTIALIAS`), added to its command line when Direct3D is on and `Display_Antialiasing` of the settings file (or `<ENVP>_ANTIALIASING`) asks for it |
 | `GAME_GUEST_LOW_MEMORY()` | the low memory of the guest window: how much of the guest's address space from `pointer_offset` up has to stay free of the host and of the guest's heap (default 1 MiB + 64 KiB, at most 64 MiB) |

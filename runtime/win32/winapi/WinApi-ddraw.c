@@ -1987,10 +1987,19 @@ uint32_t CCALL IDirectDrawSurface_PageUnlock_c(struct IDirectDrawSurface_c *lpTh
     return (lpThis != NULL) ? DD_OK : DDERR_INVALIDPARAMS;
 }
 
+/* DirectDraw 4: the surface takes the memory the program gives it (DDSD_LPSURFACE), for a
+ * texture the program fills in a buffer of its own; the owned memory stays as it is */
 uint32_t CCALL IDirectDrawSurface_SetSurfaceDesc_c(struct IDirectDrawSurface_c *lpThis, struct _ddsurfacedesc *lpDDSD, uint32_t dwFlags)
 {
-    (void)lpThis; (void)lpDDSD; (void)dwFlags;
-    return DDERR_UNSUPPORTED;
+    (void)dwFlags;
+    if ((lpThis == NULL) || (lpDDSD == NULL)) return DDERR_INVALIDPARAMS;
+    if ((lpDDSD->dwFlags & DDSD_LPSURFACE) == 0) return DDERR_UNSUPPORTED;
+    if ((void *)lpDDSD->lpSurface == NULL) return DDERR_INVALIDPARAMS;
+
+    lpThis->pixels = (uint8_t *)(void *)lpDDSD->lpSurface;
+    if ((lpDDSD->dwFlags & DDSD_PITCH) && (lpDDSD->lPitch > 0)) lpThis->pitch = (uint32_t)lpDDSD->lPitch;
+    lpThis->texture_gen++;
+    return DD_OK;
 }
 
 

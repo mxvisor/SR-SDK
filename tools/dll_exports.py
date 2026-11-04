@@ -14,7 +14,9 @@ runtime needs to load it.
             and a final pair of zeros
 
         The names are the export names of the DLL as the PE has them (`_drv_init@0`),
-        the strings follow the table.
+        the strings follow the table.  The procedures SRW made global for the exports
+        (`proc X global c_X`) become plain ones: the table is the module's interface, and
+        two modules may export the same names.
 """
 import os
 import re
@@ -86,7 +88,13 @@ def table(module, dll, master):
     procs = set()
     for name in os.listdir(directory):
         if name.endswith(('.llinc', '.llasm')):
-            procs.update(re.findall(r'^proc (\S+)', open(os.path.join(directory, name)).read(), re.M))
+            path = os.path.join(directory, name)
+            source = open(path).read()
+            procs.update(re.findall(r'^proc (\S+)', source, re.M))
+            plain = re.sub(r'^(proc \S+) global \S+[ \t]*$', r'\1', source, flags=re.M)
+            if plain != source:
+                with open(path, 'w') as stream:
+                    stream.write(plain)
     out = ['', '; the table of the module %s for the runtime (scons: tools/dll_exports.py)' % module,
            'datasegment %s_exports constant' % module,
            'dlabel %s_dll global' % module,

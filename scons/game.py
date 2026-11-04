@@ -671,6 +671,8 @@ def module_pipeline(MODULE, EXT, input_key):
         gen_targets = [GEN_MAIN] + [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS]
         gen_sources = [RECOMP_ASM] + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS] \
             + ([] if SR_EXTRAS else [SR_SEGMENTS]) + [File(compact)]
+        if EXT == '.DLL':
+            gen_sources.append(File(os.path.join(SDK_ROOT, 'tools', 'dll_exports.py')))
 
         # A game that lists its segments (compact / outputs) is built from that list.
         # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.

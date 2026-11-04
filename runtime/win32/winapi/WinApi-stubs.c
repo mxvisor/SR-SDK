@@ -1477,9 +1477,15 @@ uint32_t CCALL SetPriorityClass_c(uint32_t a0, uint32_t a1)
 #ifdef STUB_SetRect
 uint32_t CCALL SetRect_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
 {
-    (void)a0; (void)a1; (void)a2; (void)a3; (void)a4;
-    GAME_STUBLOG("SetRect");
-    return 1; /* success */
+    int32_t *rect;
+
+    if (a0 == 0) return 0;
+    rect = (int32_t *)GAME_GUEST32_TO_PTR(a0);
+    rect[0] = (int32_t)a1;   /* left, top, right, bottom */
+    rect[1] = (int32_t)a2;
+    rect[2] = (int32_t)a3;
+    rect[3] = (int32_t)a4;
+    return 1;
 }
 #endif
 
