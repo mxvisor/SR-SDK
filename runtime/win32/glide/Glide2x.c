@@ -63,6 +63,11 @@
 #ifndef GAME_GLIDE_FOG_HIDDEN
 #define GAME_GLIDE_FOG_HIDDEN 0
 #endif
+/* the board reported to the program is a Voodoo2 SLI pair (Game_hooks.h): twice the frame
+ * buffer memory, a depth buffer at 1024x768 for a program that sizes its modes by it */
+#ifndef GAME_GLIDE_SLI
+#define GAME_GLIDE_SLI 0
+#endif
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -1662,7 +1667,7 @@ uint32_t CCALL grSstQueryHardware_c(void *hwconfig)
     hw->SSTs[0].fbRam = 4;
     hw->SSTs[0].fbiRev = 2;
     hw->SSTs[0].nTexelfx = 1;
-    hw->SSTs[0].sliDetect = 0;
+    hw->SSTs[0].sliDetect = GAME_GLIDE_SLI ? 1 : 0;
     hw->SSTs[0].tmuConfig[0].tmuRev = 1;
     hw->SSTs[0].tmuConfig[0].tmuRam = 4;
     return FXTRUE;
