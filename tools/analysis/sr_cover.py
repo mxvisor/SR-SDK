@@ -38,11 +38,14 @@ SR_DIR = SR_EXE = IN_EXE = SCI_DIR = SCI = NODATA = None
 
 
 def set_paths(repo, module, variant):
-    global REPO, SR_DIR, SR_EXE, IN_EXE, SCI_DIR, SCI, NODATA
+    global REPO, SR_DIR, SR_EXE, IN_EXE, SCI_DIR, SCI, NODATA, MODULE
+    MODULE = module
     REPO = os.path.abspath(repo)
     SR_DIR = os.path.join(REPO, 'build', 'recomp', module, 'llasm')
     SR_EXE = os.path.join(REPO, 'build', 'host', 'linux-x64', 'sr-llasm', 'SRW.exe')
     IN_EXE = os.path.join(REPO, 'build', 'input', module, module + '.EXE')
+    if not os.path.exists(IN_EXE):
+        IN_EXE = os.path.join(REPO, 'build', 'input', module, module + '.DLL')     # a dll_modules= module
     SCI_DIR = os.path.join(REPO, 'game', 'recomp', module, variant, 'llasm')
     SCI = os.path.join(SCI_DIR, 'fixup_interpret_as_code.sci')
     NODATA = os.path.join(SCI_DIR, 'fixup_do_not_interpret_as_code.sci')
@@ -78,7 +81,7 @@ def run_sr():
 def emitted_code():
     out = set()
     with open(os.path.join(SR_DIR, 'seg01_code.llinc'), encoding='latin1') as f:
-        for m in re.finditer(r'^proc loc_([0-9A-Fa-f]{6})', f.read(), re.M):
+        for m in re.finditer(r'^proc loc_([0-9A-Fa-f]{6,8})\b', f.read(), re.M):
             out.add(int(m.group(1), 16))
     return out
 
@@ -107,8 +110,8 @@ def reloc_targets():
     md.skipdata = True
     md.skipdata_setup = (".byte", 0, 0)
 
-    text = [s for s in secs if s[0] == '.text'][0]
-    lo, hi = imagebase + text[1], imagebase + text[1] + text[2]
+    text = [s for s in secs if s[0] in ('.text', 'AUTO')][0]       # AUTO: the code section of a Watcom-linked DLL
+    lo, hi = imagebase + text[1], imagebase + text[1] + max(text[2], text[4])
     raw = data[text[3]:text[3] + text[4]]
     limit = min(len(raw), text[4])
     out = {}

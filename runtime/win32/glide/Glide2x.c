@@ -242,6 +242,16 @@ struct glide_state {
     uint32_t render_buffer;
     int32_t clip_minx, clip_miny, clip_maxx, clip_maxy;
     uint32_t texture;
+    uint32_t alpha_test_function, alpha_test_reference;
+    int32_t depth_bias;
+    /* grColorCombine / grAlphaCombine as the program gave them (cc_raw / ac_raw: instead of the
+     * guColorCombineFunction / guAlphaSource value above) */
+    uint32_t cc_raw, cc_function, cc_factor, cc_local, cc_other, cc_invert;
+    uint32_t ac_raw, ac_function, ac_factor, ac_local, ac_other, ac_invert;
+    /* grTexSource: the texture at an address of the texture memory (tex_raw), with the clamp and
+     * filter modes of grTexClampMode and grTexFilterMode */
+    uint32_t tex_raw, tex_addr, tex_format, tex_small, tex_large, tex_aspect;
+    uint32_t tex_sclamp, tex_tclamp, tex_minfilter, tex_magfilter;
 };
 
 struct glide_texture {
@@ -260,11 +270,32 @@ struct glide_texture {
 };
 
 static int glide_debug = -1;
-static int gl_ok;
 static void gl_flush(void);
+static void present_front(void);
+static void front_drawn(void);
 static void shadow_to_gl(int pi);
 
 static struct glide_state st;
+
+/* The program may open the window in one thread and draw in another (a driver DLL of the program does): the
+ * OpenGL context belongs to the thread that made it current.  grSstWinOpen lets it go, and a
+ * function that uses OpenGL takes it for its thread when it is not its own. */
+static SDL_Window *gl_window;
+static SDL_GLContext gl_context;
+static int gl_ok;
+
+static void gl_acquire(void)
+{
+    if (gl_ok && SDL_GL_GetCurrentContext() != gl_context && SDL_GL_MakeCurrent(gl_window, gl_context) != 0)
+    {
+        eprintf("Glide: cannot make the OpenGL context current: %s\n", SDL_GetError());
+    }
+}
+
+static void gl_release(void)
+{
+    if (gl_ok && SDL_GL_GetCurrentContext() == gl_context) SDL_GL_MakeCurrent(gl_window, NULL);
+}
 
 static int win_open = 0;
 static uint32_t scr_width, scr_height, scr_stride;
@@ -306,6 +337,7 @@ static void reset_state(void)
     st.color_combine = GR_COLORCOMBINE_ITRGB;
     st.alpha_source = GR_ALPHASOURCE_ITERATED_ALPHA;
     st.tex_combine = GR_TEXTURECOMBINE_DECAL;
+    st.alpha_test_function = 7;         /* GR_CMP_ALWAYS */
     st.rgb_sf = GR_BLEND_ONE;
     st.rgb_df = GR_BLEND_ZERO;
     st.alpha_sf = GR_BLEND_ONE;
@@ -474,9 +506,157 @@ static void decode_texture(struct glide_texture *t)
     t->gl_dirty = 1;
 }
 
+/* ---- the texture memory of the board: grTexDownloadMipMap puts the texels in at an address,
+ * grTexSource says which texture the pixels take; the texture is decoded when it is first drawn with ---- */
+
+#define TMU_MEM_SIZE 0x400000u
+#define MAX_RAW_TEXTURES 1024
+
+/* the guest's GrTexInfo */
+struct gr_tex_info {
+    int32_t smallLod, largeLod, aspectRatio, format;
+    uint32_t data;
+};
+
+static uint8_t *tmu_mem;
+static struct raw_texture {
+    uint32_t addr, size, format, small, large, aspect;
+    struct glide_texture tex;
+} raw_textures[MAX_RAW_TEXTURES];
+static uint32_t num_raw_textures;
+
+/* the size of the largest LOD in texels, and the bytes of all the LODs of a mipmap */
+static void tex_dimensions(uint32_t large, uint32_t aspect, uint32_t *w, uint32_t *h)
+{
+    uint32_t big = lod_size(large);
+
+    *w = (aspect <= 3) ? big : (big >> (aspect - 3));
+    *h = (aspect >= 3) ? big : (big >> (3 - aspect));
+    if (*w < 1) *w = 1;
+    if (*h < 1) *h = 1;
+}
+
+static uint32_t tex_mipmap_bytes(uint32_t small, uint32_t large, uint32_t aspect, uint32_t format)
+{
+    uint32_t w, h, lod, size = 0;
+
+    tex_dimensions(large, aspect, &w, &h);
+    for (lod = large; lod <= small; lod++)
+    {
+        uint32_t lw = w >> (lod - large), lh = h >> (lod - large);
+        if (lw < 1) lw = 1;
+        if (lh < 1) lh = 1;
+        size += lw * lh * texel_bytes(format);
+    }
+    return size;
+}
+
+static void raw_texture_free(struct raw_texture *r)
+{
+    if (r->tex.gltex != 0 && gl_ok)
+    {
+        gl_acquire();
+        glDeleteTextures(1, &r->tex.gltex);
+    }
+    free(r->tex.raw);
+    free(r->tex.argb);
+    memset(r, 0, sizeof(*r));
+}
+
+static void free_raw_textures(void)
+{
+    uint32_t i;
+    for (i = 0; i < num_raw_textures; i++) raw_texture_free(&raw_textures[i]);
+    num_raw_textures = 0;
+    free(tmu_mem);
+    tmu_mem = NULL;
+}
+
+/* the texture grTexSource named: found by what it is and where, made from the texture memory when it is new */
+static struct glide_texture *raw_texture(void)
+{
+    struct raw_texture *r = NULL;
+    uint32_t i;
+
+    if (tmu_mem == NULL) return NULL;
+    for (i = 0; i < num_raw_textures; i++)
+    {
+        struct raw_texture *c = &raw_textures[i];
+        if (c->tex.used && c->addr == st.tex_addr && c->format == st.tex_format && c->small == st.tex_small
+            && c->large == st.tex_large && c->aspect == st.tex_aspect)
+        {
+            r = c;
+            break;
+        }
+        if (r == NULL && !c->tex.used) r = c;       /* a free place, if there is no such texture */
+    }
+    if (r == NULL || !r->tex.used || r->addr != st.tex_addr || r->format != st.tex_format
+        || r->small != st.tex_small || r->large != st.tex_large || r->aspect != st.tex_aspect)
+    {
+        uint32_t w, h, size = tex_mipmap_bytes(st.tex_small, st.tex_large, st.tex_aspect, st.tex_format);
+
+        if (st.tex_addr + size > TMU_MEM_SIZE) return NULL;
+        if (r == NULL)
+        {
+            if (num_raw_textures >= MAX_RAW_TEXTURES)
+            {
+                /* the oldest goes: the textures of one frame fit */
+                raw_texture_free(&raw_textures[0]);
+                r = &raw_textures[0];
+            }
+            else r = &raw_textures[num_raw_textures++];
+        }
+        else if (r->tex.used) raw_texture_free(r);
+        memset(r, 0, sizeof(*r));
+        tex_dimensions(st.tex_large, st.tex_aspect, &w, &h);
+        r->addr = st.tex_addr;
+        r->size = size;
+        r->format = st.tex_format;
+        r->small = st.tex_small;
+        r->large = st.tex_large;
+        r->aspect = st.tex_aspect;
+        r->tex.width = w;
+        r->tex.height = h;
+        r->tex.format = st.tex_format;
+        r->tex.largest_lod = st.tex_large;
+        r->tex.smallest_lod = st.tex_small;
+        r->tex.aspect = st.tex_aspect;
+        r->tex.data_size = size;
+        r->tex.raw = (uint8_t *)malloc(w * h * texel_bytes(st.tex_format));
+        r->tex.argb = (uint32_t *)malloc(w * h * 4);
+        if (r->tex.raw == NULL || r->tex.argb == NULL)
+        {
+            raw_texture_free(r);
+            return NULL;
+        }
+        /* the largest LOD is the first at the address */
+        memcpy(r->tex.raw, tmu_mem + st.tex_addr, w * h * texel_bytes(st.tex_format));
+        r->tex.used = 1;
+        r->tex.downloaded = 1;
+        decode_texture(&r->tex);
+        r->tex.s_clamp = ~st.tex_sclamp;                /* the wrap and filter of the draw: set below */
+    }
+    if (r->tex.s_clamp != st.tex_sclamp || r->tex.t_clamp != st.tex_tclamp
+        || r->tex.minfilter != st.tex_minfilter || r->tex.magfilter != st.tex_magfilter)
+    {
+        r->tex.s_clamp = st.tex_sclamp;
+        r->tex.t_clamp = st.tex_tclamp;
+        r->tex.minfilter = st.tex_minfilter;
+        r->tex.magfilter = st.tex_magfilter;
+        r->tex.gl_dirty = 1;
+    }
+    if (((r->tex.format == GR_TEXFMT_P_8) || (r->tex.format == GR_TEXFMT_AP_88)) && (r->tex.decoded_palette != palette_serial))
+    {
+        decode_texture(&r->tex);
+    }
+    return &r->tex;
+}
+
 static struct glide_texture *current_texture(void)
 {
     struct glide_texture *t;
+
+    if (st.tex_raw) return raw_texture();
 
     if (st.texture >= num_textures) return NULL;
     t = &textures[st.texture];
@@ -488,9 +668,14 @@ static struct glide_texture *current_texture(void)
     return t;
 }
 
+static void free_raw_textures(void);
+
 static void free_textures(void)
 {
     uint32_t i;
+
+    free_raw_textures();
+    gl_acquire();
     for (i = 0; i < num_textures; i++)
     {
         free(textures[i].raw);
@@ -513,8 +698,6 @@ struct gl_vertex {
 
 #define BATCH_MAX 3072
 
-static SDL_Window *gl_window;
-static SDL_GLContext gl_context;
 static GLuint fbo[3], fbo_tex[3];
 static GLuint prog_draw;
 /* the buffers are fb_width x fb_height, sx x sy pixels of them a pixel of the
@@ -529,6 +712,8 @@ static int ms_samples;              /* antialiasing: the samples per pixel, 0 wi
 static GLuint ms_fbo[3], ms_color[3];
 static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
+static GLint u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv, u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;
+static GLint u_atest, u_atest_ref;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
@@ -564,8 +749,58 @@ static const char draw_fs[] =
     "uniform vec4 u_ccolor;\n"
     "uniform vec3 u_chroma;\n"
     "uniform int u_chroma_on;\n"
+    "uniform int u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv;\n"
+    "uniform int u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;\n"
+    "uniform int u_atest;\n"
+    "uniform float u_atest_ref;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
+    "/* grColorCombine / grAlphaCombine of glide2x.h: function (ZERO 0, LOCAL 1, LOCAL_ALPHA 2, SCALE_OTHER 3,\n"
+    " * SCALE_OTHER_ADD_LOCAL 4, ..._ADD_LOCAL_ALPHA 5, SCALE_OTHER_MINUS_LOCAL 6, ..._ADD_LOCAL 7, ..._ADD_LOCAL_ALPHA 8,\n"
+    " * SCALE_MINUS_LOCAL_ADD_LOCAL 9, ..._ADD_LOCAL_ALPHA 10), factor (ZERO 0, LOCAL 1, OTHER_ALPHA 2, LOCAL_ALPHA 3,\n"
+    " * TEXTURE_ALPHA 4, TEXTURE_RGB 5, ONE 8, and 8 + n for one minus n), local (ITERATED 0, CONSTANT 1, DEPTH 2),\n"
+    " * other (ITERATED 0, TEXTURE 1, CONSTANT 2), invert */\n"
+    "float comb_factor(int fac, vec4 loc, vec4 oth, vec4 tex) {\n"
+    "    int n = fac - (fac >= 8 ? 8 : 0);\n"
+    "    float f = (n == 1) ? loc.a : (n == 2) ? oth.a : (n == 3) ? loc.a : (n == 4) ? tex.a : 0.0;\n"
+    "    return (fac >= 8) ? 1.0 - f : f;\n"
+    "}\n"
+    "float comb_factor_rgb(int fac, vec4 loc, vec4 oth, vec4 tex, int c) {\n"
+    "    if (fac == 1 || fac == 9) { float l = (c == 0) ? loc.r : (c == 1) ? loc.g : loc.b; return (fac == 9) ? 1.0 - l : l; }\n"
+    "    if (fac == 5 || fac == 13) { float t = (c == 0) ? tex.r : (c == 1) ? tex.g : tex.b; return (fac == 13) ? 1.0 - t : t; }\n"
+    "    return comb_factor(fac, loc, oth, tex);\n"
+    "}\n"
+    "float comb_apply(int fn, float f, float loc, float oth, float loca) {\n"
+    "    if (fn == 0) return 0.0;\n"
+    "    if (fn == 1) return loc;\n"
+    "    if (fn == 2) return loca;\n"
+    "    if (fn == 3) return f * oth;\n"
+    "    if (fn == 4) return f * oth + loc;\n"
+    "    if (fn == 5) return f * oth + loca;\n"
+    "    if (fn == 6) return f * (oth - loc);\n"
+    "    if (fn == 7) return f * (oth - loc) + loc;\n"
+    "    if (fn == 8) return f * (oth - loc) + loca;\n"
+    "    if (fn == 9) return loc - f * loc;\n"
+    "    return loca - f * loc;\n"
+    "}\n"
+    "vec4 comb_local(vec4 col, int loc) { return (loc == 0) ? col : (loc == 1) ? u_ccolor : vec4(0.0); }\n"
+    "vec4 comb_other(vec4 col, vec4 tex, int oth) { return (oth == 0) ? col : (oth == 1) ? tex : u_ccolor; }\n"
+    "vec3 combine3(vec4 col, vec4 tex, int fn, int fac, int locsel, int othsel, int inv) {\n"
+    "    vec4 loc = comb_local(col, locsel);\n"
+    "    vec4 oth = comb_other(col, tex, othsel);\n"
+    "    vec3 r;\n"
+    "    r.r = comb_apply(fn, comb_factor_rgb(fac, loc, oth, tex, 0), loc.r, oth.r, loc.a);\n"
+    "    r.g = comb_apply(fn, comb_factor_rgb(fac, loc, oth, tex, 1), loc.g, oth.g, loc.a);\n"
+    "    r.b = comb_apply(fn, comb_factor_rgb(fac, loc, oth, tex, 2), loc.b, oth.b, loc.a);\n"
+    "    r = clamp(r, 0.0, 1.0);\n"
+    "    return (inv != 0) ? 1.0 - r : r;\n"
+    "}\n"
+    "float combine1(vec4 col, vec4 tex, int fn, int fac, int locsel, int othsel, int inv) {\n"
+    "    vec4 loc = comb_local(col, locsel);\n"
+    "    vec4 oth = comb_other(col, tex, othsel);\n"
+    "    float r = clamp(comb_apply(fn, comb_factor(fac, loc, oth, tex), loc.a, oth.a, loc.a), 0.0, 1.0);\n"
+    "    return (inv != 0) ? 1.0 - r : r;\n"
+    "}\n"
     "void main() {\n"
     "    vec4 col = clamp(v_col, 0.0, 1.0);\n"
     "    vec4 tex = vec4(1.0);\n"
@@ -576,12 +811,15 @@ static const char draw_fs[] =
     "        tex = vec4(0.0);\n"
     "    }\n"
     "    vec3 other;\n"
-    "    if (u_cc == 1 || u_cc == 13) other = u_ccolor.rgb;\n"
+    "    if (u_cc_raw != 0) {\n"
+    "        other = (u_cc_oth == 1) ? tex.rgb : ((u_cc_oth == 0) ? col.rgb : u_ccolor.rgb);\n"
+    "    } else if (u_cc == 1 || u_cc == 13) other = u_ccolor.rgb;\n"
     "    else if (u_cc == 0 || u_cc == 2 || u_cc == 3 || u_cc == 16) other = col.rgb;\n"
     "    else other = tex.rgb;\n"
     "    if (u_chroma_on != 0 && all(lessThan(abs(other - u_chroma), vec3(0.5 / 255.0)))) discard;\n"
     "    vec3 rgb;\n"
-    "    if (u_cc == 0) rgb = vec3(0.0);\n"
+    "    if (u_cc_raw != 0) rgb = combine3(col, tex, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv);\n"
+    "    else if (u_cc == 0) rgb = vec3(0.0);\n"
     "    else if (u_cc == 1) rgb = u_ccolor.rgb;\n"
     "    else if (u_cc == 2 || u_cc == 3) rgb = col.rgb;\n"
     "    else if (u_cc == 4) rgb = tex.rgb;\n"
@@ -596,10 +834,18 @@ static const char draw_fs[] =
     "    else if (u_cc == 16) rgb = vec3(1.0);\n"
     "    else rgb = col.rgb;\n"
     "    float a;\n"
-    "    if (u_asrc == 0) a = u_ccolor.a;\n"
+    "    if (u_ac_raw != 0) a = combine1(col, tex, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv);\n"
+    "    else if (u_asrc == 0) a = u_ccolor.a;\n"
     "    else if (u_asrc == 2) a = tex.a;\n"
     "    else if (u_asrc == 3) a = tex.a * col.a;\n"
     "    else a = col.a;\n"
+    "    if (u_atest != 7) {\n"
+    "        float ref = u_atest_ref;\n"
+    "        float av = floor(clamp(a, 0.0, 1.0) * 255.0 + 0.5);\n"
+    "        bool pass = (u_atest == 1) ? av < ref : (u_atest == 2) ? av == ref : (u_atest == 3) ? av <= ref\n"
+    "                  : (u_atest == 4) ? av > ref : (u_atest == 5) ? av != ref : (u_atest == 6) ? av >= ref : false;\n"
+    "        if (!pass) discard;\n"
+    "    }\n"
     "    gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), a);\n"
     "}\n";
 
@@ -734,6 +980,20 @@ static int gl_start(uint32_t nbuf)
     u_ccolor = glGetUniformLocation(prog_draw, "u_ccolor");
     u_chroma = glGetUniformLocation(prog_draw, "u_chroma");
     u_chroma_on = glGetUniformLocation(prog_draw, "u_chroma_on");
+    u_cc_raw = glGetUniformLocation(prog_draw, "u_cc_raw");
+    u_cc_fn = glGetUniformLocation(prog_draw, "u_cc_fn");
+    u_cc_fac = glGetUniformLocation(prog_draw, "u_cc_fac");
+    u_cc_loc = glGetUniformLocation(prog_draw, "u_cc_loc");
+    u_cc_oth = glGetUniformLocation(prog_draw, "u_cc_oth");
+    u_cc_inv = glGetUniformLocation(prog_draw, "u_cc_inv");
+    u_ac_raw = glGetUniformLocation(prog_draw, "u_ac_raw");
+    u_ac_fn = glGetUniformLocation(prog_draw, "u_ac_fn");
+    u_ac_fac = glGetUniformLocation(prog_draw, "u_ac_fac");
+    u_ac_loc = glGetUniformLocation(prog_draw, "u_ac_loc");
+    u_ac_oth = glGetUniformLocation(prog_draw, "u_ac_oth");
+    u_ac_inv = glGetUniformLocation(prog_draw, "u_ac_inv");
+    u_atest = glGetUniformLocation(prog_draw, "u_atest");
+    u_atest_ref = glGetUniformLocation(prog_draw, "u_atest_ref");
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
     if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
@@ -865,6 +1125,7 @@ static void gl_flush(void)
     struct glide_texture *tex = NULL;
 
     if (batch_n == 0) return;
+    gl_acquire();
     pi = gl_ok ? phys_of(st.render_buffer) : -1;
     if (pi < 0)
     {
@@ -872,9 +1133,14 @@ static void gl_flush(void)
         return;
     }
 
-    use_texture = (cc >= GR_COLORCOMBINE_DECAL_TEXTURE && cc <= GR_COLORCOMBINE_DIFF_SPEC_B)
-                  || (st.alpha_source == GR_ALPHASOURCE_TEXTURE_ALPHA)
-                  || (st.alpha_source == GR_ALPHASOURCE_TEXTURE_ALPHA_TIMES_ITERATED_ALPHA);
+    /* does the pixel come from the texture: the combine of the colour and that of the alpha, each as the
+     * program gave it (grColorCombine, grAlphaCombine) or as guColorCombineFunction/guAlphaSource say */
+    use_texture = st.cc_raw ? (st.cc_other == 1 || (st.cc_factor & 7) == 4 || (st.cc_factor & 7) == 5)
+                            : (cc >= GR_COLORCOMBINE_DECAL_TEXTURE && cc <= GR_COLORCOMBINE_DIFF_SPEC_B);
+    use_texture = use_texture
+                  || (st.ac_raw ? (st.ac_other == 1 || (st.ac_factor & 7) == 4)
+                                : (st.alpha_source == GR_ALPHASOURCE_TEXTURE_ALPHA
+                                   || st.alpha_source == GR_ALPHASOURCE_TEXTURE_ALPHA_TIMES_ITERATED_ALPHA));
     if (use_texture && st.tex_combine != GR_TEXTURECOMBINE_ZERO && st.tex_combine != GR_TEXTURECOMBINE_ONE)
     {
         tex = current_texture();
@@ -901,6 +1167,20 @@ static void gl_flush(void)
     if (batch_mode == GL_LINES) glLineWidth(sx);
     glUniform1i(u_cc, (int)cc);
     glUniform1i(u_asrc, (int)st.alpha_source);
+    glUniform1i(u_cc_raw, (int)st.cc_raw);
+    glUniform1i(u_cc_fn, (int)st.cc_function);
+    glUniform1i(u_cc_fac, (int)st.cc_factor);
+    glUniform1i(u_cc_loc, (int)st.cc_local);
+    glUniform1i(u_cc_oth, (int)st.cc_other);
+    glUniform1i(u_cc_inv, (int)st.cc_invert);
+    glUniform1i(u_ac_raw, (int)st.ac_raw);
+    glUniform1i(u_ac_fn, (int)st.ac_function);
+    glUniform1i(u_ac_fac, (int)st.ac_factor);
+    glUniform1i(u_ac_loc, (int)st.ac_local);
+    glUniform1i(u_ac_oth, (int)st.ac_other);
+    glUniform1i(u_ac_inv, (int)st.ac_invert);
+    glUniform1i(u_atest, (int)st.alpha_test_function);
+    glUniform1f(u_atest_ref, (float)st.alpha_test_reference);
     ccolor = color_to_argb(st.constant_color);
     glUniform4f(u_ccolor, ((ccolor >> 16) & 0xff) / 255.0f, ((ccolor >> 8) & 0xff) / 255.0f, (ccolor & 0xff) / 255.0f, (ccolor >> 24) / 255.0f);
     if (st.chromakey_mode == GR_CHROMAKEY_ENABLE)
@@ -947,6 +1227,7 @@ static void gl_flush(void)
 
     shadow_valid[pi] = 0;
     batch_n = 0;
+    if (st.render_buffer == GR_BUFFER_FRONTBUFFER) front_drawn();
 }
 
 static void batch_vertex(GLenum mode, const struct gr_vertex *v, int pixel_centre)
@@ -1209,6 +1490,7 @@ static void present_front(void)
     int pi = bidx[0];
 
     if (!gl_ok) return;
+    gl_acquire();
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
     ms_resolve(pi);
@@ -1216,6 +1498,35 @@ static void present_front(void)
                           (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
 }
 
+
+/* what is drawn into the front buffer is on the screen: not after every triangle, but when a frame's
+ * time has gone since the last time, and at grSstIdle and the like */
+static int front_dirty;
+static uint64_t front_time;
+
+static void front_drawn(void)
+{
+    uint64_t now = SDL_GetPerformanceCounter();
+
+    front_dirty = 1;
+    if ((double)(now - front_time) >= (double)SDL_GetPerformanceFrequency() / 60.0)
+    {
+        front_dirty = 0;
+        front_time = now;
+        present_front();
+    }
+}
+
+static void front_flush(void)
+{
+    gl_flush();
+    if (front_dirty)
+    {
+        front_dirty = 0;
+        front_time = SDL_GetPerformanceCounter();
+        present_front();
+    }
+}
 
 /* ---- the API ---- */
 
@@ -1336,6 +1647,7 @@ uint32_t CCALL grSstWinOpen_c(uint32_t hWnd, uint32_t resolution, uint32_t refre
     vr_base = SDL_GetPerformanceCounter();
     win_open = 1;
     reset_state();
+    gl_release();
     return FXTRUE;
 
 fail:
@@ -1362,6 +1674,7 @@ uint32_t CCALL grSstWinClose_c(void)
     if (!win_open) return 0;
     win_open = 0;
 
+    gl_acquire();
     gl_stop();
     for (i = 0; i < 3; i++)
     {
@@ -1381,6 +1694,7 @@ uint32_t CCALL grSstWinClose_c(void)
 uint32_t CCALL grSstIdle_c(void)
 {
     DEBUG("grSstIdle\n");
+    if (win_open) front_flush();
     return 0;
 }
 
@@ -1401,6 +1715,7 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
     (void)depth;
     DEBUG("grBufferClear: 0x%x, 0x%x, 0x%x\n", color, alpha, depth);
     if (!win_open || pi < 0) return 0;
+    gl_acquire();
 
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
@@ -1601,6 +1916,7 @@ uint32_t CCALL grLfbLock_c(uint32_t type, uint32_t buf, uint32_t writeMode, uint
 
     DEBUG("grLfbLock: %u, %u, %u, %u, %u\n", type, buf, writeMode, origin, pixelPipeline);
     if (!win_open || li == NULL) return FXFALSE;
+    gl_acquire();
     mem = buffer_of(buf);
     if (mem == NULL) return FXFALSE;
     if (buf != GR_BUFFER_AUXBUFFER)
@@ -1647,6 +1963,7 @@ uint32_t CCALL grLfbUnlock_c(uint32_t type, uint32_t buf)
 
     DEBUG("grLfbUnlock: %u, %u\n", type, buf);
     if (!win_open) return FXFALSE;
+    gl_acquire();
 
     if (write && lfb_scratch_write && lfb_scratch_buffer == buf)
     {
@@ -1763,8 +2080,12 @@ uint32_t CCALL grColorCombine_c(uint32_t function, uint32_t factor, uint32_t loc
 {
     gl_flush();
     DEBUG("grColorCombine: %u, %u, 0x%x, 0x%x, %u\n", function, factor, local, other, invert);
-    (void)factor; (void)local; (void)other; (void)invert;
-    st.color_combine = function;
+    st.cc_raw = 1;
+    st.cc_function = function;
+    st.cc_factor = factor;
+    st.cc_local = local;
+    st.cc_other = other;
+    st.cc_invert = invert;
     return 0;
 }
 
@@ -1772,15 +2093,21 @@ uint32_t CCALL guColorCombineFunction_c(uint32_t function)
 {
     gl_flush();
     DEBUG("guColorCombineFunction: %u\n", function);
+    st.cc_raw = 0;
     st.color_combine = function;
     return 0;
 }
 
-uint32_t CCALL grAlphaCombine_c(uint32_t function)
+uint32_t CCALL grAlphaCombine_c(uint32_t function, uint32_t factor, uint32_t local, uint32_t other, uint32_t invert)
 {
     gl_flush();
-    DEBUG("grAlphaCombine: %u\n", function);
-    st.alpha_source = function;
+    DEBUG("grAlphaCombine: %u, %u, %u, %u, %u\n", function, factor, local, other, invert);
+    st.ac_raw = 1;
+    st.ac_function = function;
+    st.ac_factor = factor;
+    st.ac_local = local;
+    st.ac_other = other;
+    st.ac_invert = invert;
     return 0;
 }
 
@@ -1838,19 +2165,45 @@ uint32_t CCALL grLfbConstantDepth_c(uint32_t value)
 
 uint32_t CCALL grTexSource_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info)
 {
-    (void)startAddress; (void)evenOdd; (void)info;
+    const struct gr_tex_info *ti = (const struct gr_tex_info *)info;
+
+    (void)evenOdd;
     gl_flush();
-    DEBUG("grTexSource: tmu=%u\n", tmu);
-    st.texture = tmu;
+    DEBUG("grTexSource: tmu=%u address 0x%x\n", tmu, startAddress);
+    if (ti == NULL) return 0;
+    st.tex_raw = 1;
+    st.tex_addr = startAddress;
+    st.tex_small = (uint32_t)ti->smallLod;
+    st.tex_large = (uint32_t)ti->largeLod;
+    st.tex_aspect = (uint32_t)ti->aspectRatio;
+    st.tex_format = (uint32_t)ti->format;
     return 0;
 }
 
 uint32_t CCALL grTexDownloadMipMap_c(uint32_t tmu, uint32_t startAddress, uint32_t evenOdd, void *info)
 {
-    (void)tmu; (void)startAddress; (void)evenOdd; (void)info;
+    const struct gr_tex_info *ti = (const struct gr_tex_info *)info;
+    uint32_t size, i;
+
+    (void)evenOdd;
     gl_flush();
-    DEBUG("grTexDownloadMipMap\n");
-    /* mmid is passed as info->largeLod.baseAddress in real Voodoo2; ignored here */
+    DEBUG("grTexDownloadMipMap: tmu=%u address 0x%x\n", tmu, startAddress);
+    if (ti == NULL || ti->data == 0 || ti->largeLod < 0 || ti->smallLod < ti->largeLod || ti->smallLod > 8
+        || ti->aspectRatio < 0 || ti->aspectRatio > 6 || ti->format < 0 || ti->format > 0xe) return 0;
+    size = tex_mipmap_bytes((uint32_t)ti->smallLod, (uint32_t)ti->largeLod, (uint32_t)ti->aspectRatio, (uint32_t)ti->format);
+    if (startAddress + size > TMU_MEM_SIZE) return 0;
+    if (tmu_mem == NULL)
+    {
+        tmu_mem = (uint8_t *)calloc(1, TMU_MEM_SIZE);
+        if (tmu_mem == NULL) return 0;
+    }
+    memcpy(tmu_mem + startAddress, GUEST_MEM(ti->data), size);
+    /* the textures that were made of what was there are old */
+    for (i = 0; i < num_raw_textures; i++)
+    {
+        struct raw_texture *r = &raw_textures[i];
+        if (r->tex.used && r->addr < startAddress + size && startAddress < r->addr + r->size) raw_texture_free(r);
+    }
     return 0;
 }
 
@@ -1882,21 +2235,23 @@ uint32_t CCALL grTexCalcMemRequired_c(uint32_t smallest_lod, uint32_t largest_lo
 
 uint32_t CCALL grTexFilterMode_c(uint32_t tmu, uint32_t minFilter, uint32_t magFilter)
 {
-    (void)tmu; (void)minFilter; (void)magFilter;
     gl_flush();
     DEBUG("grTexFilterMode: tmu=%u min=%u mag=%u\n", tmu, minFilter, magFilter);
+    st.tex_minfilter = minFilter;
+    st.tex_magfilter = magFilter;
     return 0;
 }
 
 uint32_t CCALL grTexClampMode_c(uint32_t tmu, uint32_t sClamp, uint32_t tClamp)
 {
-    (void)tmu; (void)sClamp; (void)tClamp;
     gl_flush();
     DEBUG("grTexClampMode: tmu=%u sClamp=%u tClamp=%u\n", tmu, sClamp, tClamp);
+    st.tex_sclamp = sClamp;
+    st.tex_tclamp = tClamp;
     return 0;
 }
 
-uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t alpha_function, uint32_t rgb_invert, uint32_t alpha_invert, uint32_t rgb_factor, uint32_t alpha_factor)
+uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t rgb_factor, uint32_t alpha_function, uint32_t alpha_factor, uint32_t rgb_invert, uint32_t alpha_invert)
 {
     (void)tmu; (void)rgb_function; (void)alpha_function; (void)rgb_invert; (void)alpha_invert; (void)rgb_factor; (void)alpha_factor;
     gl_flush();
@@ -1905,20 +2260,18 @@ uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t alph
     return 0;
 }
 
-uint32_t CCALL grTexMinAddress_c(uint32_t address)
+uint32_t CCALL grTexMinAddress_c(uint32_t tmu)
 {
-    (void)address;
     gl_flush();
-    DEBUG("grTexMinAddress\n");
+    DEBUG("grTexMinAddress: %u\n", tmu);
     return 0;
 }
 
-uint32_t CCALL grTexMaxAddress_c(uint32_t address)
+uint32_t CCALL grTexMaxAddress_c(uint32_t tmu)
 {
-    (void)address;
     gl_flush();
-    DEBUG("grTexMaxAddress\n");
-    return 0;
+    DEBUG("grTexMaxAddress: %u\n", tmu);
+    return TMU_MEM_SIZE;
 }
 
 uint32_t CCALL grTexCombineFunction_c(uint32_t tmu, uint32_t function)
@@ -1933,6 +2286,7 @@ uint32_t CCALL guAlphaSource_c(uint32_t mode)
 {
     gl_flush();
     DEBUG("guAlphaSource: %u\n", mode);
+    st.ac_raw = 0;
     st.alpha_source = mode;
     return 0;
 }
@@ -2034,6 +2388,7 @@ uint32_t CCALL guTexSource_c(uint32_t mmid)
 {
     gl_flush();
     DEBUG("guTexSource: %u\n", mmid);
+    st.tex_raw = 0;
     st.texture = mmid;
     return 0;
 }
@@ -2045,6 +2400,173 @@ uint32_t CCALL guDrawTriangleWithClip_c(void *a, void *b, void *c)
     {
         draw_triangle((const struct gr_vertex *)a, (const struct gr_vertex *)b, (const struct gr_vertex *)c);
     }
+    return 0;
+}
+
+/* ---- the rest of glide2x.dll, as a driver DLL of a program uses it ---- */
+
+uint32_t CCALL grAADrawTriangle_c(void *a, void *b, void *c, uint32_t ab_antialias, uint32_t bc_antialias, uint32_t ca_antialias)
+{
+    (void)ab_antialias; (void)bc_antialias; (void)ca_antialias;
+    return grDrawTriangle_c(a, b, c);
+}
+
+uint32_t CCALL grAlphaTestFunction_c(uint32_t function)
+{
+    gl_flush();
+    DEBUG("grAlphaTestFunction: %u\n", function);
+    st.alpha_test_function = function;
+    return 0;
+}
+
+uint32_t CCALL grAlphaTestReferenceValue_c(uint32_t value)
+{
+    gl_flush();
+    DEBUG("grAlphaTestReferenceValue: %u\n", value);
+    st.alpha_test_reference = value & 0xff;
+    return 0;
+}
+
+uint32_t CCALL grBufferNumPending_c(void)
+{
+    return 0;
+}
+
+uint32_t CCALL grDepthBiasLevel_c(uint32_t level)
+{
+    gl_flush();
+    DEBUG("grDepthBiasLevel: %d\n", (int)level);
+    st.depth_bias = (int16_t)level;
+    return 0;
+}
+
+uint32_t CCALL grDitherMode_c(uint32_t mode)
+{
+    DEBUG("grDitherMode: %u\n", mode);
+    return 0;
+}
+
+uint32_t CCALL grGlideGetVersion_c(void *version)
+{
+    if (version != NULL) strcpy((char *)version, "2.46");
+    return 0;
+}
+
+uint32_t CCALL grHints_c(uint32_t hintType, uint32_t hintMask)
+{
+    DEBUG("grHints: %u, 0x%x\n", hintType, hintMask);
+    return 0;
+}
+
+/* the rectangle of a buffer, in the 16 bits of its pixels, to and from the program's memory */
+uint32_t CCALL grLfbReadRegion_c(uint32_t src_buffer, uint32_t src_x, uint32_t src_y, uint32_t src_width, uint32_t src_height, uint32_t dst_stride, void *dst_data)
+{
+    uint16_t *mem = buffer_of(src_buffer);
+    uint32_t y;
+
+    DEBUG("grLfbReadRegion: %u, %u,%u %ux%u\n", src_buffer, src_x, src_y, src_width, src_height);
+    if (!win_open || mem == NULL || dst_data == NULL) return FXFALSE;
+    gl_acquire();
+    if (src_buffer != GR_BUFFER_AUXBUFFER)
+    {
+        gl_flush();
+        shadow_from_gl(phys_of(src_buffer));
+    }
+    for (y = 0; y < src_height && src_y + y < scr_height; y++)
+    {
+        uint32_t w = src_width;
+        if (src_x + w > scr_width) w = scr_width > src_x ? scr_width - src_x : 0;
+        memcpy((uint8_t *)dst_data + y * dst_stride, mem + (src_y + y) * scr_stride + src_x, w * 2);
+    }
+    return FXTRUE;
+}
+
+uint32_t CCALL grLfbWriteRegion_c(uint32_t dst_buffer, uint32_t dst_x, uint32_t dst_y, uint32_t src_format, uint32_t src_width, uint32_t src_height, uint32_t src_stride, void *src_data)
+{
+    uint16_t *mem = buffer_of(dst_buffer);
+    uint32_t x, y;
+
+    DEBUG("grLfbWriteRegion: %u, %u,%u format %u %ux%u\n", dst_buffer, dst_x, dst_y, src_format, src_width, src_height);
+    if (!win_open || mem == NULL || src_data == NULL) return FXFALSE;
+    gl_acquire();
+    if (src_format != GR_LFBWRITEMODE_565 && src_format != GR_LFBWRITEMODE_555 && src_format != GR_LFBWRITEMODE_1555
+        && src_format != GR_LFBWRITEMODE_888 && src_format != GR_LFBWRITEMODE_8888)
+    {
+        DEBUG("grLfbWriteRegion: format %u not supported\n", src_format);
+        return FXFALSE;
+    }
+    if (dst_buffer != GR_BUFFER_AUXBUFFER)
+    {
+        gl_flush();
+        shadow_from_gl(phys_of(dst_buffer));
+    }
+    for (y = 0; y < src_height && dst_y + y < scr_height; y++)
+    {
+        const uint8_t *row = (const uint8_t *)src_data + y * src_stride;
+        uint16_t *out = mem + (dst_y + y) * scr_stride + dst_x;
+        for (x = 0; x < src_width && dst_x + x < scr_width; x++)
+        {
+            switch (src_format)
+            {
+            case GR_LFBWRITEMODE_565: out[x] = ((const uint16_t *)row)[x]; break;
+            case GR_LFBWRITEMODE_555:
+            case GR_LFBWRITEMODE_1555: out[x] = argb_to_565(argb1555_to_argb(((const uint16_t *)row)[x])); break;
+            default: out[x] = argb_to_565(((const uint32_t *)row)[x]); break;
+            }
+        }
+    }
+    if (dst_buffer != GR_BUFFER_AUXBUFFER && phys_of(dst_buffer) >= 0)
+    {
+        shadow_dirty[phys_of(dst_buffer)] = 1;
+        shadow_valid[phys_of(dst_buffer)] = 1;
+        if (dst_buffer == GR_BUFFER_FRONTBUFFER) present_front();
+    }
+    return FXTRUE;
+}
+
+uint32_t CCALL grSstControl_c(uint32_t code)
+{
+    DEBUG("grSstControl: %u\n", code);
+    return FXTRUE;
+}
+
+uint32_t CCALL grSstIsBusy_c(void)
+{
+    return FXFALSE;
+}
+
+uint32_t CCALL grSstQueryBoards_c(void *hwconfig)
+{
+    if (hwconfig == NULL) return FXFALSE;
+    ((struct gr_hw_config *)hwconfig)->num_sst = 1;
+    return FXTRUE;
+}
+
+uint32_t CCALL grSstScreenHeight_c(void)
+{
+    return scr_height;
+}
+
+uint32_t CCALL grSstScreenWidth_c(void)
+{
+    return scr_width;
+}
+
+uint32_t CCALL grSstStatus_c(void)
+{
+    /* bit 7 is the bus' busy bit of the status register: never busy */
+    return 0;
+}
+
+uint32_t CCALL grTexLodBiasValue_c(uint32_t tmu, uint32_t bias)
+{
+    DEBUG("grTexLodBiasValue: %u, 0x%x\n", tmu, bias);
+    return 0;
+}
+
+uint32_t CCALL grTexMipMapMode_c(uint32_t tmu, uint32_t mode, uint32_t lodBlend)
+{
+    DEBUG("grTexMipMapMode: %u, %u, %u\n", tmu, mode, lodBlend);
     return 0;
 }
 

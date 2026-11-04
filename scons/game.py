@@ -652,6 +652,11 @@ def module_pipeline(MODULE, EXT, input_key):
                 shell_quote(RECOMP_DIR), shell_quote(sr_exe), shell_quote(INPUT_EXE), shell_quote(MODULE + '.asm'))
         if not SR_EXTRAS:
             sr_command += ' && { sha256sum seg*.llinc || :; } > %s' % shell_quote(os.path.basename(SR_SEGMENTS))
+        if EXT == '.DLL':
+            # DllMain is decoded as a procedure of its own (the alias SRW reads)
+            sr_command = 'python3 %s alias %s %s %s && ' % (
+                shell_quote(os.path.join(SDK_ROOT, 'tools', 'dll_exports.py')), MODULE,
+                shell_quote(INPUT_EXE), shell_quote(os.path.join(RECOMP_DIR, 'global_aliases.sci'))) + sr_command
         defaults += env.Command(sr_targets, sr_sources, sr_command)
 
     if want('gen'):
@@ -678,6 +683,11 @@ def module_pipeline(MODULE, EXT, input_key):
                      + [os.path.join(RECOMP_DIR, name) for name in SR_EXTRAS]),
             take_all_segments,
             shell_quote(MODULE))
+        if EXT == '.DLL':
+            # the table the runtime loads the module by
+            gen_cmd += ' && python3 %s table %s %s %s' % (
+                shell_quote(os.path.join(SDK_ROOT, 'tools', 'dll_exports.py')), MODULE,
+                shell_quote(INPUT_EXE), shell_quote(GEN_MAIN))
         defaults += env.Command(gen_targets, gen_sources, gen_cmd)
 
     gen_deps = [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS] if SR_EXTRAS else [SR_SEGMENTS]
@@ -713,6 +723,19 @@ if want('obj'):
     # .c only: a .c of the runtime finds the runtime's headers beside it first.
     if WINAPI:
         env.Append(CPPDEFINES=['GAME_WINAPI'])
+    if GLIDE:
+        env.Append(CPPDEFINES=['GAME_GLIDE'])
+    if DLL_MODULES:
+        # the DLLs the runtime loads by name (WinApi-process.c): dll_modules.h has X(name) per module
+        dll_header_dir = os.path.join(BUILD, 'obj', device, 'include')
+        os.makedirs(dll_header_dir, exist_ok=True)
+        dll_header = '#define GAME_DLL_MODULES(X) ' + ' '.join('X(%s)' % m for m in DLL_MODULES) + '\n'
+        dll_header_path = os.path.join(dll_header_dir, 'dll_modules.h')
+        if not os.path.exists(dll_header_path) or open(dll_header_path).read() != dll_header:
+            with open(dll_header_path, 'w') as stream:
+                stream.write(dll_header)
+        env.Append(CPPDEFINES=['GAME_HAVE_DLL_MODULES'], CPPPATH=[dll_header_dir])
+
     env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
                + [os.path.join(SDK_ROOT, 'extern', 'tsf')]
                + ([os.path.join(RUNTIME_CORE, 'gl'),

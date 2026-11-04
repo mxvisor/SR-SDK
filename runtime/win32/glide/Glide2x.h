@@ -36,6 +36,8 @@
 extern "C" {
 #endif
 
+uint32_t Glide2x_ProcLookup(const char *name);
+
 uint32_t CCALL grGlideInit_c(void);
 uint32_t CCALL grGlideShutdown_c(void);
 uint32_t CCALL grGlideGetState_c(void *state);
@@ -78,7 +80,7 @@ uint32_t CCALL grDrawPolygonVertexList_c(uint32_t count, void *vertices);
 
 /* colour and alpha combine */
 uint32_t CCALL grColorCombine_c(uint32_t function, uint32_t factor, uint32_t local, uint32_t other, uint32_t invert);
-uint32_t CCALL grAlphaCombine_c(uint32_t function);
+uint32_t CCALL grAlphaCombine_c(uint32_t function, uint32_t factor, uint32_t local, uint32_t other, uint32_t invert);
 
 /* fog */
 uint32_t CCALL grFogMode_c(uint32_t mode);
@@ -105,7 +107,7 @@ uint32_t CCALL grTexMinAddress_c(uint32_t address);
 uint32_t CCALL grTexMaxAddress_c(uint32_t address);
 
 /* texture combine */
-uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t alpha_function, uint32_t rgb_invert, uint32_t alpha_invert, uint32_t rgb_factor, uint32_t alpha_factor);
+uint32_t CCALL grTexCombine_c(uint32_t tmu, uint32_t rgb_function, uint32_t rgb_factor, uint32_t alpha_function, uint32_t alpha_factor, uint32_t rgb_invert, uint32_t alpha_invert);
 uint32_t CCALL grTexCombineFunction_c(uint32_t tmu, uint32_t function);
 
 uint32_t CCALL guColorCombineFunction_c(uint32_t function);
@@ -116,6 +118,24 @@ uint32_t CCALL guTexAllocateMemory_c(uint32_t tmu, uint32_t odd_even_mask, uint3
 uint32_t CCALL guTexDownloadMipMap_c(uint32_t mmid, void *src, void *nccTable);
 uint32_t CCALL guTexSource_c(uint32_t mmid);
 uint32_t CCALL guDrawTriangleWithClip_c(void *a, void *b, void *c);
+uint32_t CCALL grAADrawTriangle_c(void *a, void *b, void *c, uint32_t ab_antialias, uint32_t bc_antialias, uint32_t ca_antialias);
+uint32_t CCALL grAlphaTestFunction_c(uint32_t function);
+uint32_t CCALL grAlphaTestReferenceValue_c(uint32_t value);
+uint32_t CCALL grBufferNumPending_c(void);
+uint32_t CCALL grDepthBiasLevel_c(uint32_t level);
+uint32_t CCALL grDitherMode_c(uint32_t mode);
+uint32_t CCALL grGlideGetVersion_c(void *version);
+uint32_t CCALL grHints_c(uint32_t hintType, uint32_t hintMask);
+uint32_t CCALL grLfbReadRegion_c(uint32_t src_buffer, uint32_t src_x, uint32_t src_y, uint32_t src_width, uint32_t src_height, uint32_t dst_stride, void *dst_data);
+uint32_t CCALL grLfbWriteRegion_c(uint32_t dst_buffer, uint32_t dst_x, uint32_t dst_y, uint32_t src_format, uint32_t src_width, uint32_t src_height, uint32_t src_stride, void *src_data);
+uint32_t CCALL grSstControl_c(uint32_t code);
+uint32_t CCALL grSstIsBusy_c(void);
+uint32_t CCALL grSstQueryBoards_c(void *hwconfig);
+uint32_t CCALL grSstScreenHeight_c(void);
+uint32_t CCALL grSstScreenWidth_c(void);
+uint32_t CCALL grSstStatus_c(void);
+uint32_t CCALL grTexLodBiasValue_c(uint32_t tmu, uint32_t bias);
+uint32_t CCALL grTexMipMapMode_c(uint32_t tmu, uint32_t mode, uint32_t lodBlend);
 
 #ifdef __cplusplus
 }

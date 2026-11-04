@@ -465,13 +465,13 @@ proc grColorCombine_asm2c public
 
 endp ; end procedure grColorCombine_asm2c
 
-func grAlphaCombine_c function
+func grAlphaCombine_c function, factor, local, other, invert
 
 proc grAlphaCombine_asm2c public
 
-        Call_Asm_Stack1 grAlphaCombine_c
+        Call_Asm_Stack5 grAlphaCombine_c
 
-        Call_Asm_Return 1
+        Call_Asm_Return 5
 
 endp ; end procedure grAlphaCombine_asm2c
 
@@ -615,7 +615,7 @@ proc grTexMaxAddress_asm2c public
 
 endp ; end procedure grTexMaxAddress_asm2c
 
-func grTexCombine_c tmu, rgb_function, alpha_function, rgb_invert, alpha_invert, rgb_factor, alpha_factor
+func grTexCombine_c tmu, rgb_function, rgb_factor, alpha_function, alpha_factor, rgb_invert, alpha_invert
 
 proc grTexCombine_asm2c public
 
@@ -634,3 +634,183 @@ proc grTexCombineFunction_asm2c public
         Call_Asm_Return 2
 
 endp ; end procedure grTexCombineFunction_asm2c
+
+func grAADrawTriangle_c *a, *b, *c, ab_antialias, bc_antialias, ca_antialias
+
+proc grAADrawTriangle_asm2c public
+
+        Call_Asm_Stack6 grAADrawTriangle_c
+
+        Call_Asm_Return 6
+
+endp ; end procedure grAADrawTriangle_asm2c
+
+func grAlphaTestFunction_c function
+
+proc grAlphaTestFunction_asm2c public
+
+        Call_Asm_Stack1 grAlphaTestFunction_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grAlphaTestFunction_asm2c
+
+func grAlphaTestReferenceValue_c value
+
+proc grAlphaTestReferenceValue_asm2c public
+
+        Call_Asm_Stack1 grAlphaTestReferenceValue_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grAlphaTestReferenceValue_asm2c
+
+func grBufferNumPending_c
+
+proc grBufferNumPending_asm2c public
+
+        Call_Asm_Stack0 grBufferNumPending_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grBufferNumPending_asm2c
+
+func grDepthBiasLevel_c level
+
+proc grDepthBiasLevel_asm2c public
+
+        Call_Asm_Stack1 grDepthBiasLevel_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDepthBiasLevel_asm2c
+
+func grDitherMode_c mode
+
+proc grDitherMode_asm2c public
+
+        Call_Asm_Stack1 grDitherMode_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grDitherMode_asm2c
+
+func grGlideGetVersion_c *version
+
+proc grGlideGetVersion_asm2c public
+
+        Call_Asm_Stack1 grGlideGetVersion_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grGlideGetVersion_asm2c
+
+func grHints_c hintType, hintMask
+
+proc grHints_asm2c public
+
+        Call_Asm_Stack2 grHints_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grHints_asm2c
+
+func grLfbReadRegion_c src_buffer, src_x, src_y, src_width, src_height, dst_stride, *dst_data
+
+proc grLfbReadRegion_asm2c public
+
+        Call_Asm_Stack7 grLfbReadRegion_c
+
+        Call_Asm_Return 7
+
+endp ; end procedure grLfbReadRegion_asm2c
+
+func grLfbWriteRegion_c dst_buffer, dst_x, dst_y, src_format, src_width, src_height, src_stride, *src_data
+
+proc grLfbWriteRegion_asm2c public
+
+        Call_Asm_Stack8 grLfbWriteRegion_c
+
+        Call_Asm_Return 8
+
+endp ; end procedure grLfbWriteRegion_asm2c
+
+func grSstControl_c code
+
+proc grSstControl_asm2c public
+
+        Call_Asm_Stack1 grSstControl_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grSstControl_asm2c
+
+func grSstIsBusy_c
+
+proc grSstIsBusy_asm2c public
+
+        Call_Asm_Stack0 grSstIsBusy_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstIsBusy_asm2c
+
+func grSstQueryBoards_c *hwconfig
+
+proc grSstQueryBoards_asm2c public
+
+        Call_Asm_Stack1 grSstQueryBoards_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure grSstQueryBoards_asm2c
+
+func grSstScreenHeight_c
+
+proc grSstScreenHeight_asm2c public
+
+        Call_Asm_Stack0 grSstScreenHeight_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstScreenHeight_asm2c
+
+func grSstScreenWidth_c
+
+proc grSstScreenWidth_asm2c public
+
+        Call_Asm_Stack0 grSstScreenWidth_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstScreenWidth_asm2c
+
+func grSstStatus_c
+
+proc grSstStatus_asm2c public
+
+        Call_Asm_Stack0 grSstStatus_c
+
+        Call_Asm_Return 0
+
+endp ; end procedure grSstStatus_asm2c
+
+func grTexLodBiasValue_c tmu, bias
+
+proc grTexLodBiasValue_asm2c public
+
+        Call_Asm_Stack2 grTexLodBiasValue_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure grTexLodBiasValue_asm2c
+
+func grTexMipMapMode_c tmu, mode, lodBlend
+
+proc grTexMipMapMode_asm2c public
+
+        Call_Asm_Stack3 grTexMipMapMode_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure grTexMipMapMode_asm2c

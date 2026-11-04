@@ -46,12 +46,16 @@
 #include "CLIB.h"
 #include "Game_hooks.h"
 #include "WinApi-d3d.h"
+#ifdef GAME_GLIDE
+#include "Glide2x.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -193,12 +197,98 @@ uint32_t CCALL GetStartupInfoA_c(uint32_t a0)
 
 /* ------------------------------------------------------------ library load */
 
+/* The DLLs of the original that the build recompiled as modules (dll_modules= of
+ * game.cfg; the build defines GAME_DLL_MODULES(X) as X(name)...): LoadLibrary
+ * hands out the module, GetProcAddress finds its exports by the name in its
+ * table (<name>_dll of tools/dll_exports.py) and the entry point is run as
+ * DllMain.  A library the build knows nothing of gets a pseudo handle. */
+#include "WinApi-guest.h"
+#ifdef GAME_HAVE_DLL_MODULES
+#include "dll_modules.h"
+#endif
+
+#ifdef GAME_DLL_MODULES
+#define DLL_MODULE_EXTERN(name) extern uint32_t name##_dll[];
+GAME_DLL_MODULES(DLL_MODULE_EXTERN)
+
+struct dll_module { const char *name; const uint32_t *table; int loaded; };
+#define DLL_MODULE_ENTRY(name) { #name, name##_dll, 0 },
+static struct dll_module dll_modules[] = { GAME_DLL_MODULES(DLL_MODULE_ENTRY) };
+#define DLL_MODULE_COUNT (sizeof(dll_modules) / sizeof(dll_modules[0]))
+#define DLL_MODULE_HANDLE_BASE 0x00070000u
+
+static struct dll_module *dll_module_by_handle(uint32_t handle)
+{
+    if (handle < DLL_MODULE_HANDLE_BASE) return NULL;
+    handle -= DLL_MODULE_HANDLE_BASE;
+    if ((handle & 0xFFFFu) != 0 || (handle >> 16) >= DLL_MODULE_COUNT) return NULL;
+    return &dll_modules[handle >> 16];
+}
+
+static void dll_module_main(struct dll_module *module, uint32_t reason)
+{
+    if (module->table[0] != 0)
+    {
+        uint32_t args[3] = { DLL_MODULE_HANDLE_BASE + (uint32_t)(module - dll_modules) * 0x10000u, reason, 0 };
+        Winapi_CallGuest(module->table[0], 3, args);
+    }
+}
+
+static uint32_t dll_module_load(const char *path)
+{
+    const char *name = path;
+    size_t length;
+
+    for (const char *c = path; *c; c++)
+        if (*c == '/' || *c == '\\') name = c + 1;
+    length = strlen(name);
+    if (length > 4 && strcasecmp(name + length - 4, ".dll") == 0) length -= 4;
+    for (size_t i = 0; i < DLL_MODULE_COUNT; i++)
+    {
+        if (strlen(dll_modules[i].name) == length && strncasecmp(name, dll_modules[i].name, length) == 0)
+        {
+            if (!dll_modules[i].loaded)
+            {
+                dll_modules[i].loaded = 1;
+                dll_module_main(&dll_modules[i], 1);    /* DLL_PROCESS_ATTACH */
+            }
+            return DLL_MODULE_HANDLE_BASE + (uint32_t)i * 0x10000u;
+        }
+    }
+    return 0;
+}
+
+static uint32_t dll_module_proc(struct dll_module *module, const char *name)
+{
+    for (const uint32_t *entry = module->table + 1; entry[0] != 0; entry += 2)
+        if (strcmp((const char *)GUEST_MEM(entry[0]), name) == 0) return entry[1];
+    return 0;
+}
+#endif
+
 uint32_t CCALL LoadLibraryA_c(uint32_t a0)
 {
+#ifdef GAME_DLL_MODULES
+    if (a0 != 0)
+    {
+        uint32_t handle = dll_module_load((const char *)GUEST_MEM(a0));
+        if (handle != 0) return handle;
+    }
+#else
     (void)a0;
+#endif
     /* Pseudo handle; GetProcAddress ignores it.  Never 0 so a delay-load
      * helper sees success. */
     return 0x00060000u;
+}
+
+uint32_t CCALL FreeLibrary_c(uint32_t a0)
+{
+    /* A module stays in memory with its data as it is (no DllMain with DLL_PROCESS_DETACH):
+     * the image is part of the program and not unmapped, and a later LoadLibrary of it would
+     * start from the data the first run left; it does not run DllMain a second time either */
+    (void)a0;
+    return 1;
 }
 
 struct winapi_proc { const char *name; void (*proc)(void); };
@@ -228,9 +318,22 @@ uint32_t CCALL GetProcAddress_c(uint32_t a0, uint32_t a1)
 {
     const char *name;
 
-    (void)a0;
     if (a1 == 0) return 0;
     name = (const char *)GUEST_MEM(a1);
+#ifdef GAME_DLL_MODULES
+    {
+        struct dll_module *module = dll_module_by_handle(a0);
+        if (module != NULL) return dll_module_proc(module, name);
+    }
+#else
+    (void)a0;
+#endif
+#ifdef GAME_GLIDE
+    {
+        uint32_t found = Glide2x_ProcLookup(name);
+        if (found != 0) return found;
+    }
+#endif
 #ifdef GAME_PROC_LOOKUP
     {
         uint32_t found = GAME_PROC_LOOKUP(name);
