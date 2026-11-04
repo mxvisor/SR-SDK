@@ -24,8 +24,9 @@
 
 /* Glide 2.x on OpenGL. The colour buffers are OpenGL frame buffer objects
  * (RGBA8, the size of the screen); triangles are drawn with a shader that
- * does the gu* colour and alpha combine functions, texturing from the
- * largest LOD of a texture (no mipmapping) and chroma-key; the clip window is
+ * does the gu* colour and alpha combine functions, texturing with the
+ * mipmaps of a texture (the LODs as the GL levels, grTexMipMapMode and the
+ * bias of grTexLodBiasValue) and chroma-key; the clip window is
  * the scissor, alpha blending the GL blend function. A linear frame buffer
  * lock gives the guest an RGB565 shadow of a buffer, with the stride of a
  * Voodoo's LFB (2048 bytes) in memory it can address: a lock reads the buffer
@@ -42,8 +43,8 @@
  * lock reads or a swap shows them.
  * grAADrawPoint and grAADrawLine add the edges of glide2x's antialiasing
  * (the iterated alpha falls to 0 across them); the grAADrawPolygon* are drawn
- * without. Left out: the depth buffer, fog, alpha test, dithering, NCC (YIQ)
- * textures, more than one TMU. GLIDE_DEBUG=1 in the environment logs the
+ * without. Left out: dithering, NCC (YIQ) textures, more than one TMU (and
+ * so the blend of two LODs of lodBlend). GLIDE_DEBUG=1 in the environment logs the
  * calls. */
 
 #include <math.h>
@@ -189,6 +190,10 @@ extern "C" {
 #define GR_TEXTUREFILTER_POINT_SAMPLED 0
 #define GR_TEXTUREFILTER_BILINEAR 1
 
+#define GR_MIPMAP_DISABLE 0
+#define GR_MIPMAP_NEAREST 1
+#define GR_MIPMAP_NEAREST_DITHER 2
+
 #define GR_NULL_MIPMAP_HANDLE 0xffffffffu
 
 #define GR_SSTTYPE_VOODOO 0
@@ -263,6 +268,9 @@ struct glide_state {
     uint32_t tex_raw, tex_addr, tex_format, tex_small, tex_large, tex_aspect;
     uint32_t tex_sclamp, tex_tclamp, tex_minfilter, tex_magfilter;
     uint32_t fog_mode, fog_color;
+    /* grTexMipMapMode, grTexLodBiasValue: of the textures of grTexSource */
+    uint32_t mipmap_mode;
+    float lod_bias;
 };
 
 struct glide_texture {
@@ -273,7 +281,10 @@ struct glide_texture {
     uint32_t s_clamp, t_clamp, minfilter, magfilter;
     uint32_t data_size;             /* of all the LODs, in bytes */
     uint8_t *raw;                   /* the LODs as downloaded */
-    uint32_t *argb;                 /* the largest LOD, decoded */
+    uint32_t *argb;                 /* the LODs, decoded */
+    uint32_t mm_mode;               /* guTexAllocateMemory: GR_MIPMAP_*, the bias */
+    float lod_bias;
+    GLint gl_min;                   /* the GL minification filter set */
     uint32_t decoded_palette;       /* palette_serial at decoding (paletted formats) */
     int downloaded;
     GLuint gltex;                   /* the decoded image on the GPU */
@@ -458,7 +469,7 @@ static int texel_bytes(uint32_t format)
 
 static void decode_texture(struct glide_texture *t)
 {
-    uint32_t n = t->width * t->height, i;
+    uint32_t n = t->data_size / texel_bytes(t->format), i;
     const uint8_t *s8 = t->raw;
     const uint16_t *s16 = (const uint16_t *)t->raw;
     uint32_t *d = t->argb;
@@ -634,15 +645,15 @@ static struct glide_texture *raw_texture(void)
         r->tex.smallest_lod = st.tex_small;
         r->tex.aspect = st.tex_aspect;
         r->tex.data_size = size;
-        r->tex.raw = (uint8_t *)malloc(w * h * texel_bytes(st.tex_format));
-        r->tex.argb = (uint32_t *)malloc(w * h * 4);
+        r->tex.raw = (uint8_t *)malloc(size);
+        r->tex.argb = (uint32_t *)malloc(size / texel_bytes(st.tex_format) * 4);
         if (r->tex.raw == NULL || r->tex.argb == NULL)
         {
             raw_texture_free(r);
             return NULL;
         }
-        /* the largest LOD is the first at the address */
-        memcpy(r->tex.raw, tmu_mem + st.tex_addr, w * h * texel_bytes(st.tex_format));
+        /* the LODs follow each other at the address, the largest first */
+        memcpy(r->tex.raw, tmu_mem + st.tex_addr, size);
         r->tex.used = 1;
         r->tex.downloaded = 1;
         decode_texture(&r->tex);
@@ -726,7 +737,7 @@ static GLuint ms_fbo[3], ms_color[3];
 static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
 static GLint u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv, u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;
-static GLint u_atest, u_atest_ref, u_fog, u_fogcolor, u_fogtab;
+static GLint u_atest, u_atest_ref, u_fog, u_fogcolor, u_fogtab, u_lodbias;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
@@ -768,6 +779,7 @@ static const char draw_fs[] =
     "uniform int u_fog;\n"
     "uniform vec3 u_fogcolor;\n"
     "uniform float u_fogtab[64];\n"
+    "uniform float u_lodbias;\n"
     "uniform float u_atest_ref;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
@@ -822,7 +834,7 @@ static const char draw_fs[] =
     "    vec4 tex = vec4(1.0);\n"
     "    if (u_usetex == 1) {\n"
     "        float w = (v_stq.z != 0.0) ? 1.0 / v_stq.z : 0.0;\n"
-    "        tex = texture2D(u_tex, v_stq.xy * w * u_texscale);\n"
+    "        tex = texture2D(u_tex, v_stq.xy * w * u_texscale, u_lodbias);\n"
     "    } else if (u_usetex == 2) {\n"
     "        tex = vec4(0.0);\n"
     "    }\n"
@@ -1035,6 +1047,7 @@ static int gl_start(uint32_t nbuf)
     u_fog = glGetUniformLocation(prog_draw, "u_fog");
     u_fogcolor = glGetUniformLocation(prog_draw, "u_fogcolor");
     u_fogtab = glGetUniformLocation(prog_draw, "u_fogtab");
+    u_lodbias = glGetUniformLocation(prog_draw, "u_lodbias");
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
     if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
@@ -1157,15 +1170,45 @@ static GLenum blend_gl(uint32_t f, int is_src)
     }
 }
 
+/* the mipmap mode of a texture: of grTexMipMapMode for grTexSource, of guTexAllocateMemory for guTexSource */
+static uint32_t mipmap_mode_of(const struct glide_texture *t)
+{
+    return st.tex_raw ? st.mipmap_mode : t->mm_mode;
+}
+
+/* the minification of a texture: one LOD, or the nearest LOD; the dither between two LODs as their blend */
+static GLint min_filter_gl(const struct glide_texture *t)
+{
+    int bilinear = (t->minfilter == GR_TEXTUREFILTER_BILINEAR);
+    uint32_t mode = mipmap_mode_of(t);
+
+    if (mode == GR_MIPMAP_DISABLE || t->smallest_lod <= t->largest_lod) return bilinear ? GL_LINEAR : GL_NEAREST;
+    if (mode == GR_MIPMAP_NEAREST_DITHER) return bilinear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR;
+    return bilinear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
+}
+
 static void upload_texture(struct glide_texture *t)
 {
+    uint32_t levels = t->smallest_lod - t->largest_lod + 1, i;
+    const uint32_t *p = t->argb;
+
     if (t->gltex == 0) glGenTextures(1, &t->gltex);
     glBindTexture(GL_TEXTURE_2D, t->gltex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (t->s_clamp == GR_TEXTURECLAMP_CLAMP) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (t->t_clamp == GR_TEXTURECLAMP_CLAMP) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (t->minfilter == GR_TEXTUREFILTER_BILINEAR) ? GL_LINEAR : GL_NEAREST);
+    t->gl_min = min_filter_gl(t);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, t->gl_min);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (t->magfilter == GR_TEXTUREFILTER_BILINEAR) ? GL_LINEAR : GL_NEAREST);
-    Game_GlTexImageBgra(0, t->width, t->height, t->argb);
+    /* the LODs of the texture are the levels; the smallest may be larger than 1x1 */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)levels - 1);
+    for (i = 0; i < levels; i++)
+    {
+        uint32_t lw = t->width >> i, lh = t->height >> i;
+        if (lw < 1) lw = 1;
+        if (lh < 1) lh = 1;
+        Game_GlTexImageBgra((GLint)i, lw, lh, p);
+        p += lw * lh;
+    }
     t->gl_dirty = 0;
 }
 
@@ -1272,9 +1315,16 @@ static void gl_flush(void)
     {
         uint32_t big = (tex->width > tex->height) ? tex->width : tex->height;
         float scale = (float)big / 256.0f;
-        if (tex->gltex == 0 || tex->gl_dirty) upload_texture(tex);
         glActiveTexture(GL_TEXTURE0);
+        if (tex->gltex == 0 || tex->gl_dirty) upload_texture(tex);
         glBindTexture(GL_TEXTURE_2D, tex->gltex);
+        if (tex->gl_min != min_filter_gl(tex))
+        {
+            /* grTexMipMapMode changed since the upload */
+            tex->gl_min = min_filter_gl(tex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, tex->gl_min);
+        }
+        glUniform1f(u_lodbias, st.tex_raw ? st.lod_bias : tex->lod_bias);
         glUniform1i(u_tex, 0);
         glUniform2f(u_texscale, scale / (float)tex->width, scale / (float)tex->height);
         glUniform1i(u_usetex, 1);
@@ -2418,7 +2468,7 @@ uint32_t CCALL guTexAllocateMemory_c(uint32_t tmu, uint32_t odd_even_mask, uint3
     struct glide_texture *t;
     uint32_t big, w, h, lod, size;
 
-    (void)tmu; (void)odd_even_mask; (void)mm_mode; (void)lod_bias; (void)trilinear;
+    (void)tmu; (void)odd_even_mask; (void)trilinear;
     DEBUG("guTexAllocateMemory: %u, %u, %ux%u, fmt %u, mm %u, lod %u-%u, aspect %u, clamp %u/%u, filter %u/%u\n",
           tmu, odd_even_mask, width, height, format, mm_mode, smallest_lod, largest_lod, aspect,
           s_clamp_mode, t_clamp_mode, minfilter_mode, magfilter_mode);
@@ -2458,9 +2508,11 @@ uint32_t CCALL guTexAllocateMemory_c(uint32_t tmu, uint32_t odd_even_mask, uint3
     t->t_clamp = t_clamp_mode;
     t->minfilter = minfilter_mode;
     t->magfilter = magfilter_mode;
+    t->mm_mode = mm_mode;
+    memcpy(&t->lod_bias, &lod_bias, sizeof(t->lod_bias));
     t->data_size = size;
     t->raw = (uint8_t *)malloc(size);
-    t->argb = (uint32_t *)malloc(w * h * 4);
+    t->argb = (uint32_t *)malloc(size / texel_bytes(format) * 4);
     if (t->raw == NULL || t->argb == NULL)
     {
         free(t->raw);
@@ -2663,15 +2715,25 @@ uint32_t CCALL grSstStatus_c(void)
     return 0;
 }
 
+/* the bias is a float, -8 to 7.75 in the LODs of the board */
 uint32_t CCALL grTexLodBiasValue_c(uint32_t tmu, uint32_t bias)
 {
+    float b;
+
+    gl_flush();
     DEBUG("grTexLodBiasValue: %u, 0x%x\n", tmu, bias);
+    memcpy(&b, &bias, sizeof(b));
+    if (!(b >= -8.0f)) b = -8.0f;
+    if (b > 7.75f) b = 7.75f;
+    st.lod_bias = b;
     return 0;
 }
 
 uint32_t CCALL grTexMipMapMode_c(uint32_t tmu, uint32_t mode, uint32_t lodBlend)
 {
+    gl_flush();
     DEBUG("grTexMipMapMode: %u, %u, %u\n", tmu, mode, lodBlend);
+    st.mipmap_mode = mode;
     return 0;
 }
 
