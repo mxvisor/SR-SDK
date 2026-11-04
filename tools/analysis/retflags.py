@@ -18,7 +18,7 @@ base = struct.unpack_from('<I', d, pe + 24 + 28)[0]
 secs = []
 for i in range(nsec):
     n, vs, va, rs, ro = struct.unpack_from('<8sIIII', d, pe + 24 + opt + i * 40)
-    secs.append((base + va, vs, ro))
+    secs.append((base + va, vs or rs, ro))    # the Watcom linker leaves VirtualSize 0
 def off(va):
     for s, vs, ro in secs:
         if s <= va < s + vs:
@@ -103,6 +103,9 @@ def reads_flags_mask(start):
                 if re.match(r'^(adc|sbb|rcl|rcr)\b', op):
                     stopped = True; break        # also writes
                 continue
+            if op.startswith('call'):
+                stopped = True     # what follows reads the flags of that callee, its own entry
+                break
             if NOWRITE.match(op):
                 continue
             stopped = True
