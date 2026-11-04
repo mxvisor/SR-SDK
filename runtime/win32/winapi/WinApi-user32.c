@@ -92,6 +92,11 @@
 #ifndef GAME_WINAPI_DESTROY_MESSAGE
 #define GAME_WINAPI_DESTROY_MESSAGE 0
 #endif
+/* GAME_CLOSE_REQUEST() (Game_eventloop.c): non-zero when the game takes the
+ * close of the window itself; Winapi_CloseRequest makes it WM_CLOSE */
+#ifndef GAME_CLOSE_REQUEST
+#define GAME_CLOSE_REQUEST() 0
+#endif
 /* GAME_WINAPI_COMMAND_ON_IDLE: the command id the program gets when the user
  * picks the first item of its menu (the game asks "start a new game?" and
  * then starts the level); 0 = no such command */
@@ -179,6 +184,7 @@ static int post_command_redraw = 0;
 #define PM_NOREMOVE 0
 #define PM_REMOVE 1
 #define WM_DESTROY 0x0002
+#define WM_CLOSE 0x0010
 #define WM_QUIT 0x0012
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
@@ -1230,6 +1236,27 @@ static void wait_queue(unsigned int ms)
 }
 #endif
 
+/* The close of the window as WM_CLOSE to the main window, what DefWindowProc
+ * makes of SC_CLOSE: for a game that quits through its own WM_CLOSE and writes
+ * its settings on the way (GAME_CLOSE_REQUEST).  One close arrives as two events
+ * (SDL_WINDOWEVENT_CLOSE, SDL_QUIT), here and in Game_eventloop.c: the requests
+ * of the first second are that close; a later one, 0, stops the game. */
+#ifdef __cplusplus
+extern "C"
+#endif
+int Winapi_CloseRequest(void)
+{
+    static uint32_t asked;
+
+    if (asked == 0)
+    {
+        if (!PostMessageA_c(PSEUDO_HANDLE_MAIN_WINDOW, WM_CLOSE, 0, 0)) return 0;
+        asked = SDL_GetTicks() | 1;
+        return 1;
+    }
+    return (SDL_GetTicks() - asked < 1000) ? 1 : 0;
+}
+
 static int find_event(SDL_Event *event, int remove, int wait)
 {
 #ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
@@ -1719,6 +1746,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
             /* The window's close button and SIGINT.  The game answers WM_SYSCOMMAND/
              * SC_CLOSE with nothing, and whichever thread dequeues this event takes
              * it from main.c's loop, so end the game thread the way main.c would. */
+            if (GAME_CLOSE_REQUEST()) break;
             virtual_keyboard_state = 0;
             Thread_Exit = 1;
             SDL_SemPost(Game_FlipSem);
@@ -2085,6 +2113,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 break;
             case SDL_WINDOWEVENT_CLOSE:
                 /* without a WM the close of the window is only this event */
+                if (GAME_CLOSE_REQUEST()) break;
                 virtual_keyboard_state = 0;
                 Thread_Exit = 1;
                 SDL_SemPost(Game_FlipSem);

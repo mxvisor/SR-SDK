@@ -35,6 +35,8 @@
  *                            that the port takes for itself, e.g. a toggle key
  *   GAME_KEYBOARD_BLOCKED()  non-zero while the game reads keys by itself
  *   GAME_MOUSE_BLOCKED()     the same for the mouse
+ *   GAME_CLOSE_REQUEST()     non-zero when the game takes the close of the
+ *                            window (SDL_QUIT) itself and quits on its own
  * and Game_Display_Flip() in the game's main.c draws one frame. */
 
 #include <stdio.h>
@@ -57,6 +59,9 @@
 #endif
 #if !defined(GAME_MOUSE_BLOCKED)
 #define GAME_MOUSE_BLOCKED() 0
+#endif
+#if !defined(GAME_CLOSE_REQUEST)
+#define GAME_CLOSE_REQUEST() 0
 #endif
 
 /* Who takes keyboard and mouse events out of SDL's queue: on win32 with the
@@ -266,6 +271,7 @@ void Game_Event_Loop(void)
                     case SDL_WINDOWEVENT_CLOSE:
                         /* Without a WM, xdotool windowclose / XDestroyWindow never
                          * becomes SDL_QUIT — only this event. Same shutdown path. */
+                        if (GAME_CLOSE_REQUEST()) break;
                         Game_QuitRequested = 1;
                         REQUEST_PROGRAM_EXIT();
                         break;
@@ -323,6 +329,7 @@ void Game_Event_Loop(void)
 #endif
 
             case SDL_QUIT:
+                if (GAME_CLOSE_REQUEST()) break;
                 Game_QuitRequested = 1;
                 REQUEST_PROGRAM_EXIT();
                 break;

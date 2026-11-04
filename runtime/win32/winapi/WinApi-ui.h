@@ -48,6 +48,9 @@ uint32_t Winapi_MessageBoxDialog(const char *text, const char *caption, uint32_t
 
 /* posts WM_COMMAND id to the main window (WinApi-user32.c) */
 void Winapi_PostCommand(uint32_t id);
+/* the close of the window as WM_CLOSE to the main window, for GAME_CLOSE_REQUEST()
+ * of Game_hooks.h (WinApi-user32.c) */
+int Winapi_CloseRequest(void);
 /* waits for and hands out SDL events until done() (WinApi-user32.c) */
 void Winapi_ModalLoop(int (*done)(void));
 
