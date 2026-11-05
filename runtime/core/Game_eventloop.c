@@ -31,12 +31,11 @@
  * EC_PROGRAM_QUIT).
  *
  * What a game may add in its Game_hooks.h, all optional:
- *   GAME_KEY_FILTER(key)     non-zero for a key event (const SDL_KeyboardEvent *)
- *                            that the port takes for itself, e.g. a toggle key
  *   GAME_KEYBOARD_BLOCKED()  non-zero while the game reads keys by itself
  *   GAME_MOUSE_BLOCKED()     the same for the mouse
  *   GAME_CLOSE_REQUEST()     non-zero when the game takes the close of the
  *                            window (SDL_QUIT) itself and quits on its own
+ * The port's own keys (a toggle key) are Game_osd.h's: GAME_OSD_KEYS().
  * and Game_Display_Flip() in the game's main.c draws one frame. */
 
 #include <stdio.h>
@@ -49,11 +48,9 @@
 #include "Game_thread.h"
 #include "input.h"
 #include "main.h"
+#include "Game_osd.h"
 #include "Game_hooks.h"
 
-#if !defined(GAME_KEY_FILTER)
-#define GAME_KEY_FILTER(key) 0
-#endif
 #if !defined(GAME_KEYBOARD_BLOCKED)
 #define GAME_KEYBOARD_BLOCKED() 0
 #endif
@@ -79,7 +76,7 @@
 
 int Game_QueueKeyboardEvent(const SDL_Event *event)
 {
-    if (GAME_KEY_FILTER(&event->key) || event->key.repeat) return 0;
+    if (event->key.repeat) return 0;
     if (((Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1)) == Game_KQueueRead)
     {
         /* keyboard event queue overflow */
@@ -302,7 +299,8 @@ void Game_Event_Loop(void)
             case SDL_KEYUP:
                 /* windowID 0: a key of <GAME>_AUTO_KEYS (Game_keys.c), meant
                  * for a window without the focus (Xvfb) */
-                if (((AppActive && AppInputFocus) || event.key.windowID == 0) && !GAME_KEYBOARD_BLOCKED())
+                if (((AppActive && AppInputFocus) || event.key.windowID == 0)
+                    && !Game_OsdKeyEvent(&event.key) && !GAME_KEYBOARD_BLOCKED())
                 {
                     Game_QueueKeyboardEvent(&event);
                 }

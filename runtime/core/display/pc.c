@@ -62,6 +62,7 @@
 #include "display.h"
 #include "main.h"
 #include "Game_ui.h"
+#include "Game_osd.h"
 #include "palette32bgra.h"
 #if defined(GAME_WINAPI)
 #include "WinApi-ddraw.h"
@@ -283,6 +284,7 @@ void Game_Display_Flip(void)
     if (SDL_GetRendererOutputSize(Game_Renderer, &output_width, &output_height) != 0) return;
     Display_PictureRect(output_width, output_height, &picture);
     if (picture.w <= 0 || picture.h <= 0) return;
+    Game_OsdFrame(Render_Width, Render_Height, "SDL");
 
     int width = Render_Width * ((picture.w + Render_Width - 1) / Render_Width);
     int height = Render_Height * ((picture.h + Render_Height - 1) / Render_Height);

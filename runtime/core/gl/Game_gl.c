@@ -352,7 +352,7 @@ const char *Game_GlShaderName(int shader)
  * the surface is a texture over the window, loaded again only when what it
  * shows changes. Blending over the surface's clear alpha leaves premultiplied
  * colour. Without the touch gamepad the pass runs only while there is
- * something to show. */
+ * something to show (a menu, the on-screen display). */
 
 static const char overlay_fs[] =
     "uniform sampler2D u_tex;\n"
@@ -549,7 +549,7 @@ static void present_texture(SDL_Window *window, GLuint tex,
 #if defined(GL_TOUCH_GAMEPAD)
     present_overlay(ww, wh, pos, prog_context);
 #else
-    if (Game_UiVisible()) present_overlay(ww, wh, pos, prog_context);
+    if (Game_UiActive()) present_overlay(ww, wh, pos, prog_context);
 #endif
     SDL_GL_SwapWindow(window);
 }

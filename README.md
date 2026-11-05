@@ -272,7 +272,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_CD_OPTIONAL` | the game works without its disc: "no CD" is printed only when the CD trace is on |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
-| `GAME_KEY_FILTER(key)` | optional: non-zero for a key event (`const SDL_KeyboardEvent *`) the port takes for itself, a toggle key say |
+| `GAME_OSD_KEYS()` | optional: after the settings, registers the port's own keys of the game (a toggle key say) with `Game_OsdAddKey` (`runtime/core/Game_osd.h`); they do not reach the game, the on-screen display (`Display_OSD_Key`, F12) lists them, and a press shows what it switched |
 | `GAME_KEYBOARD_BLOCKED()`, `GAME_MOUSE_BLOCKED()` | optional: non-zero while the game reads keys or the mouse by itself |
 
 A DOS game (`runtime/dos`) also takes, all optional:
@@ -282,7 +282,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_start_`, the program's entry point, which SR exports by itself; `c_main_` is the game's C `main` named by `main_` in `global_aliases.sci`, for a port that skips the startup code |
 | `GAME_PROGRAM_MEMORY`, `GAME_PROGRAM_STACK` | `Game-asm.c`, a game started at its entry point: the size of the program's memory block (default 64 MiB, less if the guest window has no room) and of the stack in it (1 MiB); the startup code grows its heap in the block with INT 21h AH=4Ah |
 | `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` (default `Game_ReadArgs`: `--config-file=`) |
-| `GAME_CONFIG()` | the port's configuration, read after the options (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
+| `GAME_CONFIG()` | the port's configuration, read after the options and the defaults of `Init_Display`/`Init_Audio`/`Init_Input` (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
 | `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
 | `GAME_DISPLAY_INIT()`, `GAME_DISPLAY_INIT2()`, `GAME_DISPLAY_CLEANUP()`, `GAME_DISPLAY_DESTROY()` | `core/display/pc.c`, the default display: after the defaults of `Init_Display`; at the end of `Init_Display2` (may change `Render_Width`, `Render_Height`, `Display_Flip_Procedure`); in `Cleanup_Display`; in `Game_Display_Destroy` |
 | `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()`, `GAME_DISPLAY_OVERLAY(picture)` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip` (nonzero: the game showed the frame itself); drawn over the picture (an `SDL_Rect`) before the touch gamepad |

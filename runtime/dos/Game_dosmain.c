@@ -29,7 +29,7 @@
  * optional:
  *   GAME_ARGS(argc, argv)    takes the port's own options out of argv, returns the new argc (default
  *                            Game_ReadArgs: --config-file=)
- *   GAME_CONFIG()            reads the port's configuration, after the options (default
+ *   GAME_CONFIG()            reads the port's configuration, after the options and the defaults (default
  *                            Game_ReadConfig: <program>.cfg)
  *   GAME_CONFIG_KEY(key, value)  a key of the settings file that is the game's: nonzero if it took it
  *   GAME_RUNTIME_INIT()      the game's own part of the runtime, after the DOS world; nonzero: failed
@@ -168,15 +168,16 @@ static int Game_Run(int argc, char *argv[])
     Game_Sound = 1;
     Game_Music = 1;
 
+    /* the defaults, then the settings file over them */
+    Init_Display();
+    Init_Audio();
+    Init_Input();
+
 #ifdef GAME_CONFIG
     GAME_CONFIG();
 #else
     Game_ReadConfig();
 #endif
-
-    Init_Display();
-    Init_Audio();
-    Init_Input();
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
     {

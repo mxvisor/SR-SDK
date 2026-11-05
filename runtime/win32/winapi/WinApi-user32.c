@@ -123,6 +123,7 @@ static int post_command_redraw = 0;
 #include "WinApi-winmm.h"
 #include "touchgamepad.h"
 #include "Game_keys.h"
+#include "Game_osd.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -1307,6 +1308,12 @@ static int find_event(SDL_Event *event, int remove, int wait)
              * the caller looks at its queue again */
             if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen()) return FIND_EVENT_WAKE;
+            continue;
+        }
+        if ((num_events > 0) && ((event->type == SDL_KEYDOWN) || (event->type == SDL_KEYUP)) && Game_OsdKeyEvent(&event->key))
+        {
+            /* a key of the port (Game_osd.h): no message, no key of the guest's queue */
+            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             continue;
         }
         if (num_events == 0) // no events

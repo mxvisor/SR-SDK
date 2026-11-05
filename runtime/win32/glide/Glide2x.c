@@ -58,6 +58,7 @@
 #include "Game_memory.h"
 #include "WinApi-ddraw.h"
 #include "WinApi-d3d.h"
+#include "Game_osd.h"
 #include "Game_hooks.h"
 
 /* a toggle of the port that hides the fog the program turns on (Game_hooks.h) */
@@ -1700,6 +1701,14 @@ static void present_front(void)
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
     ms_resolve(pi);
+    {
+        char output[48];
+
+        /* the game's mode, and the 3D drawn at Display_3D_Resolution */
+        if (fb_width == scr_width && fb_height == scr_height) snprintf(output, sizeof(output), "Glide, OpenGL");
+        else snprintf(output, sizeof(output), "Glide, OpenGL, 3D %ux%u", (unsigned)fb_width, (unsigned)fb_height);
+        Game_OsdFrame((int)scr_width, (int)scr_height, output);
+    }
     Game_GlPresentTexture(gl_window, fbo_tex[pi], 4, 3,
                           (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
 }

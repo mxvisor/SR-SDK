@@ -44,6 +44,7 @@
 #include "audio.h"
 #include "input.h"
 #include "Game_vfs.h"
+#include "Game_osd.h"
 #include "Game_hooks.h"
 
 /* the program's name is the port's namespace in the game directory: the
@@ -103,7 +104,7 @@ int Game_ReadArgs(int argc, char *argv[])
     return count;
 }
 
-void Game_ReadConfig(void)
+static void read_config(void)
 {
     char filename[4096];
     FILE *f;
@@ -179,6 +180,7 @@ void Game_ReadConfig(void)
         param = trim_string(param);
 
         if (Config_Display(str, param)) continue;
+        if (Game_OsdConfigKey(str, param)) continue;
         if (Config_Audio(str, param)) continue;
         if (Config_Input(str, param)) continue;
 
@@ -226,4 +228,11 @@ void Game_ReadConfig(void)
     }
 
     fclose(f);
+}
+
+void Game_ReadConfig(void)
+{
+    read_config();
+    /* the keys of the port, with those the settings gave */
+    Game_OsdInit();
 }

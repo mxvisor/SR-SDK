@@ -41,6 +41,7 @@
 #include "Game_defs.h"
 #include "Game_thread.h"
 #include "Game_ui.h"
+#include "Game_osd.h"
 
 /* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android every mode fills a
  * 4:3 display, as on the monitor of the game's time (320x200 is not 4:3 in
@@ -477,6 +478,7 @@ static void CopyToDisplay(struct IDirectDraw_c *dd)
 static void CopyToDisplay(struct IDirectDraw_c *dd)
 {
     SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, NULL);
+    Game_UiDraw(dd->Renderer);
 }
 #endif
 
@@ -497,6 +499,7 @@ static void Present(struct IDirectDraw_c *dd)
     }
 #endif
     if ((prim == NULL) || (dd->Texture == NULL)) return;
+    Game_OsdFrame((int)prim->width, (int)prim->height, "DirectDraw, SDL");
 
     if (0 != SDL_LockTexture(dd->Texture, NULL, (void **)&dst, &dstpitch)) return;
 

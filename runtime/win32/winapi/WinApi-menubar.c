@@ -36,6 +36,7 @@
 #include <string.h>
 #include <SDL.h>
 #include "Game_ui.h"
+#include "Game_osd.h"
 #include "touchgamepad.h"
 #include "WinApi-user32.h"
 #include "WinApi-ui.h"
@@ -506,7 +507,13 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
 
     if (!mb.open)
     {
+        static const Game_OsdKey menu_key = { "Window menu", NULL, NULL, NULL };
+        static int listed;
+
         if (bar_menu() == 0) return 0;
+        /* the panel of the port lists F10, which stays this menu's */
+        if (!listed) Game_OsdAddKey(SDL_SCANCODE_F10, &menu_key);
+        listed = 1;
         switch (event->type)
         {
             case SDL_KEYDOWN:

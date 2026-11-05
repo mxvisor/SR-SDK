@@ -23,7 +23,7 @@
  */
 
 /* The port's own screen interface over the game's picture: the touch gamepad
- * and one client (the window menu, a dialog).  The presenters (display/pc.c,
+ * and one client (the window menu, a dialog), and the on-screen display.  The presenters (display/pc.c,
  * gl/Game_gl.c, DirectDraw, a game's own) call Game_UiDraw after the picture;
  * the client draws with an SDL_Renderer the size of the window. */
 
@@ -42,13 +42,15 @@ typedef struct {
 } Game_UiClient;
 
 void Game_UiSetClient(const Game_UiClient *client);
-/* the touch gamepad, then the client */
+/* the touch gamepad, the on-screen display, then the client */
 void Game_UiDraw(SDL_Renderer *renderer);
 /* changes whenever what Game_UiDraw draws changes */
 int Game_UiStamp(void);
 void Game_UiChanged(void);
 /* the client has something on the screen */
 int Game_UiVisible(void);
+/* the client or the on-screen display (Game_osd.h) has something on the screen */
+int Game_UiActive(void);
 /* the renderer of the glyphs is gone (its textures with it) */
 void Game_UiForgetRenderer(void);
 /* the size Game_UiDraw had last: events in window pixels are scaled to it */

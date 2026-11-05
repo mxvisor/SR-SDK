@@ -36,6 +36,7 @@
 #include "Game_vars.h"
 #include "input.h"
 #include "touchgamepad.h"
+#include "Game_osd.h"
 #include "VKfont2.h"
 
 #if defined(__ANDROID__)
@@ -70,6 +71,10 @@ static SDL_Renderer *gp_renderer;
 
 static SDL_Texture *gp_glyph[128];
 static int gp_stamp;
+
+/* The button of the port's panel (Game_osd.h), beside every layout: it shows and
+ * hides the panel itself, sends no key; it sits in the first free place of a few */
+static GPButton gp_osd = {0,0,0,0, SDLK_UNKNOWN, 0, "OSD", GP_BLUE, -1};
 
 /* A pad is a cross of four arrow buttons (up, down, left, right around an empty
  * centre), found in the layout by its geometry.  One finger on the pad steers in
@@ -160,6 +165,61 @@ static void gp_find_pads(void)
     gp_npads = n;
 }
 
+static int gp_overlaps(const GPButton *a, const GPButton *b, int gap)
+{
+    return a->x < b->x + b->w + gap && b->x < a->x + a->w + gap &&
+           a->y < b->y + b->h + gap && b->y < a->y + a->h + gap;
+}
+
+static int gp_osd_free(int x, int y, int gap)
+{
+    int i;
+
+    gp_osd.x = x;
+    gp_osd.y = y;
+    for (i = 0; i < GP_NBUTTONS; i++)
+    {
+        if (gp_overlaps(&gp_osd, &gp_buttons[i], gap)) return 0;
+    }
+    return 1;
+}
+
+/* along the top edge from the centre outwards, then along the bottom one, then the
+ * middle of the left and of the right edge: the first place no button of the
+ * layout covers */
+static void gp_place_osd(int W, int H)
+{
+    int S = (W < H ? W : H) / 4, m, gap, row, step, k;
+
+    if (S < 48) S = 48;
+    gap = S / 5;
+    m = S / 4;
+    /* smaller than the layout's buttons: it is not pressed often */
+    gp_osd.w = S * 3 / 5;
+    gp_osd.h = S * 3 / 10;
+    step = S / 4;
+    for (row = 0; row < 2; row++)
+    {
+        int y = (row == 0) ? m : H - m - gp_osd.h;
+
+        for (k = 0; k * step <= (W - gp_osd.w) / 2 - m; k++)
+        {
+            if (gp_osd_free((W - gp_osd.w) / 2 + k * step, y, gap)) return;
+            if (k != 0 && gp_osd_free((W - gp_osd.w) / 2 - k * step, y, gap)) return;
+        }
+    }
+    if (gp_osd_free(m, (H - gp_osd.h) / 2, gap)) return;
+    if (gp_osd_free(W - m - gp_osd.w, (H - gp_osd.h) / 2, gap)) return;
+    /* nowhere free: the top centre */
+    gp_osd.x = (W - gp_osd.w) / 2;
+    gp_osd.y = m;
+}
+
+static int gp_in_osd(int x, int y)
+{
+    return x >= gp_osd.x && x < gp_osd.x + gp_osd.w && y >= gp_osd.y && y < gp_osd.y + gp_osd.h;
+}
+
 static void gp_ensure_layout(void)
 {
     int W, H;
@@ -170,6 +230,7 @@ static void gp_ensure_layout(void)
     gp_W = W;
     gp_H = H;
     gp_find_pads();
+    gp_place_osd(W, H);
 }
 
 static SDL_Texture *gp_glyph_texture(int chr)
@@ -396,6 +457,7 @@ void TouchGamepad_Draw(SDL_Renderer *renderer)
     {
         gp_draw_button(&gp_buttons[i]);
     }
+    gp_draw_button(&gp_osd);
 }
 
 void TouchGamepad_ForgetRenderer(void)
@@ -527,6 +589,24 @@ int TouchGamepad_Event(SDL_Event *event)
 
     pad = gp_pad_with_finger(finger);
 
+    /* the panel's button: down on it toggles the panel, the finger is its until up */
+    if (gp_osd.finger == finger)
+    {
+        if (event->type == SDL_FINGERUP)
+        {
+            gp_osd.finger = -1;
+            gp_stamp++;
+        }
+        return 1;
+    }
+    if (event->type == SDL_FINGERDOWN && pad < 0 && gp_osd.finger < 0 && gp_in_osd(x, y))
+    {
+        gp_osd.finger = finger;
+        gp_stamp++;
+        Game_OsdToggle();
+        return 1;
+    }
+
     if (event->type == SDL_FINGERUP)
     {
         if (pad >= 0)
@@ -592,6 +672,8 @@ void TouchGamepad_ReleaseAll(void)
     int i;
 
     for (i = 0; i < gp_npads; i++) gp_pad[i].finger = -1;
+    if (gp_osd.finger >= 0) gp_stamp++;
+    gp_osd.finger = -1;
     for (i = 0; i < GP_NBUTTONS; i++)
     {
         if (gp_buttons[i].finger >= 0) gp_release(i);
@@ -600,7 +682,8 @@ void TouchGamepad_ReleaseAll(void)
 
 int TouchGamepad_ButtonAt(float x, float y)
 {
-    return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0 || gp_pad_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
+    return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0 || gp_pad_at((int)(x * gp_W), (int)(y * gp_H)) >= 0
+           || gp_in_osd((int)(x * gp_W), (int)(y * gp_H));
 }
 
 int TouchGamepad_HeldKey(int index, SDL_Keycode *key)

@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "Game_ui.h"
+#include "Game_osd.h"
 #include "touchgamepad.h"
 #include "VKfont2.h"
 
@@ -52,12 +53,17 @@ void Game_UiChanged(void)
 
 int Game_UiStamp(void)
 {
-    return ui_stamp + TouchGamepad_Stamp();
+    return ui_stamp + TouchGamepad_Stamp() + Game_OsdStamp();
 }
 
 int Game_UiVisible(void)
 {
     return (ui_client != NULL && ui_client->visible != NULL && ui_client->visible()) ? 1 : 0;
+}
+
+int Game_UiActive(void)
+{
+    return Game_UiVisible() || Game_OsdVisible();
 }
 
 void Game_UiForgetRenderer(void)
@@ -77,12 +83,22 @@ void Game_UiDraw(SDL_Renderer *renderer)
 {
     int w, h;
 
+    int logical_w, logical_h, client, osd;
+
     if (renderer == NULL) return;
     TouchGamepad_Draw(renderer);
     if (SDL_GetRendererOutputSize(renderer, &w, &h) != 0) return;
     ui_width = w;
     ui_height = h;
-    if (Game_UiVisible() && ui_client->draw != NULL) ui_client->draw(renderer, w, h);
+    client = Game_UiVisible() && ui_client->draw != NULL;
+    osd = Game_OsdVisible();
+    if (!client && !osd) return;
+    /* in the pixels of the window, also when the picture has a logical size (DirectDraw) */
+    SDL_RenderGetLogicalSize(renderer, &logical_w, &logical_h);
+    if (logical_w != 0) SDL_RenderSetLogicalSize(renderer, 0, 0);
+    if (osd) Game_OsdDraw(renderer, w, h);
+    if (client) ui_client->draw(renderer, w, h);
+    if (logical_w != 0) SDL_RenderSetLogicalSize(renderer, logical_w, logical_h);
 }
 
 void Game_UiSetRepaint(void (*repaint)(void))
