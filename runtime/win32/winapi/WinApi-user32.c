@@ -3097,11 +3097,17 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
     return PSEUDO_HANDLE_MAIN_WINDOW;
 }
 
-uint32_t CCALL DefWindowProcA_c(void */*hWnd*/, uint32_t /*Msg*/, uint32_t /*wParam*/, uint32_t /*lParam*/)
+uint32_t CCALL DefWindowProcA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
 #ifdef DEBUG_USER32
     eprintf("DefWindowProcA: 0x%" PRIxPTR ", 0x%x, 0x%x, 0x%x\n", (uintptr_t)hWnd, Msg, wParam, lParam);
 #endif
+    (void)wParam;
+    (void)lParam;
+
+    /* as on Windows: a game that quits with PostMessage(WM_CLOSE) and leaves the
+     * message to DefWindowProc gets its WM_DESTROY (GAME_WINAPI_DESTROY_MESSAGE) */
+    if (Msg == WM_CLOSE) DestroyWindow_c(hWnd);
 
     return 0;
 }
