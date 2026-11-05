@@ -201,7 +201,7 @@ PY2
 fi
 [ -f "$REF" ] || { echo "no reference run ($REF); use --save-ref" >&2; exit 0; }
 echo "## comparison with ref/results.tsv" >&2
-python3 - "$REF" "$RESULTS" <<'PY'
+python3 - "$REF" "$RESULTS" "$ONLY" "${GAMES[*]}" "$WINE" <<'PY'
 import sys
 
 def load(path):
@@ -213,6 +213,15 @@ def load(path):
     return rows
 
 ref, now = load(sys.argv[1]), load(sys.argv[2])
+only, games, wine = set(sys.argv[3].split()), set(sys.argv[4].split()), sys.argv[5] == '1'
+
+def expected(key):
+    # a row of the reference this run should have made too: of a check it ran, for a
+    # game it ran (sr: not per game; prefixes: also the SDK), not of Wine with --no-wine
+    kind, subject = key
+    if kind.split('-')[0] not in only or (not wine and subject.endswith(':wine')):
+        return False
+    return kind == 'sr' or subject.split(':')[0] in games or (kind == 'prefixes' and subject == 'sdk')
 
 def unchanged(key):
     # sr and image rows carry the output hash: a different hash is a change; a llasm row
@@ -242,6 +251,10 @@ for key in sorted(now):
         bad += 1
     if verdict != 'same':
         print('%-10s %-10s %-45s %-8s %s' % (verdict, key[0], key[1], status, detail))
+for key in sorted(ref):
+    if key not in now and expected(key):
+        bad += 1
+        print('%-10s %-10s %-45s %-8s %s' % ('MISSING', key[0], key[1], '-', 'no result in this run'))
 total = len(now)
 same = sum(1 for k in now if k in ref and now[k][0] == ref[k][0] and unchanged(k))
 print('%d checks, %d same as the reference, %d need attention' % (total, same, bad))

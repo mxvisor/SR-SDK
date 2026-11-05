@@ -33,10 +33,10 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def collect(repo, devices, llasm, target='default'):
+def collect(repo, devices, llasm, build_target='default'):
     result = []
-    gen = os.path.join(repo, 'build', 'gen') if target == 'default' else \
-        os.path.join(repo, 'build', 'target-' + target, 'gen')
+    gen = os.path.join(repo, 'build', 'gen') if build_target == 'default' else \
+        os.path.join(repo, 'build', 'target-' + build_target, 'gen')
     for dirpath, dirs, files in os.walk(gen):
         dirs.sort()
         for name in sorted(files):
@@ -50,7 +50,7 @@ def collect(repo, devices, llasm, target='default'):
             # llasm=<file> changes the action of every .llasm -> .o, so a dry run
             # prints them all; the file is replaced by llasm.py below
             out = subprocess.run(['scons', '-n', '-Q', 'stage=bin', 'device=' + device, 'llasm=' + dummy,
-                                  'target=' + target],
+                                  'target=' + build_target],
                                  cwd=repo, capture_output=True, text=True).stdout
             for line in out.splitlines():
                 if dummy not in line or ' | ' not in line:
