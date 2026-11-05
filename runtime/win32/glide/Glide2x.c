@@ -301,17 +301,28 @@ static struct glide_state st;
 static float fog_table[64];         /* grFogTable: the fog of 0..1 at the W of 64 steps */
 
 /* The program may open the window in one thread and draw in another (a driver DLL of the program does): the
- * OpenGL context belongs to the thread that made it current.  grSstWinOpen lets it go, and a
- * function that uses OpenGL takes it for its thread when it is not its own. */
+ * OpenGL context belongs to the thread that made it current.  grSstWinOpen and grBufferSwap let it go, and a
+ * function that uses OpenGL takes it for its thread when it is not its own.  A context current in another
+ * thread cannot be taken (EGL_BAD_ACCESS, BadAccess of GLX): the drawing thread gives it up at the end of its
+ * frame, so the other thread waits for that (a game may close the window and open another one from its main
+ * thread while its driver draws in its own). */
 static SDL_Window *gl_window;
 static SDL_GLContext gl_context;
 static int gl_ok;
 
 static void gl_acquire(void)
 {
-    if (gl_ok && SDL_GL_GetCurrentContext() != gl_context && SDL_GL_MakeCurrent(gl_window, gl_context) != 0)
+    int tries;
+
+    if (!gl_ok || SDL_GL_GetCurrentContext() == gl_context) return;
+    for (tries = 0; SDL_GL_MakeCurrent(gl_window, gl_context) != 0; tries++)
     {
-        eprintf("Glide: cannot make the OpenGL context current: %s\n", SDL_GetError());
+        if (tries == 500)
+        {
+            eprintf("Glide: cannot make the OpenGL context current: %s\n", SDL_GetError());
+            return;
+        }
+        SDL_Delay(1);
     }
 }
 
@@ -712,11 +723,13 @@ static void free_textures(void)
 /* ---- OpenGL ---- */
 
 /* what the shaders get of a vertex: the position in pixels, the colour in 0..1,
- * and sow, tow, oow (screen-linear, as a Voodoo interpolates them) */
+ * sow, tow, oow (screen-linear, as a Voodoo interpolates them), and bs0..bt1 the box
+ * of the texture coordinates (s/w, t/w) of the vertex's triangle */
 struct gl_vertex {
     float x, y, z;
     float r, g, b, a;
     float sow, tow, oow;
+    float bs0, bt0, bs1, bt1;
 };
 
 #define BATCH_MAX 3072
@@ -737,7 +750,8 @@ static GLuint ms_fbo[3], ms_color[3];
 static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
 static GLint u_cc_raw, u_cc_fn, u_cc_fac, u_cc_loc, u_cc_oth, u_cc_inv, u_ac_raw, u_ac_fn, u_ac_fac, u_ac_loc, u_ac_oth, u_ac_inv;
-static GLint u_atest, u_atest_ref, u_fog, u_fogcolor, u_fogtab, u_lodbias;
+static GLint u_atest, u_atest_ref, u_fog, u_fogcolor, u_fogtab, u_lodbias, u_clampuv;
+static GLint a_box = -1;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
@@ -754,16 +768,22 @@ static const char draw_vs[] =
     "attribute vec3 a_pos;\n"
     "attribute vec4 a_col;\n"
     "attribute vec3 a_stq;\n"
+    "attribute vec4 a_box;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
+    "varying vec4 v_box;\n"
     "void main() {\n"
     "    gl_Position = vec4(a_pos.xy * inv_size - 1.0, a_pos.z * 2.0 - 1.0, 1.0);\n"
     "    gl_PointSize = u_psize;\n"
     "    v_col = a_col;\n"
     "    v_stq = a_stq;\n"
+    "    v_box = a_box;\n"
     "}\n";
 
-/* the colour/alpha combine of glide2x.h, the numbers are GR_COLORCOMBINE_* */
+/* the colour/alpha combine of glide2x.h, the numbers are GR_COLORCOMBINE_*; u_clampuv: the texture
+ * coordinates are kept in the box of the triangle's (with antialiasing a pixel on an edge is shaded at
+ * its centre, which may lie outside the triangle: the coordinates there would reach the neighbouring
+ * picture of a texture page, as in WinApi-d3dgl.c) */
 static const char draw_fs[] =
     "uniform sampler2D u_tex;\n"
     "uniform vec2 u_texscale;\n"
@@ -781,8 +801,10 @@ static const char draw_fs[] =
     "uniform float u_fogtab[64];\n"
     "uniform float u_lodbias;\n"
     "uniform float u_atest_ref;\n"
+    "uniform int u_clampuv;\n"
     "varying vec4 v_col;\n"
     "varying vec3 v_stq;\n"
+    "varying vec4 v_box;\n"
     "/* grColorCombine / grAlphaCombine of glide2x.h: function (ZERO 0, LOCAL 1, LOCAL_ALPHA 2, SCALE_OTHER 3,\n"
     " * SCALE_OTHER_ADD_LOCAL 4, ..._ADD_LOCAL_ALPHA 5, SCALE_OTHER_MINUS_LOCAL 6, ..._ADD_LOCAL 7, ..._ADD_LOCAL_ALPHA 8,\n"
     " * SCALE_MINUS_LOCAL_ADD_LOCAL 9, ..._ADD_LOCAL_ALPHA 10), factor (ZERO 0, LOCAL 1, OTHER_ALPHA 2, LOCAL_ALPHA 3,\n"
@@ -834,7 +856,9 @@ static const char draw_fs[] =
     "    vec4 tex = vec4(1.0);\n"
     "    if (u_usetex == 1) {\n"
     "        float w = (v_stq.z != 0.0) ? 1.0 / v_stq.z : 0.0;\n"
-    "        tex = texture2D(u_tex, v_stq.xy * w * u_texscale, u_lodbias);\n"
+    "        vec2 st = v_stq.xy * w;\n"
+    "        if (u_clampuv != 0) st = clamp(st, v_box.xy, v_box.zw);\n"
+    "        tex = texture2D(u_tex, st * u_texscale, u_lodbias);\n"
     "    } else if (u_usetex == 2) {\n"
     "        tex = vec4(0.0);\n"
     "    }\n"
@@ -1048,6 +1072,8 @@ static int gl_start(uint32_t nbuf)
     u_fogcolor = glGetUniformLocation(prog_draw, "u_fogcolor");
     u_fogtab = glGetUniformLocation(prog_draw, "u_fogtab");
     u_lodbias = glGetUniformLocation(prog_draw, "u_lodbias");
+    u_clampuv = glGetUniformLocation(prog_draw, "u_clampuv");
+    a_box = glGetAttribLocation(prog_draw, "a_box");
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
     if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
@@ -1333,6 +1359,7 @@ static void gl_flush(void)
     {
         glUniform1i(u_usetex, (st.tex_combine == GR_TEXTURECOMBINE_ZERO) ? 2 : 0);
     }
+    glUniform1i(u_clampuv, ms_samples != 0 && batch_mode == GL_TRIANGLES);
 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
@@ -1340,10 +1367,16 @@ static void gl_flush(void)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].x);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].r);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].sow);
+    if (a_box >= 0)
+    {
+        glEnableVertexAttribArray((GLuint)a_box);
+        glVertexAttribPointer((GLuint)a_box, 4, GL_FLOAT, GL_FALSE, sizeof(struct gl_vertex), &batch[0].bs0);
+    }
     glDrawArrays(batch_mode, 0, batch_n);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
+    if (a_box >= 0) glDisableVertexAttribArray((GLuint)a_box);
     glUseProgram(0);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
@@ -1386,6 +1419,30 @@ static void batch_vertex(GLenum mode, const struct gr_vertex *v, int pixel_centr
     o->sow = v->tmuvtx[0].sow;
     o->tow = v->tmuvtx[0].tow;
     o->oow = v->oow;
+    o->bs0 = o->bt0 = -1e30f;
+    o->bs1 = o->bt1 = 1e30f;
+}
+
+/* the box of the last three vertices' texture coordinates (a triangle); none if a w is not positive */
+static void batch_box_last3(void)
+{
+    struct gl_vertex *v = &batch[batch_n - 3];
+    float s[3], t[3];
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        if (!(v[i].oow > 0.0f)) return;
+        s[i] = v[i].sow / v[i].oow;
+        t[i] = v[i].tow / v[i].oow;
+    }
+    for (i = 0; i < 3; i++)
+    {
+        v[i].bs0 = fminf(s[0], fminf(s[1], s[2]));
+        v[i].bt0 = fminf(t[0], fminf(t[1], t[2]));
+        v[i].bs1 = fmaxf(s[0], fmaxf(s[1], s[2]));
+        v[i].bt1 = fmaxf(t[0], fmaxf(t[1], t[2]));
+    }
 }
 
 static void draw_triangle(const struct gr_vertex *a, const struct gr_vertex *b, const struct gr_vertex *c)
@@ -1403,6 +1460,7 @@ static void draw_triangle(const struct gr_vertex *a, const struct gr_vertex *b, 
     batch_vertex(GL_TRIANGLES, a, 0);
     batch_vertex(GL_TRIANGLES, b, 0);
     batch_vertex(GL_TRIANGLES, c, 0);
+    batch_box_last3();
 }
 
 static void draw_point(const struct gr_vertex *v)
@@ -1585,6 +1643,7 @@ static void put_texture(GLuint target, GLuint tex, int blend)
     glUniform1i(u_tex, 0);
     glUniform2f(u_texscale, 1.0f / (float)scr_width, 1.0f / (float)scr_height);
     glUniform1i(u_usetex, 1);
+    glUniform1i(u_clampuv, 0);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -1928,6 +1987,7 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
         }
     }
     present_front();
+    gl_release();
     return 0;
 }
 

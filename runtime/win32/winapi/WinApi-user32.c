@@ -1246,15 +1246,17 @@ extern "C"
 #endif
 int Winapi_CloseRequest(void)
 {
-    static uint32_t asked;
+    static int asked;
+    static uint32_t asked_at;
 
-    if (asked == 0)
+    if (!asked)
     {
         if (!PostMessageA_c(PSEUDO_HANDLE_MAIN_WINDOW, WM_CLOSE, 0, 0)) return 0;
-        asked = SDL_GetTicks() | 1;
+        asked_at = SDL_GetTicks();
+        asked = 1;
         return 1;
     }
-    return (SDL_GetTicks() - asked < 1000) ? 1 : 0;
+    return (SDL_GetTicks() - asked_at < 1000) ? 1 : 0;
 }
 
 static int find_event(SDL_Event *event, int remove, int wait)
@@ -3852,16 +3854,22 @@ uint32_t CCALL PostThreadMessageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint3
     return 1;
 }
 
+/* WM_QUIT is a message of the thread that pumps the window, in the posted queue: as an SDL event it could
+ * be taken by the loop of the port's main thread, which drops it, and the game never left its message loop
+ * (a game that writes its settings after the loop would not save them, now and then) */
 void CCALL PostQuitMessage_c(int32_t nExitCode)
 {
-    SDL_Event event;
+    msg m;
+    uint32_t target;
+
     eprintf("PostQuitMessage: %i\n", nExitCode);
 
-    event.type = SDL_USEREVENT;
-    event.user.code = 0;
-    event.user.data1 = (void *)(intptr_t)nExitCode;
-    event.user.data2 = NULL;
-    SDL_PushEvent(&event);
+    target = (window_thread_id != 0) ? window_thread_id : GetCurrentThreadId_c();
+    SDL_zero(m);
+    m.message = WM_QUIT;
+    m.wParam = (uint32_t)nExitCode;
+    m.time = message_time_now();
+    posted_put(target, &m);
 }
 
 uint32_t CCALL PtInRect_c(const void *lprc, int32_t px, int32_t py)
