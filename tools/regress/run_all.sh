@@ -138,13 +138,13 @@ if want llasm; then
     echo "## llasm: ${GAMES[*]}" >&2
     for id in "${GAMES[@]}"; do
         repo=$(game_repo "$id")
-        if [ ! -d "$repo/build/gen" ]; then
+        if [ ! -d "$(game_stage_build "$id")/gen" ]; then
             add "$(printf 'llasm-gen\t%s\tfail\tno build/gen' "$id")"
             continue
         fi
         # --save-ref renews the listing too: its old verdict is only in the log
         renew=(); [ "$SAVE" = 1 ] && renew=(--renew)
-        "$REGRESS_DIR/llasm_hashes.py" "$repo" --ref "$REGRESS_DIR/ref/llasm-$id.txt" --id "$id" "${renew[@]}" | while IFS= read -r line; do
+        "$REGRESS_DIR/llasm_hashes.py" "$repo" --target "$(game_target "$id")" --ref "$REGRESS_DIR/ref/llasm-$id.txt" --id "$id" "${renew[@]}" | while IFS= read -r line; do
             add "$line"
         done
     done

@@ -23,7 +23,10 @@
 
 # The Android APK of a game, run from the game repository's root:
 #
-#     android_apk.py [--data <the game's data dir>] [--out <file.apk>]
+#     android_apk.py [--data <the game's data dir>] [--out <file.apk>] [--target <name>]
+#
+# --target: one target of a repository of several (game-<name>/ in place of game/,
+# scons/game.py), with its own game.cfg and libmain.so.
 #
 # The defaults are what `make apk` (scons portable-data) leaves: the data is
 # <build>/dist/portable, the APK <build>/dist/<dist_name>-android-arm64.apk
@@ -101,11 +104,15 @@ def main():
     parser.add_argument('--out', help='the APK to write (default <build>/dist/<dist_name>-android-arm64.apk)')
     parser.add_argument('--build', default='build', help='the build directory (default build)')
     parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count() or 1)
+    parser.add_argument('--target', default='default',
+                        help='the target of a repository of several (game-<target>/, scons/game.py; default the main one, game/)')
     args = parser.parse_args()
 
     root = os.getcwd()
     build = os.path.abspath(args.build)
-    cfg = read_cfg(os.path.join(root, 'game', 'game.cfg'))
+    game_dir = os.path.join(root, 'game' if args.target == 'default' else 'game-' + args.target)
+    stage_build = build if args.target == 'default' else os.path.join(build, 'target-' + args.target)
+    cfg = read_cfg(os.path.join(game_dir, 'game.cfg'))
     data = os.path.abspath(args.data or os.path.join(build, 'dist', 'portable'))
     out = os.path.abspath(args.out or os.path.join(
         build, 'dist', '%s-android-arm64.apk' % (cfg.get('dist_name') or cfg.get('program') or 'game')))
@@ -139,7 +146,7 @@ def main():
 
     # 2. libmain.so
     run(['scons', 'stage=bin', 'device=arm64-android', '-j%d' % args.jobs,
-         'BUILD_DIR=' + build], env=env)
+         'BUILD_DIR=' + build, 'target=' + args.target], env=env)
 
     # 3. jniLibs and assets
     android = os.path.join(build, 'android')
@@ -152,7 +159,7 @@ def main():
                          'bin', 'aarch64-linux-android21-clang')
     run([clang, '-shared', '-fPIC', '-O2', '-Wall', '-o', os.path.join(jni, 'libgameloader.so'),
          os.path.join(SDK_ROOT, 'android', 'gameloader.c'), '-ldl'], env=env)
-    for library in (os.path.join(build, 'bin', 'arm64-android', 'libmain.so'),
+    for library in (os.path.join(stage_build, 'bin', 'arm64-android', 'libmain.so'),
                     os.path.join(sysroot, 'lib', 'libSDL2.so'),
                     os.path.join(sysroot, 'lib', 'libSDL2_mixer.so'),
                     os.path.join(ndk_lib, 'libc++_shared.so')):
@@ -203,7 +210,7 @@ def main():
     with open(os.path.join(res, 'values', 'strings.xml'), 'wt') as stream:
         stream.write('<resources>\n    <string name="app_name">%s</string>\n</resources>\n'
                      % escape(app_name))
-    game_res = os.path.join(root, 'game', 'android', 'res')
+    game_res = os.path.join(game_dir, 'android', 'res')
     if os.path.isdir(game_res):
         shutil.copytree(game_res, res, dirs_exist_ok=True)
 

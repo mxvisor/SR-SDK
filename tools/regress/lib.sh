@@ -4,7 +4,8 @@
 # root: $DOS_RECOMP_ROOT, or the parent of SDK), OUT (scratch and reports:
 # $REGRESS_OUT, default $ROOT/cache/sdk-regress; TMPDIR is
 # set to $ROOT/cache/tmp, so nothing of a run goes to /tmp).
-# Functions: game_ids, game_field ID N, game_repo ID, game_glob PATTERN.
+# Functions: game_ids, game_field ID N, game_repo ID, game_target ID, game_stage_build ID,
+# game_glob PATTERN.
 
 REGRESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK="$(cd "$REGRESS_DIR/../.." && pwd)"
@@ -17,6 +18,13 @@ mkdir -p "$OUT"
 game_ids() { awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$GAMES_TSV"; }
 game_field() { awk -F'\t' -v id="$1" -v n="$2" '!/^#/ && $1 == id { print $n }' "$GAMES_TSV"; }
 game_repo() { echo "$ROOT/$(game_field "$1" 2)"; }
+# the target of a repository of several (column 10, scons/game.py), default the main one
+game_target() { local t; t=$(game_field "$1" 10); echo "${t:-default}"; }
+# where the stages up to obj of the game's target are
+game_stage_build() {
+    local t; t=$(game_target "$1")
+    if [ "$t" = default ]; then echo "$(game_repo "$1")/build"; else echo "$(game_repo "$1")/build/target-$t"; fi
+}
 # the first file a glob (relative to ROOT) matches, or nothing
 game_glob() { [ "$1" = - ] && return 0; for f in $ROOT/$1; do [ -e "$f" ] && { echo "$f"; return 0; }; done; return 0; }
 # the ids the arguments name, or all of them

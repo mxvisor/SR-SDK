@@ -16,7 +16,7 @@ for id in $(select_games "$@"); do
     for target in $targets; do
         log="$OUT/build-$id-$target.log"
         start=$(date +%s)
-        if make -C "$repo" "$target" > "$log" 2>&1; then rc=0; else rc=$?; fi
+        if make -C "$repo" "$target" TARGETS="$(game_target "$id")" > "$log" 2>&1; then rc=0; else rc=$?; fi
         secs=$(( $(date +%s) - start ))
         if [ "$rc" = 0 ]; then status=ok; else status=fail; failed=1; fi
         printf 'build\t%s:%s\t%s\trc=%s secs=%s log=%s\n' "$id" "$target" "$status" "$rc" "$secs" "$log"

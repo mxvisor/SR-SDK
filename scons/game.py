@@ -69,7 +69,18 @@ def _keys(cfg, name):
 ROOT = Dir('#').abspath                         # the game
 SDK_ROOT = os.path.dirname(Dir('.').srcnode().abspath)
 SR_ROOT = os.path.join(SDK_ROOT, 'SR')
-CFG = read_cfg(os.path.join(ROOT, 'game', 'game.cfg'))
+
+# A repository may build several programs of one game (another exe of the same
+# disc): game/ is its main target, game-<name>/ the others, each with a game.cfg
+# of its own; game/game.cfg lists them (targets=). `scons target=<name>` builds
+# one, target=default (or none) the main one. The disc, the game directory
+# (game/portable.cfg), build/bin and build/dist are the repository's, shared by
+# all; the stages up to obj of a target go to build/target-<name>/.
+TARGET = ARGUMENTS.get('target', 'default')
+GAME_DIR = os.path.join(ROOT, 'game' if TARGET == 'default' else 'game-' + TARGET)
+if not os.path.isfile(os.path.join(GAME_DIR, 'game.cfg')):
+    raise Exception('target=%s: no %s' % (TARGET, os.path.join(GAME_DIR, 'game.cfg')))
+CFG = read_cfg(os.path.join(GAME_DIR, 'game.cfg'))
 
 # `scons clean` (and distclean, the same) builds nothing: the build tree (with
 # SCons's own database) and the run directory go.
@@ -147,17 +158,19 @@ HOST = host_key()
 BUILD = ARGUMENTS.get('BUILD_DIR', os.environ.get('BUILD_DIR', os.path.join(ROOT, 'build')))
 if not os.path.isabs(BUILD):
     BUILD = os.path.normpath(os.path.join(ROOT, BUILD))
+# the stages host..obj of a target other than the main one (TARGET above)
+STAGE_BUILD = BUILD if TARGET == 'default' else os.path.join(BUILD, 'target-' + TARGET)
 # SCons's own database goes into the build tree too, not into the repository
-os.makedirs(BUILD, exist_ok=True)
-SConsignFile(os.path.join(BUILD, '.sconsign'))
+os.makedirs(STAGE_BUILD, exist_ok=True)
+SConsignFile(os.path.join(STAGE_BUILD, '.sconsign'))
 
-HOST_SR = os.path.join(BUILD, 'host', HOST, 'sr-' + ARCH)
+HOST_SR = os.path.join(STAGE_BUILD, 'host', HOST, 'sr-' + ARCH)
 
 # Where the recompilation input of each stage lives, the directories of the
 # layout in "Каталоги сборки": the game's own inputs are read from game/, the
 # results of running SR and compact_source are written to build/ and stay
 # there, so two SDK versions can be compared with a plain diff -r.
-LLASM_SRC_DIR = os.path.join(ROOT, 'game', 'llasm')
+LLASM_SRC_DIR = os.path.join(GAME_DIR, 'llasm')
 
 # The shared code: the SDK's runtime (core, then the original's platform from
 # game.cfg) and SR's own llasm-support, used in place rather than copied.
@@ -228,6 +241,9 @@ Environment variables:
 
 Stages: host -> input -> recomp -> gen -> obj -> bin -> dist;
 scons stage=<name> stops at that one.
+
+target=<name> builds game-<name>/ (another program of the game, targets= of
+game/game.cfg) instead of game/; its stages up to obj go to build/target-<name>/.
 
 Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`):
   linux          the native binary: build/bin/pc64-linux|arm64-linux/<program>
@@ -521,11 +537,11 @@ def module_pipeline(MODULE, EXT, input_key):
     build/{input,recomp,gen}/<module>/). Returns the generated master .llasm, its
     directory and what the master's object depends on."""
     global defaults
-    RECOMP_SRC = os.path.join(ROOT, 'game', 'recomp', MODULE, VARIANT)
-    INPUT_DIR = os.path.join(BUILD, 'input', MODULE)
+    RECOMP_SRC = os.path.join(GAME_DIR, 'recomp', MODULE, VARIANT)
+    INPUT_DIR = os.path.join(STAGE_BUILD, 'input', MODULE)
     INPUT_EXE = os.path.join(INPUT_DIR, MODULE + EXT)
-    RECOMP_DIR = os.path.join(BUILD, 'recomp', MODULE, ARCH)
-    GEN_SRC_DIR = os.path.join(BUILD, 'gen', MODULE, ARCH)
+    RECOMP_DIR = os.path.join(STAGE_BUILD, 'recomp', MODULE, ARCH)
+    GEN_SRC_DIR = os.path.join(STAGE_BUILD, 'gen', MODULE, ARCH)
 
     # Everything SR writes beside <module>.asm, from
     # game/recomp/<module>/<variant>/outputs: the segments of this EXE, and the
@@ -706,7 +722,7 @@ for DLL_MODULE in DLL_MODULES:
 # ------------------------------------------------- stage 4: obj, stage 5: bin --
 
 if want('obj'):
-    obj_device = os.path.join(BUILD, 'obj', device)
+    obj_device = os.path.join(STAGE_BUILD, 'obj', device)
     obj_game = os.path.join(obj_device, 'game')
     gen_dir = os.path.join(obj_device, 'gen')
     bin_device = os.path.join(BUILD, 'bin', device)
@@ -729,7 +745,7 @@ if want('obj'):
         env.Append(CPPDEFINES=['GAME_GLIDE'])
     if DLL_MODULES:
         # the DLLs the runtime loads by name (WinApi-process.c): dll_modules.h has X(name) per module
-        dll_header_dir = os.path.join(BUILD, 'obj', device, 'include')
+        dll_header_dir = os.path.join(obj_device, 'include')
         os.makedirs(dll_header_dir, exist_ok=True)
         dll_header = '#define GAME_DLL_MODULES(X) ' + ' '.join('X(%s)' % m for m in DLL_MODULES) + '\n'
         dll_header_path = os.path.join(dll_header_dir, 'dll_modules.h')
@@ -738,18 +754,18 @@ if want('obj'):
                 stream.write(dll_header)
         env.Append(CPPDEFINES=['GAME_HAVE_DLL_MODULES'], CPPPATH=[dll_header_dir])
 
-    env.Append(CPPPATH=[os.path.join(ROOT, 'game')] + RUNTIME_DIRS
+    env.Append(CPPPATH=[GAME_DIR] + RUNTIME_DIRS
                + [os.path.join(SDK_ROOT, 'extern', 'tsf')]
                + ([os.path.join(RUNTIME_CORE, 'gl'),
                    os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
                + [os.path.join(RUNTIME_CORE, 'display'),
                   os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
 
-    VariantDir(obj_game, os.path.join(ROOT, 'game'), duplicate=0)
+    VariantDir(obj_game, GAME_DIR, duplicate=0)
 
     def game_dir(sub):
         # the game's SConscript of that directory if it has one, else all its .c
-        if os.path.exists(os.path.join(ROOT, 'game', sub, 'SConscript')):
+        if os.path.exists(os.path.join(GAME_DIR, sub, 'SConscript')):
             return SConscript(os.path.join(obj_game, sub, 'SConscript'),
                               exports='device env')
         return env.Object(Glob(os.path.join(obj_game, sub, '*.c')))
@@ -766,7 +782,7 @@ if want('obj'):
         for sub in ('', 'display', 'audio', 'input') + (('gl',) if GL else ()):
             for source in sorted(glob.glob(os.path.join(runtime_dir, sub, '*.c'))):
                 name = os.path.join(sub, os.path.basename(source))
-                if (not os.path.exists(os.path.join(ROOT, 'game', name))
+                if (not os.path.exists(os.path.join(GAME_DIR, name))
                         and os.path.basename(source) not in RUNTIME_SKIP
                         and not (GLES and name == os.path.join('gl', 'glad.c'))):
                     if os.path.basename(source) == 'WinApi-stubs.c':
@@ -809,7 +825,7 @@ if want('obj'):
     game_objs += game_dir('audio')
     game_objs += game_dir('input')
     game_objs += support_objs
-    if os.path.exists(os.path.join(ROOT, 'game', 'llasm', 'SConscript')):
+    if os.path.exists(os.path.join(GAME_DIR, 'llasm', 'SConscript')):
         game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
                                 exports='device env gen_dir llasm_tool llasm_deps '
                                         'gen_src_dir gen_main llasm_inc_dirs')
@@ -833,12 +849,20 @@ if want('bin'):
     if device == 'arm64-android':
         # SDLActivity loads libmain.so by name, so the shared object is
         # called main, not the program name from game.cfg.
-        defaults += env.SharedLibrary(os.path.join(BUILD, 'bin', device, 'main'),
+        # (a target other than the main one keeps its own: an APK has one)
+        defaults += env.SharedLibrary(os.path.join(STAGE_BUILD, 'bin', device, 'main'),
                                       game_objs)
     else:
         program_nodes = env.Program(os.path.join(BUILD, 'bin', device, PROGRAM), game_objs)
         defaults += program_nodes
 
+# the programs of the other targets (targets= of game/game.cfg), for the archive
+TARGET_PROGRAMS = []
+if TARGET == 'default':
+    for name in _keys(CFG, 'targets') if 'targets' in CFG else []:
+        target_cfg = read_cfg(os.path.join(ROOT, 'game-' + name, 'game.cfg'))
+        TARGET_PROGRAMS.append(target_cfg.get('program', '-'.join(_keys(target_cfg, 'modules')).lower()))
+
 SConscript(os.path.join(SDK_ROOT, 'scons', 'release.SConscript'),
-           exports='env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes')
+           exports='env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS')
 Default(defaults)

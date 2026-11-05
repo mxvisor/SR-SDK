@@ -40,6 +40,10 @@
 #
 # game.cfg keys: program (the binary), dist_name (the archives' name, default
 # program).  The data: game/portable.cfg (SR-SDK/tools/portable_cd.py).
+#
+# A repository with several targets (targets= of game/game.cfg, game-<name>/):
+# a target other than the main one has only `linux` and `windows`; the main
+# one makes the data and the archive, which holds the programs of all of them.
 
 import glob
 import os
@@ -50,7 +54,7 @@ import subprocess
 import sys
 import zipfile
 
-Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes')
+Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS')
 
 DIST = os.path.join(BUILD, 'dist')
 DIST_NAME = CFG.get('dist_name', PROGRAM)
@@ -93,6 +97,9 @@ if program_nodes is not None and device == LINUX_DEVICE:
 
 # ------------------------------------------------- disc, portable-data --
 
+if TARGET != 'default':
+    Return()
+
 if os.path.isfile(PORTABLE_CFG):
     def make_disc(target, source, env):
         subprocess.run([sys.executable, '-I', os.path.join(SDK_ROOT, 'tools', 'disc_tree.py'),
@@ -129,7 +136,8 @@ def port_names(binaries, dlls, release_oses):
     names += [os.path.basename(dll) for dll in dlls]
     for release_os in release_oses:
         names += [os.path.basename(source) for source in release_files(release_os)]
-    names += [PROGRAM + '.cfg', PROGRAM + '.log', PROGRAM + '.reg']
+    for program in [PROGRAM] + TARGET_PROGRAMS:
+        names += [program + '.cfg', program + '.log', program + '.reg']
     return names
 
 
@@ -181,10 +189,10 @@ def release_files(release_os):
 
 def pack_archive(target, source, env):
     name = '%s-x64' % DIST_NAME
-    linux_binary = str(source[0])
-    windows_binary = str(source[1])
-    dlls = sorted(glob.glob(os.path.join(os.path.dirname(windows_binary), '*.dll')))
-    directory = stage_directory(name, [linux_binary, windows_binary], dlls, ('linux', 'windows'))
+    programs = 1 + len(TARGET_PROGRAMS)
+    binaries = [str(node) for node in source[:2 * programs]]
+    dlls = sorted(glob.glob(os.path.join(WINDOWS_BIN_DIR, '*.dll')))
+    directory = stage_directory(name, binaries, dlls, ('linux', 'windows'))
     with zipfile.ZipFile(str(target[0]), 'w', zipfile.ZIP_DEFLATED) as archive:
         for base, dirs, files in os.walk(directory):
             dirs.sort()
@@ -196,6 +204,9 @@ def pack_archive(target, source, env):
 linux_binary = program_nodes if (program_nodes is not None and device == LINUX_DEVICE) \
     else [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, PROGRAM))]
 windows_binary = File(os.path.join(WINDOWS_BIN_DIR, PROGRAM + '.exe'))
+# the programs of the other targets: built by their own scons (game.mk), not here
+target_binaries = [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, program)) for program in TARGET_PROGRAMS] \
+    + [File(os.path.join(WINDOWS_BIN_DIR, program + '.exe')) for program in TARGET_PROGRAMS]
 dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS]
 data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
 release = release_files('linux') + release_files('windows')
@@ -203,6 +214,7 @@ release = release_files('linux') + release_files('windows')
 # renamed release file leaves the archive with the old name
 names = env.Value(' '.join(os.path.relpath(path, RELEASE_DIR) for path in release))
 archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
-                      linux_binary + [windows_binary] + dlls + data + release + [names],
+                      linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
+                      + target_binaries[len(TARGET_PROGRAMS):] + dlls + data + release + [names],
                       pack_archive)
 env.Alias('portable', archive)

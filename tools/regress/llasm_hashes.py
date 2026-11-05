@@ -17,6 +17,8 @@ For a built game repository (its build/gen must exist: `scons stage=gen`):
                                                      the same lines go to stderr, the listing
                                                      becomes FILE and the lines on stdout say ok
 Options: --llasm PATH  the llasm.py to run (default: REPO/SR-SDK/llasm/llasm.py).
+         --target NAME the target of a repository of several (scons/game.py): its
+                       build/target-NAME/gen, and scons target=NAME.
 Devices default to pc64-linux and pc64-windows. Exit status 1 on a difference.
 """
 import hashlib
@@ -31,9 +33,10 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def collect(repo, devices, llasm):
+def collect(repo, devices, llasm, target='default'):
     result = []
-    gen = os.path.join(repo, 'build', 'gen')
+    gen = os.path.join(repo, 'build', 'gen') if target == 'default' else \
+        os.path.join(repo, 'build', 'target-' + target, 'gen')
     for dirpath, dirs, files in os.walk(gen):
         dirs.sort()
         for name in sorted(files):
@@ -46,7 +49,8 @@ def collect(repo, devices, llasm):
         for device in devices:
             # llasm=<file> changes the action of every .llasm -> .o, so a dry run
             # prints them all; the file is replaced by llasm.py below
-            out = subprocess.run(['scons', '-n', '-Q', 'stage=bin', 'device=' + device, 'llasm=' + dummy],
+            out = subprocess.run(['scons', '-n', '-Q', 'stage=bin', 'device=' + device, 'llasm=' + dummy,
+                                  'target=' + target],
                                  cwd=repo, capture_output=True, text=True).stdout
             for line in out.splitlines():
                 if dummy not in line or ' | ' not in line:
@@ -80,7 +84,7 @@ def diff(kind, now, ref):
 
 
 def main(argv):
-    repo, devices, llasm, ref, ident, renew = None, [], None, None, None, False
+    repo, devices, llasm, ref, ident, renew, target = None, [], None, None, None, False, 'default'
     it = iter(argv)
     for arg in it:
         if arg == '--llasm':
@@ -89,6 +93,8 @@ def main(argv):
             ref = next(it)
         elif arg == '--id':
             ident = next(it)
+        elif arg == '--target':
+            target = next(it)
         elif arg == '--renew':
             renew = True
         elif repo is None:
@@ -99,7 +105,7 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     llasm = llasm or os.path.join(repo, 'SR-SDK', 'llasm', 'llasm.py')
-    now = collect(repo, devices or ['pc64-linux', 'pc64-windows'], llasm)
+    now = collect(repo, devices or ['pc64-linux', 'pc64-windows'], llasm, target)
     if ref is None:
         for h, k in now:
             print('%s  %s' % (h, k))

@@ -27,6 +27,8 @@
 #                      5 s) in <repo>/build/shots/{sdl,wine}/
 #   --keys=SPEC        headless: keys through $<ENVP>_AUTO_KEYS, SPEC = delay_s:Key[~hold_ms][,...]
 #                      (SR-SDK/runtime/core/Game_keys.c)
+#   --target=NAME      a repository of several targets (scons/game.py): the program
+#                      of game-NAME/game.cfg, built with scons target=NAME
 #   -- ARG...          (native) everything after is given to the port
 #   --help
 # Environment: <ENVP>_DEVICE, _DATA_DIR (default <repo>/build/dist/portable),
@@ -43,7 +45,7 @@ _common_init() {
   CD_IMAGE="$(_envp CD_IMAGE)"
   DATA_DIR="$(realpath -m "$DATA_DIR")"
   [ -z "$CD_IMAGE" ] || CD_IMAGE="$(realpath -m "$CD_IMAGE")"
-  HEADLESS=0; BUILD=0; N_SHOTS=4; AUTO_KEYS=""; PORT_ARGS=()
+  HEADLESS=0; BUILD=0; N_SHOTS=4; AUTO_KEYS=""; PORT_ARGS=(); TARGET=""
 }
 
 _parse_args() {
@@ -56,9 +58,15 @@ _parse_args() {
       --headless)   HEADLESS=1 ;;
       --build)      BUILD=1 ;;
       --keys=*)     AUTO_KEYS="${arg#*=}" ;;
+      --target=*)   TARGET="${arg#*=}" ;;
       *) echo "Unknown argument: $arg (see --help)" >&2; exit 1 ;;
     esac
   done
+  if [ -n "$TARGET" ] && [ "$TARGET" != default ]; then
+    local cfg="$GAME_REPO/game-$TARGET/game.cfg"
+    [ -f "$cfg" ] || { echo "No target $TARGET: $cfg" >&2; exit 1; }
+    PROG="$(sed -n 's/^program[ \t]*=[ \t]*//p' "$cfg")"
+  fi
 }
 
 _check_data() {
@@ -72,8 +80,8 @@ _check_data() {
 _build() { # device
   if [ "$BUILD" -eq 1 ] || [ ! -e "$BIN" ]; then
     command -v scons >/dev/null 2>&1 || { echo "scons is not installed" >&2; exit 1; }
-    echo "Build: scons -Q device=$1 in $GAME_REPO"
-    (cd "$GAME_REPO" && scons -Q device="$1")
+    echo "Build: scons -Q device=$1 ${TARGET:+target=$TARGET }in $GAME_REPO"
+    (cd "$GAME_REPO" && scons -Q device="$1" ${TARGET:+target="$TARGET"})
   fi
   [ -e "$BIN" ] || { echo "Not built: $BIN (run with --build)" >&2; exit 1; }
 }
