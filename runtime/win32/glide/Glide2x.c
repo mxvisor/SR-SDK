@@ -33,9 +33,9 @@
  * into it, the unlock of a write lock puts it back. grBufferSwap shows the
  * front buffer scaled to the window, which the DirectDraw layer makes.
  * The picture is 4:3, as a Voodoo's monitor showed every mode (640x400 has
- * pixels 1.2 times as high as wide); the window opens 4:3. With
- * Display_3D_Resolution=WxH (or <GAME>_3D_RESOLUTION) the colour buffers and
- * the window are W x H, and the coordinates of the guest stay those of the
+ * pixels 1.2 times as high as wide); the window opens at the mode's width,
+ * 4:3. With Display_3D_Resolution=WxH (or <GAME>_3D_RESOLUTION) the colour
+ * buffers are W x H, and the coordinates of the guest stay those of the
  * screen: a lock reads a copy scaled down to the screen, and of what the
  * guest wrote only the pixels it changed go back, so the 3D under its 2D
  * keeps the resolution. Display_Antialiasing=2|4|8|16 (or <GAME>_ANTIALIASING)
@@ -1031,13 +1031,9 @@ static int gl_start(uint32_t nbuf)
     {
         fb_width = scr_width;
         fb_height = scr_height;
-        /* the window 4:3 */
-        gl_window = Winapi_ScreenOpenGL(scr_width, scr_width * 3 / 4);
     }
-    else
-    {
-        gl_window = Winapi_ScreenOpenGL(fb_width, fb_height);
-    }
+    /* the window 4:3 */
+    gl_window = Winapi_ScreenOpenGL(scr_width, scr_width * 3 / 4);
     if (gl_window == NULL) return 0;
     gl_context = Game_GlCreateContext(gl_window, Display_VSync);
     if (gl_context == NULL) goto fail;
@@ -1709,8 +1705,10 @@ static void present_front(void)
         else snprintf(output, sizeof(output), "Glide, OpenGL, 3D %ux%u", (unsigned)fb_width, (unsigned)fb_height);
         Game_OsdFrame((int)scr_width, (int)scr_height, output);
     }
+    /* by the nearest pixel; the 3D of Display_3D_Resolution, bigger than the
+     * mode, smoothed down to the window */
     Game_GlPresentTexture(gl_window, fbo_tex[pi], 4, 3,
-                          (buffer_origin == GR_ORIGIN_UPPER_LEFT), (Display_ScalingQuality != 0));
+                          (buffer_origin == GR_ORIGIN_UPPER_LEFT), (fb_width != scr_width) || (fb_height != scr_height));
 }
 
 

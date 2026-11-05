@@ -42,7 +42,7 @@ void Game_Event_Loop(void);
 int Game_QueueKeyboardEvent(const SDL_Event *event);
 /* the window of the port and the picture it shows (display/pc.c, or the game's own):
  * the window, its renderer and Game_TextureData, after Init_Display2 has set
- * Display_Width, Render_Width and the rest (0 on success), and one frame, which
+ * Render_Width and the rest (0 on success), and one frame, which
  * the event loop asks for */
 int Game_Display_Create(void);
 void Game_Display_Destroy(void);

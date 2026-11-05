@@ -348,8 +348,6 @@ static int mouse_last_peep[3];
 
 static SDL_Window *mouse_window = NULL;
 static SDL_Renderer *mouse_renderer = NULL;
-static int mouse_clip_w = 0;
-static int mouse_clip_h = 0;
 
 extern uint32_t winapi_get_dd_window_id(void);
 extern int winapi_get_dd_mode(int *width, int *height);
@@ -601,8 +599,6 @@ static int gl_picture(uint32_t window_id, SDL_Rect *picture, int *mode_w, int *m
     if ((window == NULL) || (SDL_GetRenderer(window) != NULL)) return 0;
     mouse_window = window;
     mouse_renderer = NULL;
-    mouse_clip_w = *mode_w;
-    mouse_clip_h = *mode_h;
 
     SDL_GetWindowSize(window, &window_w, &window_h);
     Game_UiPictureRect(window_w, window_h, *mode_w, *mode_h, picture);
@@ -1127,22 +1123,11 @@ static int check_controller_event(SDL_Event *event, int remove)
             controller_frac_y = dy - (newy << 12);
             newy += mouse_y;
 
-            if (Display_Mode)
-            {
-                if (newx < 0) newx = 0;
-                else if (newx >= mouse_clip_w) newx = mouse_clip_w - 1;
+            if (newx < 0) newx = 0;
+            else if (newx >= 640) newx = 639;
 
-                if (newy < 0) newy = 0;
-                else if (newy >= mouse_clip_h) newy = mouse_clip_h - 1;
-            }
-            else
-            {
-                if (newx < 0) newx = 0;
-                else if (newx >= 640) newx = 639;
-
-                if (newy < 0) newy = 0;
-                else if (newy >= 480) newy = 479;
-            }
+            if (newy < 0) newy = 0;
+            else if (newy >= 480) newy = 479;
 
 
             event->type = SDL_MOUSEMOTION;
@@ -1548,41 +1533,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
             }
             mouse_x = event->motion.x;
             mouse_y = event->motion.y;
-            if (Display_Mode)
-            {
-                int newx, newy;
-
-                if (mouse_x < 0) mouse_x = 0;
-                else if (mouse_x >= mouse_clip_w) mouse_x = mouse_clip_w - 1;
-
-                if (mouse_y < 0) mouse_y = 0;
-                else if (mouse_y >= mouse_clip_h) mouse_y = mouse_clip_h - 1;
-
-                newx = event->motion.x;
-                newy = event->motion.y;
-                if (event->motion.xrel > 0)
-                {
-                    if (newx < 0) newx = event->motion.xrel;
-                }
-                else if (event->motion.xrel < 0)
-                {
-                    if (newx >= mouse_clip_w) newx = mouse_clip_w + event->motion.xrel - 1;
-                }
-
-                if (event->motion.yrel > 0)
-                {
-                    if (newy < 0) newy = event->motion.yrel;
-                }
-                else if (event->motion.yrel < 0)
-                {
-                    if (newy >= mouse_clip_h) newy = mouse_clip_h + event->motion.yrel - 1;
-                }
-
-                if ((newx != event->motion.x) || (newy != event->motion.y))
-                {
-                    warp_mouse(newx, newy);
-                }
-            }
             break;
 
         case SDL_MOUSEBUTTONDOWN:
@@ -1617,14 +1567,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
             mouse_x = event->button.x;
             mouse_y = event->button.y;
             handle_mouse_button((event->button.state == SDL_PRESSED)?1:0, mouse_button, event->button.button, 0, remove);
-            if (Display_Mode)
-            {
-                if (mouse_x < 0) mouse_x = 0;
-                else if (mouse_x >= mouse_clip_w) mouse_x = mouse_clip_w - 1;
-
-                if (mouse_y < 0) mouse_y = 0;
-                else if (mouse_y >= mouse_clip_h) mouse_y = mouse_clip_h - 1;
-            }
             break;
 
         case SDL_JOYAXISMOTION:
@@ -2219,14 +2161,12 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 {
                     mouse_window = window;
                     mouse_renderer = renderer;
-                    SDL_RenderGetLogicalSize(renderer, &mouse_clip_w, &mouse_clip_h);
                 }
                 else if ((window != NULL) && (event->motion.windowID == winapi_get_dd_window_id()))
                 {
                     /* the DirectDraw window without an SDL renderer (Direct3D
                      * on OpenGL): the game's coordinates are the mode's */
                     mouse_window = window;
-                    winapi_get_dd_mode(&mouse_clip_w, &mouse_clip_h);
                 }
                 break;
             default:

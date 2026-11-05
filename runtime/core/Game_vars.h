@@ -86,17 +86,7 @@ EXTERNAL_VARIABLE uint32_t Game_VideoAspectX;		/* X aspect ratio */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectY;		/* Y aspect ratio */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectXR;		/* 1 / (X aspect ratio) */
 EXTERNAL_VARIABLE uint32_t Game_VideoAspectYR;		/* 1 / (Y aspect ratio) */
-#if defined(GAME_WINAPI)
-/* the winapi layer owns them, as ints (WinApi-config.h) */
-extern uint32_t Display_Width;						/* physical display width */
-extern uint32_t Display_Height;						/* physical display height */
-#else
-EXTERNAL_VARIABLE uint32_t Display_Width;			/* physical display width */
-EXTERNAL_VARIABLE uint32_t Display_Height;			/* physical display height */
-#endif
 EXTERNAL_VARIABLE uint32_t Display_Bitsperpixel;	/* display bits per pixel */
-EXTERNAL_VARIABLE uint32_t Display_Fullscreen;		/* display - fulscreen ? */
-EXTERNAL_VARIABLE uint32_t Display_FSType;			/* fulscreen type */
 EXTERNAL_VARIABLE uint32_t Display_MouseLocked;		/* is mouse locked in the window ? */
 EXTERNAL_VARIABLE uint32_t Render_Width;			/* render width */
 EXTERNAL_VARIABLE uint32_t Render_Height;			/* render height */
@@ -171,6 +161,7 @@ EXTERNAL_VARIABLE Game_OverlayInfo Game_OverlayDisplay;
 EXTERNAL_VARIABLE int Game_3DWidth;             /* Display_3D_Resolution=WxH: the 3D drawn at that */
 EXTERNAL_VARIABLE int Game_3DHeight;            /* resolution (Glide); 0 = the screen's */
 EXTERNAL_VARIABLE char Game_Shader[16];         /* Display_Shader=none|smooth|pixelart|scanlines|crt: the 2D filter (Game_gl.h) */
+EXTERNAL_VARIABLE uint32_t Game_Fullscreen;     /* Display_Fullscreen=on|off: the window on the whole screen (Game_thread.h) */
 
 EXTERNAL_VARIABLE int Game_ScreenshotFormat;    /* screenshot format
                                                     0: Original (LBM)

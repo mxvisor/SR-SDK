@@ -29,6 +29,8 @@
 #include "Game_osd.h"
 #include "Game_ui.h"
 #include "Game_config.h"
+#include "Game_defs.h"
+#include "Game_thread.h"
 #include "touchgamepad.h"
 #ifdef GAME_GL
 #include "gl/Game_gl.h"
@@ -129,6 +131,7 @@ void Game_OsdInit(void)
 #ifdef GAME_GL
     Game_GlOsdItems();
 #endif
+    Game_WindowOsdItems();
 #ifdef GAME_WINAPI
     Winapi_MenuBarOsdItems();
 #endif

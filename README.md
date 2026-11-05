@@ -300,9 +300,13 @@ functions the file's head names.
 
 `runtime/core/display/pc.c` is the window of every port (mode-13h palette, 4:3, shown through
 OpenGL by the nearest pixel, the original's look, or with the 2D filter of
-`Display_Shader=none|smooth|pixelart|scanlines|crt` (a mod, also an item of the port's panel); an SDL renderer with whole-pixel scaling without OpenGL; on Win32 the window
+`Display_Shader=none|smooth|pixelart|scanlines|crt` (a mod, also an item of the port's panel); an SDL renderer, by the nearest pixel too, without OpenGL; on Win32 the window
 stays hidden, the game draws in its own, and DirectDraw shows its picture through OpenGL too,
-with the same filter), `Game_state.c` the variables
+with the same filter). Every window of a picture comes from `Game_WindowCreate` (`Game_eventloop.c`,
+`Game_thread.h`): it opens at the picture's own size at its aspect (320x240 for mode 13h, a Win32
+game's display mode), the player makes it bigger and the picture stays at its aspect inside, with
+black bars; a new mode resizes a window the player did not; `Display_Fullscreen=off|on` (the item
+Fullscreen of the panel) puts it on the whole screen. `Game_state.c` the variables
 of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows program without
 a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
 

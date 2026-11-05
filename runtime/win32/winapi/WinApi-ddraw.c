@@ -333,8 +333,6 @@ typedef struct _ddbltfx
 #include "WinApi-d3dgl.h"
 #endif
 
-extern int sdl_versionnum;
-
 /* the display whose primary surface the palette changes are shown on */
 static struct IDirectDraw_c *winapi_dd_screen = NULL;
 /* the window of a released DirectDraw object, kept for the next one (IDirectDraw_Release) */
@@ -1295,7 +1293,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
 #endif
     {
         /* a new mode resizes the window of the last one */
-        lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
+        lpThis->Window = Winapi_ScreenOpenGL(dwWidth, dwHeight);
         /* no OpenGL: an SDL renderer, and Direct3D goes on with the software rasteriser */
         if ((lpThis->Window == NULL) && Winapi_Direct3DEnabled() && Winapi_Direct3DGL()) Winapi_Direct3DNoGL();
     }
@@ -1322,7 +1320,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
     {
         lpThis->Window = dd_spare_window;
         dd_spare_window = NULL;
-        SDL_SetWindowSize(lpThis->Window, (Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
+        Game_WindowFit(lpThis->Window, dwWidth, dwHeight);
 
         lpThis->Renderer = SDL_CreateRenderer(lpThis->Window, -1, (Display_VSync)?SDL_RENDERER_PRESENTVSYNC:0);
         if (lpThis->Renderer == NULL)
@@ -1338,7 +1336,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
 
     if (lpThis->Window == NULL)
     {
-        lpThis->Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight, ((Display_Resizable && (Display_Mode == 0))?SDL_WINDOW_RESIZABLE:0) | ((Display_Mode == 1)?SDL_WINDOW_FULLSCREEN_DESKTOP:0) | ((Display_Mode == 2)?SDL_WINDOW_FULLSCREEN:0) | SDL_WINDOW_HIDDEN);
+        lpThis->Window = Game_WindowCreate(dwWidth, dwHeight, SDL_WINDOW_HIDDEN);
         if (lpThis->Window == NULL)
         {
             return DDERR_UNSUPPORTEDMODE;
@@ -1360,17 +1358,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
      * one; a real Windows would send WM_ACTIVATEAPP for this. */
     Winapi_PostActivateApp(1);
 
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, (Display_ScalingQuality)?"linear":"nearest");
-
-#if SDL_VERSION_ATLEAST(2,0,5)
-    if (Display_IntegerScaling)
-    {
-        if (sdl_versionnum >= SDL_VERSIONNUM(2,0,5))
-        {
-            SDL_RenderSetIntegerScale(lpThis->Renderer, SDL_TRUE);
-        }
-    }
-#endif
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
     /* a logical size would also make SDL move the touches into the picture,
      * away from the buttons: CopyToDisplay scales by itself */
@@ -2177,10 +2165,7 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
     if (dd_gl_window != NULL)
     {
         /* the window of Winapi_EarlyWindow or of the last mode gets the size of the game's mode */
-        int w = 0, h = 0;
-        SDL_GetWindowSize(dd_gl_window, &w, &h);
-        if ((Display_Mode == 0) && ((uint32_t)w != ((Display_Width != 0)?Display_Width:width) || (uint32_t)h != ((Display_Height != 0)?Display_Height:height)))
-            SDL_SetWindowSize(dd_gl_window, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height);
+        Game_WindowFit(dd_gl_window, width, height);
         Game_ShowWindow(dd_gl_window);
         return dd_gl_window;
     }
@@ -2208,7 +2193,7 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
 #endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-    dd_gl_window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (Display_Width != 0)?Display_Width:width, (Display_Height != 0)?Display_Height:height, SDL_WINDOW_OPENGL | ((Display_Resizable && (Display_Mode == 0))?SDL_WINDOW_RESIZABLE:0) | ((Display_Mode == 1)?SDL_WINDOW_FULLSCREEN_DESKTOP:0) | ((Display_Mode == 2)?SDL_WINDOW_FULLSCREEN:0) | SDL_WINDOW_HIDDEN);
+    dd_gl_window = Game_WindowCreate(width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
     if (dd_gl_window == NULL)
     {
         eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());

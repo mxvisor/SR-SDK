@@ -212,6 +212,11 @@ static void read_config(void)
             // the 2D filter of the picture, none or a name of Game_gl.h; <GAME>_SHADER wins
             snprintf(Game_Shader, sizeof(Game_Shader), "%s", param);
         }
+        else if ( strcasecmp(str, "Display_Fullscreen") == 0 ) // str equals "Display_Fullscreen"
+        {
+            // the window on the whole screen (Game_eventloop.c), off: a window
+            read_on_off(param, &Game_Fullscreen);
+        }
 #ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
         {

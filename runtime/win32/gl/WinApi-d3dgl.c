@@ -1066,7 +1066,7 @@ void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window 
     glBindTexture(GL_TEXTURE_2D, present_tex);
     Game_GlTexSubImageBgra(present_w, present_h, present_buf);
     Game_OsdFrame(present_w, present_h, Winapi_Direct3DGL() ? "Direct3D, OpenGL" : "DirectDraw, OpenGL");
-    Game_GlPresentFiltered(window, present_tex, present_w, present_h, 1, Display_ScalingQuality != 0, Game_GlFilter());
+    Game_GlPresentFiltered(window, present_tex, present_w, present_h, 1, 0, Game_GlFilter());
     gl_release();
 }
 

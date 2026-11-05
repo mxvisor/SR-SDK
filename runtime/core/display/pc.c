@@ -30,7 +30,9 @@
  * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
  * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, by
  * the nearest pixel, or through the 2D filter of Display_Shader (Game_GlFilter).
- * Without OpenGL an SDL renderer scales it up by whole pixels.
+ * Without OpenGL an SDL renderer shows it the same way, by the nearest pixel.
+ * The window opens at the size of mode 13h on a 4:3 monitor, 320x240
+ * (Game_WindowCreate); the player makes it bigger.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
  * Set_Palette_Value (Game_dosvga.c) or by the Win32 palette calls.
  *
@@ -65,6 +67,7 @@
 #include "main.h"
 #include "Game_ui.h"
 #include "Game_osd.h"
+#include "Game_thread.h"
 #include "palette32bgra.h"
 #if defined(GAME_WINAPI)
 #include "WinApi-ddraw.h"
@@ -151,8 +154,6 @@ uint32_t *Game_GetPalette(void)
 
 void Init_Display(void)
 {
-    Display_FSType = 1;
-    Display_Fullscreen = 0;
 #ifdef GAME_DISPLAY_INIT
     GAME_DISPLAY_INIT();
 #endif
@@ -160,8 +161,7 @@ void Init_Display(void)
 
 void Init_Display2(void)
 {
-    int index, scale;
-    SDL_Rect usable;
+    int index;
 
     Init_Palette();
     for (index = 0; index < 256; index++)
@@ -169,16 +169,6 @@ void Init_Display2(void)
         Game_Palette[index].s.a = 255;
     }
 
-    /* 4:3, the shape Game_Display_Flip gives mode 13h: the largest whole
-     * multiple of 320x240 that fits in 4/5 of the desktop, at least 640x480. */
-    scale = 2;
-    if (SDL_GetDisplayUsableBounds(0, &usable) == 0)
-    {
-        while (320 * (scale + 1) <= usable.w * 4 / 5 && 240 * (scale + 1) <= usable.h * 4 / 5) scale++;
-    }
-
-    Display_Width = 320 * scale;
-    Display_Height = 240 * scale;
     Display_Bitsperpixel = 32;
     Display_MouseLocked = 0;
     Render_Width = 320;
@@ -215,11 +205,9 @@ void Cleanup_Display(void)
 #define GAME_DISPLAY_WINDOW_FLAGS 0
 #endif
 
-/* Game_Texture[0] scaled up by whole pixels; see Game_Display_Flip. */
-static int ScaledWidth, ScaledHeight;
-
-/* The window, sized by display/pc.c's Init_Display2, and what the flip thread
- * draws into: Game_TextureData, Render_Width x Render_Height 32-bit pixels. */
+/* The window, mode 13h's 320x200 at 4:3 (a game's bigger frame, as a DOS game's
+ * enhanced 3D, is the same picture), and what the flip thread draws into:
+ * Game_TextureData, Render_Width x Render_Height 32-bit pixels. */
 int Game_Display_Create(void)
 {
 #if defined(GAME_WINAPI) && defined(__ANDROID__)
@@ -248,11 +236,15 @@ int Game_Display_Create(void)
 #else
 #define WINDOW_GL_FLAG 0
 #endif
+#if defined(GAME_WINAPI)
+    /* hidden for good: not the window of the picture */
     Game_Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG | WINDOW_GL_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
-    if (Game_Window == NULL) return -1;
+                                   320, 240, WINDOW_SHOWN_FLAG | WINDOW_GL_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
+#else
     /* resizable; the picture keeps 4:3 inside whatever size the window gets */
-    SDL_SetWindowMinimumSize(Game_Window, 320, 240);
+    Game_Window = Game_WindowCreate(320, 240, WINDOW_SHOWN_FLAG | WINDOW_GL_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
+#endif
+    if (Game_Window == NULL) return -1;
 
     /* sized for the largest mode, so a mode change never moves it under the flip thread */
     Game_TextureData = calloc((Render_Width * Render_Height > 1024 * 768) ? Render_Width * Render_Height : 1024 * 768,
@@ -294,13 +286,11 @@ void Game_Display_Destroy(void)
         gl_context = NULL;
     }
 #endif
-    if (Game_ScaledTexture[0] != NULL) SDL_DestroyTexture(Game_ScaledTexture[0]);
     if (Game_Texture[0] != NULL) SDL_DestroyTexture(Game_Texture[0]);
     if (Game_Renderer != NULL) SDL_DestroyRenderer(Game_Renderer);
     if (Game_Window != NULL) SDL_DestroyWindow(Game_Window);
     free(Game_TextureData);
 
-    Game_ScaledTexture[0] = NULL;
     Game_Texture[0] = NULL;
     Game_Renderer = NULL;
     Game_Window = NULL;
@@ -323,15 +313,10 @@ static void Display_PictureRect(int output_width, int output_height, SDL_Rect *r
     rect->y = (output_height - rect->h) / 2;
 }
 
-/* Main thread only, on EC_DISPLAY_FLIP_FINISH.  The frame goes
- * nearest-neighbour into Game_ScaledTexture[0] at the smallest whole multiple
- * that covers the picture, and that is filtered down to the picture: pixels
- * keep sharp edges and even rows at any window size.  This is dosbox-staging's
- * default 'sharp' shader, and the advanced scaling of SR's ports with the normal
- * scaler. */
+/* Main thread only, on EC_DISPLAY_FLIP_FINISH.  The frame goes into the
+ * picture by the nearest pixel, as through OpenGL without a filter. */
 void Game_Display_Flip(void)
 {
-    SDL_Texture *source = Game_Texture[0];
     SDL_Rect picture;
     int output_width, output_height;
 
@@ -356,7 +341,6 @@ void Game_Display_Flip(void)
                                             Render_Width, Render_Height);
         if (Game_Texture[0] == NULL) return;
         SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
-        source = Game_Texture[0];
     }
     SDL_UpdateTexture(Game_Texture[0], NULL, Game_TextureData, Render_Width * Display_Bitsperpixel / 8);
     if (SDL_GetRendererOutputSize(Game_Renderer, &output_width, &output_height) != 0) return;
@@ -364,30 +348,9 @@ void Game_Display_Flip(void)
     if (picture.w <= 0 || picture.h <= 0) return;
     Game_OsdFrame(Render_Width, Render_Height, "SDL");
 
-    int width = Render_Width * ((picture.w + Render_Width - 1) / Render_Width);
-    int height = Render_Height * ((picture.h + Render_Height - 1) / Render_Height);
-    if (width != (int)Render_Width || height != (int)Render_Height)
-    {
-        if (Game_ScaledTexture[0] == NULL || ScaledWidth != width || ScaledHeight != height)
-        {
-            if (Game_ScaledTexture[0] != NULL) SDL_DestroyTexture(Game_ScaledTexture[0]);
-            Game_ScaledTexture[0] = SDL_CreateTexture(Game_Renderer, SDL_PIXELFORMAT_ARGB8888,
-                                                      SDL_TEXTUREACCESS_TARGET, width, height);
-            if (Game_ScaledTexture[0] != NULL) SDL_SetTextureScaleMode(Game_ScaledTexture[0], SDL_ScaleModeLinear);
-            ScaledWidth = width;
-            ScaledHeight = height;
-        }
-        /* No target support: fall back to plain nearest-neighbour scaling. */
-        if (Game_ScaledTexture[0] != NULL && SDL_SetRenderTarget(Game_Renderer, Game_ScaledTexture[0]) == 0)
-        {
-            SDL_RenderCopy(Game_Renderer, Game_Texture[0], NULL, NULL);
-            SDL_SetRenderTarget(Game_Renderer, NULL);
-            source = Game_ScaledTexture[0];
-        }
-    }
     SDL_SetRenderDrawColor(Game_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(Game_Renderer);
-    SDL_RenderCopy(Game_Renderer, source, NULL, &picture);
+    SDL_RenderCopy(Game_Renderer, Game_Texture[0], NULL, &picture);
 #ifdef GAME_DISPLAY_OVERLAY
     GAME_DISPLAY_OVERLAY(&picture);
 #endif

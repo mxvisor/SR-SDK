@@ -33,5 +33,15 @@ int Game_FlipThread(void *data);
 /* SDL_ShowWindow and SDL_HideWindow for a thread that is not the event loop's */
 void Game_ShowWindow(struct SDL_Window *window);
 void Game_HideWindow(struct SDL_Window *window);
+/* The window of the picture, width x height, the picture's size at its aspect
+ * (320x240 for 320x200 at 4:3): resizable, never smaller, the picture kept at
+ * its aspect inside (Game_UiPictureRect); on the whole screen with
+ * Display_Fullscreen. flags are SDL_CreateWindow's (SDL_WINDOW_HIDDEN, ...). */
+struct SDL_Window *Game_WindowCreate(int width, int height, unsigned int flags);
+/* a new mode of the game: the window gets its size, unless the player resized
+ * it or it is on the whole screen; the minimum is the new size */
+void Game_WindowFit(struct SDL_Window *window, int width, int height);
+/* Game_OsdInit: the item Fullscreen of the port's panel (Game_osd.h) */
+void Game_WindowOsdItems(void);
 
 #endif /* _GAME_THREAD_H_INCLUDED_ */
