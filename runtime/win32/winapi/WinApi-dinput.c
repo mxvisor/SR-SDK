@@ -17,6 +17,7 @@
 #include "Game_keys.h"
 #include "Game_memory.h"
 #include "touchgamepad.h"
+#include "Game_osd.h"
 
 /* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android a finger away from
  * the buttons is the mouse of a game that reads it here (default 0) */
@@ -71,6 +72,7 @@ static int SDLCALL key_event_watch(void *userdata, SDL_Event *event)
     uint8_t dik;
     (void)userdata;
     if ((event->type != SDL_KEYDOWN && event->type != SDL_KEYUP) || event->key.repeat) return 0;
+    if (Game_OsdHides(event)) return 0;
     dik = Game_PcScancode(event->key.keysym.scancode);
     if (dik == 0) return 0;
     SDL_LockMutex(key_mutex);
@@ -208,8 +210,11 @@ static uint32_t mouse_lost_window;      /* the window that lost the focus last *
 
 static void mouse_apply_hold(void)
 {
-    if ((mouse_held == mouse_hold_wanted) && (SDL_GetRelativeMouseMode() == (mouse_held ? SDL_TRUE : SDL_FALSE))) return;
-    mouse_held = mouse_hold_wanted;
+    /* the port's panel shows the host's pointer */
+    int wanted = mouse_hold_wanted && !Game_OsdOpen();
+
+    if ((mouse_held == wanted) && (SDL_GetRelativeMouseMode() == (mouse_held ? SDL_TRUE : SDL_FALSE))) return;
+    mouse_held = wanted;
     SDL_SetRelativeMouseMode(mouse_held ? SDL_TRUE : SDL_FALSE);
 }
 #endif
@@ -217,6 +222,7 @@ static void mouse_apply_hold(void)
 static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
+    if (Game_OsdHides(event)) return 0;
     touchpad_event(event);
 #ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
     if ((event->type == SDL_WINDOWEVENT) && (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST) &&
@@ -463,6 +469,8 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
         SDL_Keycode held;
         const uint8_t *keys = SDL_GetKeyboardState(&n);
         if (a1 < 256) return DIERR_INVALIDPARAM;
+        /* the keys are the port's panel's while it is open */
+        if (Game_OsdOpen()) return DI_OK;
         for (sc = 0; sc < n; sc++)
             if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) { uint8_t dik = Game_PcScancode((SDL_Scancode)sc); if (dik) out[dik] = 0x80; }
         for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)

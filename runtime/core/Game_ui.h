@@ -55,6 +55,8 @@ int Game_UiActive(void);
 void Game_UiForgetRenderer(void);
 /* the size Game_UiDraw had last: events in window pixels are scaled to it */
 void Game_UiSize(int *width, int *height);
+/* a point of an event in the pixels of a window to those of Game_UiSize */
+void Game_UiWindowPoint(Uint32 window_id, int *x, int *y);
 /* where a width x height frame is shown in a window_w x window_h window: the largest
  * rectangle of the frame's aspect, centred (4:3 for every mode on the touch-gamepad
  * builds); Game_GlPresentTexture shows it there */

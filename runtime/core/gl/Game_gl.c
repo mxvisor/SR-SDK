@@ -32,6 +32,7 @@
 #include "Game_vars.h"
 #include "Game_hooks.h"
 #include "Game_ui.h"
+#include "Game_osd.h"
 
 /* the touch gamepad on Android: a win32 game's with GAME_WINAPI_TOUCH_GAMEPAD, every DOS game's
  * (core/input/pc.c gives it the touches) */
@@ -348,21 +349,62 @@ const char *Game_GlShaderName(int shader)
     return ((shader >= 0) && (shader < GAME_GL_SHADERS)) ? filter_names[shader] : "none";
 }
 
-int Game_GlConfigShader(const char *tag)
-{
-    const char *name = getenv(GAME_ENV("SHADER"));
-    int shader;
+/* the filter of the process: of the settings file at first, then the panel's */
+static volatile int filter_current = -1;
+/* a presenter that has the filters showed a picture */
+static volatile int filter_used;
 
-    if (name == NULL || name[0] == 0) name = Game_Shader;
-    if (name[0] == 0) return 0;
-    shader = Game_GlShaderParse(name);
-    if (shader < 0)
+int Game_GlFilter(void)
+{
+    if (filter_current < 0)
     {
-        eprintf("%s: unknown Display_Shader: %s\n", tag, name);
-        return 0;
+        const char *name = getenv(GAME_ENV("SHADER"));
+        int shader = 0;
+
+        if (name == NULL || name[0] == 0) name = Game_Shader;
+        if (name[0] != 0)
+        {
+            shader = Game_GlShaderParse(name);
+            if (shader < 0)
+            {
+                eprintf(GAME_NAME ": unknown Display_Shader: %s\n", name);
+                shader = 0;
+            }
+            else if (shader != 0) eprintf(GAME_NAME ": the picture filter: %s\n", Game_GlShaderName(shader));
+        }
+        filter_current = shader;
     }
-    if (shader != 0) eprintf("%s: the picture filter: %s\n", tag, Game_GlShaderName(shader));
-    return shader;
+    return filter_current;
+}
+
+void Game_GlSetFilter(int shader)
+{
+    if (shader < 0 || shader >= GAME_GL_SHADERS) shader = 0;
+    filter_current = shader;
+}
+
+/* the filter in the port's panel: where a presenter has the filters, saved as
+ * Display_Shader */
+static int filter_item_active(void)
+{
+    return filter_used;
+}
+
+static void filter_item_press(void)
+{
+    Game_GlSetFilter((Game_GlFilter() + 1) % GAME_GL_SHADERS);
+}
+
+static const char *filter_item_state(void)
+{
+    return Game_GlShaderName(Game_GlFilter());
+}
+
+static const Game_OsdItem filter_item = { "Filter", filter_item_active, filter_item_press, filter_item_state, "Display_Shader" };
+
+void Game_GlOsdItems(void)
+{
+    Game_OsdAddItem(&filter_item);
 }
 
 /* The screen interface over the picture (Game_ui.h: the touch gamepad, the
@@ -572,6 +614,7 @@ void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
                             int width, int height, int origin_upper_left,
                             int linear_filter, int shader)
 {
+    filter_used = 1;
     present_texture(window, tex, width, height, width, height, origin_upper_left, linear_filter, shader);
 }
 
@@ -579,6 +622,7 @@ void Game_GlPresentAspect(SDL_Window *window, GLuint tex, int width, int height,
                           int aspect_w, int aspect_h, int origin_upper_left,
                           int linear_filter, int shader)
 {
+    filter_used = 1;
     present_texture(window, tex, width, height, aspect_w, aspect_h, origin_upper_left, linear_filter, shader);
 }
 

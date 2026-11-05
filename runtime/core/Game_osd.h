@@ -22,17 +22,21 @@
  *
  */
 
-/* The port's hot keys and its on-screen display.
+/* The port's on-screen display: a panel over the picture, the only hot key of the
+ * port (Display_OSD_Key, F12 by default; the OSD button of the touch gamepad).
  *
- * A key of the port (a toggle of a mod, the next filter) is registered here
- * once the settings are read: the game does it in GAME_OSD_KEYS() of its
- * Game_hooks.h, the runtime for its own.  The key event goes to the key's
- * function and not to the game (the game may still see the key through
- * DirectInput); a key that two take belongs to the first.  The display key
- * (Display_OSD_Key, F12 by default) shows and hides a panel over the picture:
- * the game's picture and the output, the window, FPS, the gamepad and the
- * keys with what they switch now.  A key's press shows what it switched for
- * a moment in the corner (Game_OsdMessage). */
+ * The panel shows the game's picture and the output, the window, FPS and the
+ * gamepad, and below them the port's settings: an item says what it switches
+ * and what it is now ("Filter: crt").  While the panel is open it takes every
+ * key, click, touch and gamepad button, the game goes on without them: the
+ * arrows (the wheel, the pointer) choose an item, Enter, Space, the left and
+ * right arrows, a click or a touch switch it to its next value, Esc or the
+ * panel's key close it.  An item with a key of the settings file is written
+ * there at once (Game_ConfigSave), so the next start has it too.
+ *
+ * The items are registered once the settings are read: the runtime's own (the
+ * filter of Game_gl.h, the window menu), then a game's in GAME_OSD_ITEMS() of
+ * its Game_hooks.h. */
 
 #if !defined(_GAME_OSD_H_INCLUDED_)
 #define _GAME_OSD_H_INCLUDED_
@@ -44,30 +48,35 @@ extern "C" {
 #endif
 
 typedef struct {
-    /* what the key does, shown in the panel: "Filter" */
+    /* what the item switches: "Filter" */
     const char *label;
-    /* non-zero when the key works now, else the game gets it (NULL: always) */
+    /* non-zero when it can be switched now, else it is grey (NULL: always) */
     int (*active)(void);
-    /* on its press (NULL: the key is only listed, its owner takes it) */
+    /* to the next value (NULL: the item is only shown) */
     void (*press)(void);
-    /* what it switched to: "crt" (NULL: nothing to show) */
+    /* what it is now: "crt"; also the value saved under config (NULL: nothing to show) */
     const char *(*state)(void);
-} Game_OsdKey;
+    /* the key of the settings file it is saved as (NULL: not saved) */
+    const char *config;
+} Game_OsdItem;
 
-/* a key of the settings file: <SDL key name> or off (SDL_SCANCODE_UNKNOWN);
- * 0 when the name is unknown, *key is left as it was */
-int Game_OsdParseKey(const char *value, SDL_Scancode *key);
-/* registers a key (SDL_SCANCODE_UNKNOWN: none); the entry must stay */
-void Game_OsdAddKey(SDL_Scancode key, const Game_OsdKey *entry);
+/* registers an item; the entry must stay */
+void Game_OsdAddItem(const Game_OsdItem *entry);
 
-/* shows or hides the panel (the display key, the OSD button of the touch gamepad) */
+/* opens or closes the panel (the display key, the OSD button of the touch gamepad) */
 void Game_OsdToggle(void);
-/* after the settings: the display key, then GAME_OSD_KEYS() */
+void Game_OsdClose(void);
+/* the panel is open: it takes the input */
+int Game_OsdOpen(void);
+/* after the settings: the runtime's items, then GAME_OSD_ITEMS() */
 void Game_OsdInit(void);
 /* Display_OSD_Key of the settings file: non-zero if it was that */
 int Game_OsdConfigKey(const char *key, const char *value);
-/* a key event (KEYDOWN, KEYUP): non-zero if a key of the port took it */
-int Game_OsdKeyEvent(const SDL_KeyboardEvent *key);
+/* an SDL event before the game sees it: non-zero if the panel took it */
+int Game_OsdEvent(const SDL_Event *event);
+/* for the input that reads the events by itself (DirectInput's event watches):
+ * non-zero for the panel's key and, while it is open, for every press and move */
+int Game_OsdHides(const SDL_Event *event);
 
 /* the presenters, once per frame: the game's picture and how it is shown
  * ("SDL", "OpenGL") */

@@ -35,7 +35,7 @@
  *   GAME_MOUSE_BLOCKED()     the same for the mouse
  *   GAME_CLOSE_REQUEST()     non-zero when the game takes the close of the
  *                            window (SDL_QUIT) itself and quits on its own
- * The port's own keys (a toggle key) are Game_osd.h's: GAME_OSD_KEYS().
+ * The port's panel (Game_osd.h) sees the input first: its items are GAME_OSD_ITEMS().
  * and Game_Display_Flip() in the game's main.c draws one frame. */
 
 #include <stdio.h>
@@ -258,6 +258,10 @@ void Game_Event_Loop(void)
             continue;
         }
 
+#if GAME_CORE_CONSUMES_INPUT
+        /* the port's panel first: its key, and all input while it is open */
+        if (Game_OsdEvent(&event)) continue;
+#endif
         if (Handle_Input_Event(&event)) continue;
 
         switch (event.type)
@@ -300,7 +304,7 @@ void Game_Event_Loop(void)
                 /* windowID 0: a key of <GAME>_AUTO_KEYS (Game_keys.c), meant
                  * for a window without the focus (Xvfb) */
                 if (((AppActive && AppInputFocus) || event.key.windowID == 0)
-                    && !Game_OsdKeyEvent(&event.key) && !GAME_KEYBOARD_BLOCKED())
+                    && !GAME_KEYBOARD_BLOCKED())
                 {
                     Game_QueueKeyboardEvent(&event);
                 }

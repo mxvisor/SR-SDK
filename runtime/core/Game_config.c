@@ -32,6 +32,7 @@
  * over the file. */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
@@ -104,6 +105,9 @@ int Game_ReadArgs(int argc, char *argv[])
     return count;
 }
 
+/* the file the settings came from, where Game_ConfigSave writes */
+static char config_path[4096];
+
 static void read_config(void)
 {
     char filename[4096];
@@ -149,6 +153,7 @@ static void read_config(void)
     }
 
     fprintf(stderr, GAME_NAME ": using config file: %s\n", filename);
+    snprintf(config_path, sizeof(config_path), "%s", filename);
 
     while (!feof(f))
     {
@@ -230,9 +235,165 @@ static void read_config(void)
     fclose(f);
 }
 
+/* the line ending of a file: that of its first line, else the system's */
+static const char *line_end(const char *data, size_t size)
+{
+    const char *nl = (const char *)memchr(data, '\n', size);
+
+    if (nl != NULL) return (nl > data && nl[-1] == '\r') ? "\r\n" : "\n";
+#ifdef _WIN32
+    return "\r\n";
+#else
+    return "\n";
+#endif
+}
+
+/* the file's bytes with key=value in place of the value of key's lines, or after them */
+static char *config_with(const char *data, size_t size, const char *key, const char *value, size_t *out_size)
+{
+    size_t key_len = strlen(key), value_len = strlen(value), pos = 0, len = 0;
+    const char *eol = line_end(data, size);
+    int found = 0;
+    char *out;
+
+    /* at most every line replaced, and one more */
+    out = (char *)malloc(size + (size / 2 + 2) * (key_len + value_len + 4) + 8);
+    if (out == NULL) return NULL;
+    while (pos < size)
+    {
+        size_t end = pos, text_end, k, eq;
+
+        while (end < size && data[end] != '\n') end++;
+        text_end = end;
+        if (text_end > pos && data[text_end - 1] == '\r') text_end--;
+        if (end < size) end++;   /* with its '\n' */
+
+        k = pos;
+        while (k < text_end && (data[k] == ' ' || data[k] == '\t')) k++;
+        for (eq = k; eq < text_end && data[eq] != '='; eq++) {}
+        if (k < text_end && data[k] != '#' && eq < text_end)
+        {
+            size_t key_end = eq;
+
+            while (key_end > k && (data[key_end - 1] == ' ' || data[key_end - 1] == '\t')) key_end--;
+            if (key_end - k == key_len && strncasecmp(data + k, key, key_len) == 0)
+            {
+                size_t v = eq + 1;
+
+                /* the key, '=' and the blanks after it stay, then the value and the line's end */
+                while (v < text_end && (data[v] == ' ' || data[v] == '\t')) v++;
+                memcpy(out + len, data + pos, v - pos);
+                len += v - pos;
+                memcpy(out + len, value, value_len);
+                len += value_len;
+                memcpy(out + len, data + text_end, end - text_end);
+                len += end - text_end;
+                pos = end;
+                found = 1;
+                continue;
+            }
+        }
+        memcpy(out + len, data + pos, end - pos);
+        len += end - pos;
+        pos = end;
+    }
+    if (!found)
+    {
+        if (len != 0 && out[len - 1] != '\n')
+        {
+            memcpy(out + len, eol, strlen(eol));
+            len += strlen(eol);
+        }
+        memcpy(out + len, key, key_len);
+        len += key_len;
+        out[len++] = '=';
+        memcpy(out + len, value, value_len);
+        len += value_len;
+        memcpy(out + len, eol, strlen(eol));
+        len += strlen(eol);
+    }
+    *out_size = len;
+    return out;
+}
+
+/* path's bytes replaced by data through a file beside it */
+static int write_file(const char *path, const char *data, size_t size)
+{
+    char temp[4096 + 8];
+    FILE *f;
+    int ok;
+
+    if (snprintf(temp, sizeof(temp), "%s.new", path) >= (int)sizeof(temp)) return 0;
+    f = fopen(temp, "wb");
+    if (f == NULL) return 0;
+    ok = (fwrite(data, 1, size, f) == size);
+    if (fclose(f) != 0) ok = 0;
+    if (ok)
+    {
+#ifdef _WIN32
+        /* rename does not replace a file there */
+        remove(path);
+#endif
+        ok = (rename(temp, path) == 0);
+    }
+    if (!ok) remove(temp);
+    return ok;
+}
+
+static int save_to(const char *path, const char *key, const char *value)
+{
+    FILE *f;
+    char *data = NULL, *out;
+    size_t size = 0, out_size;
+    int ok;
+
+    f = fopen(path, "rb");
+    if (f != NULL)
+    {
+        long length;
+
+        if (fseek(f, 0, SEEK_END) == 0 && (length = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) == 0)
+        {
+            data = (char *)malloc((size_t)length + 1);
+            if (data != NULL) size = fread(data, 1, (size_t)length, f);
+        }
+        fclose(f);
+        if (data == NULL) return 0;
+    }
+    out = config_with((data != NULL) ? data : "", size, key, value, &out_size);
+    free(data);
+    if (out == NULL) return 0;
+    ok = write_file(path, out, out_size);
+    free(out);
+    if (ok && config_path[0] == 0)
+    {
+        snprintf(config_path, sizeof(config_path), "%s", path);
+        fprintf(stderr, GAME_NAME ": the settings are saved in %s\n", path);
+    }
+    return ok;
+}
+
+int Game_ConfigSave(const char *key, const char *value)
+{
+    char filename[4096];
+    const char *root;
+
+    if (config_path[0] != 0) return save_to(config_path, key, value);
+    /* no file was read: the one asked for, else the game directory's, else the write root's
+     * (the order read_config looks in) */
+    if (Game_ConfigFilename[0] != 0) return save_to(Game_ConfigFilename, key, value);
+    root = Game_DataRoot();
+    if (root != NULL && snprintf(filename, sizeof(filename), "%s/%s", root, GAME_CONFIG_FILENAME) < (int)sizeof(filename)
+        && save_to(filename, key, value)) return 1;
+    if (Game_SelectWriteRoot() != 0) return 0;
+    root = Game_WriteRoot();
+    if (root == NULL || snprintf(filename, sizeof(filename), "%s/%s", root, GAME_CONFIG_FILENAME) >= (int)sizeof(filename)) return 0;
+    return save_to(filename, key, value);
+}
+
 void Game_ReadConfig(void)
 {
     read_config();
-    /* the keys of the port, with those the settings gave */
+    /* the items of the port's panel, with what the settings gave */
     Game_OsdInit();
 }

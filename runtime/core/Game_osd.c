@@ -22,37 +22,54 @@
  *
  */
 
-/* The port's hot keys and its on-screen display (Game_osd.h). */
+/* The port's on-screen display, its panel of settings (Game_osd.h). */
 
 #include <stdio.h>
 #include <string.h>
 #include "Game_osd.h"
 #include "Game_ui.h"
+#include "Game_config.h"
+#include "touchgamepad.h"
+#ifdef GAME_GL
+#include "gl/Game_gl.h"
+#endif
+#ifdef GAME_WINAPI
+#include "WinApi-ui.h"
+#endif
 #include "Game_hooks.h"
 
 #ifndef GAME_NAME
 #define GAME_NAME "game"
 #endif
 
-#define OSD_KEYS 16
+#define OSD_ITEMS 16
 #define MESSAGE_MS 1500
 
-static struct {
-    SDL_Scancode key;
-    const Game_OsdKey *entry;
-    int held;   /* its press was taken: so is its release */
-} keys[OSD_KEYS];
-static int key_count;
+static const Game_OsdItem *items[OSD_ITEMS];
+static int item_count;
 
 static SDL_Scancode osd_key = SDL_SCANCODE_F12;
 static volatile int osd_shown;
 static int osd_stamp;
+/* the chosen row: an item, or item_count for "Close" */
+static volatile int osd_sel;
+/* the host's pointer before the panel showed its own */
+static int osd_cursor = -1;
 
-/* written by the threads of the keys, read by the presenter's */
+/* written by the threads of the events, read by the presenter's */
 static SDL_SpinLock message_lock;
 static char message[64];
 static Uint32 message_until;
 static volatile int message_live;
+
+/* where the presenter drew the panel, for the pointer (under message_lock):
+ * the panel, the first row of the items, the height of a row, the size of the
+ * screen interface */
+static struct {
+    int x, y, w, h;
+    int rows_y, line_h;
+    int W, H;
+} drawn;
 
 /* the presenter's thread */
 static int frame_width, frame_height;
@@ -60,99 +77,282 @@ static char frame_output[64];
 static Uint32 fps_start;
 static int fps_frames, fps_tenths;
 
-int Game_OsdParseKey(const char *value, SDL_Scancode *key)
+void Game_OsdAddItem(const Game_OsdItem *entry)
 {
-    SDL_Scancode scancode;
-
-    if (strcasecmp(value, "off") == 0)
-    {
-        *key = SDL_SCANCODE_UNKNOWN;
-        return 1;
-    }
-    scancode = SDL_GetScancodeFromName(value);
-    if (scancode == SDL_SCANCODE_UNKNOWN) return 0;
-    *key = scancode;
-    return 1;
+    if (entry == NULL || item_count == OSD_ITEMS) return;
+    items[item_count++] = entry;
+    osd_stamp++;
 }
 
-void Game_OsdAddKey(SDL_Scancode key, const Game_OsdKey *entry)
+int Game_OsdOpen(void)
 {
-    int i;
+    return osd_shown;
+}
 
-    if (entry == NULL) return;
-    for (i = 0; i < key_count; i++)
+static void move_selection(int step);
+
+static void set_shown(int shown)
+{
+    if (shown == osd_shown) return;
+    if (shown)
     {
-        if (key != SDL_SCANCODE_UNKNOWN && keys[i].key == key)
-        {
-            /* the one place where two keys of the port meet */
-            fprintf(stderr, GAME_NAME ": the key %s of \"%s\" is \"%s\"'s already\n",
-                    SDL_GetScancodeName(key), entry->label, keys[i].entry->label);
-            key = SDL_SCANCODE_UNKNOWN;
-        }
+        /* what is held on the touch gamepad is let go: the touches are the panel's */
+        TouchGamepad_ReleaseAll();
+        osd_cursor = SDL_ShowCursor(SDL_QUERY);
+        SDL_ShowCursor(SDL_ENABLE);
+        osd_shown = 1;
+        /* the first item that can be switched, else "Close" */
+        osd_sel = item_count;
+        move_selection(1);
     }
-    if (key_count == OSD_KEYS) return;
-    keys[key_count].key = key;
-    keys[key_count].entry = entry;
-    keys[key_count].held = 0;
-    key_count++;
+    else if (osd_cursor >= 0)
+    {
+        SDL_ShowCursor(osd_cursor);
+        osd_cursor = -1;
+    }
+    osd_shown = shown;
     osd_stamp++;
 }
 
 void Game_OsdToggle(void)
 {
-    osd_shown = !osd_shown;
-    osd_stamp++;
+    set_shown(!osd_shown);
 }
 
-static const Game_OsdKey osd_entry = { "This panel", NULL, Game_OsdToggle, NULL };
+void Game_OsdClose(void)
+{
+    set_shown(0);
+}
 
 void Game_OsdInit(void)
 {
-    Game_OsdAddKey(osd_key, &osd_entry);
-#ifdef GAME_OSD_KEYS
-    GAME_OSD_KEYS();
+#ifdef GAME_GL
+    Game_GlOsdItems();
+#endif
+#ifdef GAME_WINAPI
+    Winapi_MenuBarOsdItems();
+#endif
+#ifdef GAME_OSD_ITEMS
+    GAME_OSD_ITEMS();
 #endif
 }
 
 int Game_OsdConfigKey(const char *key, const char *value)
 {
+    SDL_Scancode scancode;
+
     if (strcasecmp(key, "Display_OSD_Key") != 0) return 0;
-    if (!Game_OsdParseKey(value, &osd_key)) fprintf(stderr, GAME_NAME ": unknown Display_OSD_Key: %s\n", value);
+    if (strcasecmp(value, "off") == 0) osd_key = SDL_SCANCODE_UNKNOWN;
+    else if ((scancode = SDL_GetScancodeFromName(value)) != SDL_SCANCODE_UNKNOWN) osd_key = scancode;
+    else fprintf(stderr, GAME_NAME ": unknown Display_OSD_Key: %s\n", value);
     return 1;
 }
 
-int Game_OsdKeyEvent(const SDL_KeyboardEvent *key)
+static int item_active(int i)
 {
-    int i;
+    return items[i]->press != NULL && (items[i]->active == NULL || items[i]->active());
+}
 
-    if (key->type != SDL_KEYDOWN && key->type != SDL_KEYUP) return 0;
-    for (i = 0; i < key_count; i++)
+/* a row of the panel chosen: the item to its next value, saved; "Close" closes */
+static void activate(int row)
+{
+    const Game_OsdItem *entry;
+
+    if (row >= item_count)
     {
-        const Game_OsdKey *entry = keys[i].entry;
+        set_shown(0);
+        return;
+    }
+    if (row < 0 || !item_active(row)) return;
+    entry = items[row];
+    entry->press();
+    if (entry->config != NULL && entry->state != NULL && !Game_ConfigSave(entry->config, entry->state()))
+    {
+        Game_OsdMessage("Settings: not saved");
+    }
+    osd_stamp++;
+}
 
-        if (keys[i].key == SDL_SCANCODE_UNKNOWN || key->keysym.scancode != keys[i].key || entry->press == NULL) continue;
-        if (key->type == SDL_KEYUP)
-        {
-            int held = keys[i].held;
+static void select_row(int row)
+{
+    if (row < 0 || row > item_count || row == osd_sel) return;
+    osd_sel = row;
+    osd_stamp++;
+}
 
-            keys[i].held = 0;
-            return held;
-        }
-        if (!keys[i].held && entry->active != NULL && !entry->active()) return 0;
-        keys[i].held = 1;
-        if (!key->repeat)
-        {
-            entry->press();
-            if (entry->state != NULL)
-            {
-                char text[sizeof(message)];
+static void move_selection(int step)
+{
+    int row = osd_sel;
+    int n;
 
-                snprintf(text, sizeof(text), "%s: %s", entry->label, entry->state());
-                Game_OsdMessage(text);
-            }
-            osd_stamp++;
-        }
+    /* over the rows that cannot be switched now */
+    for (n = 0; n <= item_count; n++)
+    {
+        row = (row + step + item_count + 1) % (item_count + 1);
+        if (row == item_count || item_active(row)) break;
+    }
+    select_row(row);
+}
+
+/* the row at a point of the screen interface: an item, item_count ("Close"), -1
+ * in the panel elsewhere, -2 outside it */
+static int row_at(int x, int y)
+{
+    int row = -1;
+
+    SDL_AtomicLock(&message_lock);
+    if (drawn.line_h <= 0 || x < drawn.x || x >= drawn.x + drawn.w || y < drawn.y || y >= drawn.y + drawn.h) row = -2;
+    else if (y >= drawn.rows_y)
+    {
+        row = (y - drawn.rows_y) / drawn.line_h;
+        if (row > item_count) row = -1;
+    }
+    SDL_AtomicUnlock(&message_lock);
+    return row;
+}
+
+static void finger_point(const SDL_Event *event, int *x, int *y)
+{
+    int W, H;
+
+    SDL_AtomicLock(&message_lock);
+    W = drawn.W;
+    H = drawn.H;
+    SDL_AtomicUnlock(&message_lock);
+    *x = (int)(event->tfinger.x * W);
+    *y = (int)(event->tfinger.y * H);
+}
+
+int Game_OsdHides(const SDL_Event *event)
+{
+    switch (event->type)
+    {
+        case SDL_KEYDOWN:
+            return osd_shown || (osd_key != SDL_SCANCODE_UNKNOWN && event->key.keysym.scancode == osd_key);
+        case SDL_KEYUP:
+            return osd_key != SDL_SCANCODE_UNKNOWN && event->key.keysym.scancode == osd_key;
+        case SDL_MOUSEMOTION:
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEWHEEL:
+        case SDL_FINGERDOWN:
+        case SDL_FINGERMOTION:
+            return osd_shown;
+    }
+    /* a release goes through: what was held before the panel opened is let go */
+    return 0;
+}
+
+int Game_OsdEvent(const SDL_Event *event)
+{
+    int x, y, row;
+
+    if ((event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) && osd_key != SDL_SCANCODE_UNKNOWN
+        && event->key.keysym.scancode == osd_key)
+    {
+        if (event->type == SDL_KEYDOWN && !event->key.repeat) Game_OsdToggle();
         return 1;
+    }
+    if (!osd_shown) return 0;
+
+    switch (event->type)
+    {
+        case SDL_KEYDOWN:
+            switch (event->key.keysym.sym)
+            {
+                case SDLK_UP:
+                    move_selection(-1);
+                    break;
+                case SDLK_DOWN:
+                case SDLK_TAB:
+                    move_selection(1);
+                    break;
+                case SDLK_LEFT:
+                case SDLK_RIGHT:
+                case SDLK_RETURN:
+                case SDLK_KP_ENTER:
+                case SDLK_SPACE:
+                    activate(osd_sel);
+                    break;
+                case SDLK_ESCAPE:
+                    set_shown(0);
+                    break;
+            }
+            return 1;
+        case SDL_KEYUP:
+        case SDL_TEXTINPUT:
+        case SDL_TEXTEDITING:
+            return 1;
+
+        case SDL_MOUSEMOTION:
+            if (event->motion.which == SDL_TOUCH_MOUSEID) return 1;
+            x = event->motion.x;
+            y = event->motion.y;
+            Game_UiWindowPoint(event->motion.windowID, &x, &y);
+            row = row_at(x, y);
+            if (row >= 0) select_row(row);
+            return 1;
+        case SDL_MOUSEBUTTONDOWN:
+            if (event->button.which == SDL_TOUCH_MOUSEID || event->button.button != SDL_BUTTON_LEFT) return 1;
+            x = event->button.x;
+            y = event->button.y;
+            Game_UiWindowPoint(event->button.windowID, &x, &y);
+            row = row_at(x, y);
+            if (row >= 0)
+            {
+                select_row(row);
+                activate(row);
+            }
+            else if (row == -2) set_shown(0);
+            return 1;
+        case SDL_MOUSEBUTTONUP:
+            return 1;
+        case SDL_MOUSEWHEEL:
+            if (event->wheel.y != 0) move_selection((event->wheel.y > 0) ? -1 : 1);
+            return 1;
+
+        case SDL_FINGERDOWN:
+        case SDL_FINGERMOTION:
+        case SDL_FINGERUP:
+            /* the OSD button of the touch gamepad closes it again */
+            if (TouchGamepad_OsdEvent(event)) return 1;
+            if (event->type != SDL_FINGERDOWN) return 1;
+            finger_point(event, &x, &y);
+            row = row_at(x, y);
+            if (row >= 0)
+            {
+                select_row(row);
+                activate(row);
+            }
+            else if (row == -2) set_shown(0);
+            return 1;
+
+        case SDL_CONTROLLERBUTTONDOWN:
+            switch (event->cbutton.button)
+            {
+                case SDL_CONTROLLER_BUTTON_DPAD_UP:
+                    move_selection(-1);
+                    break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+                    move_selection(1);
+                    break;
+                case SDL_CONTROLLER_BUTTON_A:
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                    activate(osd_sel);
+                    break;
+                case SDL_CONTROLLER_BUTTON_B:
+                case SDL_CONTROLLER_BUTTON_BACK:
+                    set_shown(0);
+                    break;
+            }
+            return 1;
+        case SDL_CONTROLLERBUTTONUP:
+        case SDL_CONTROLLERAXISMOTION:
+        case SDL_JOYBUTTONDOWN:
+        case SDL_JOYBUTTONUP:
+        case SDL_JOYAXISMOTION:
+        case SDL_JOYHATMOTION:
+            return 1;
     }
     return 0;
 }
@@ -224,12 +424,16 @@ static void gamepad_text(char *text, size_t size)
     if (SDL_NumJoysticks() > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", SDL_NumJoysticks() - 1);
 }
 
-#define PANEL_LINES (6 + OSD_KEYS)
+#define INFO_LINES 5
+#define PANEL_LINES (INFO_LINES + OSD_ITEMS + 2)
+
+enum { LINE_INFO, LINE_ITEM, LINE_GREY, LINE_MESSAGE };
 
 void Game_OsdDraw(SDL_Renderer *renderer, int width, int height)
 {
     char lines[PANEL_LINES][128];
-    int count = 0, line_h, pad, panel_w, i, y;
+    int kind[PANEL_LINES];
+    int count = 0, info = 0, line_h, pad, panel_w, panel_h, i, y, sel = osd_sel;
 
     /* about 30 lines in the height of the window, and never smaller than 10 pixels */
     line_h = height / 30;
@@ -248,41 +452,74 @@ void Game_OsdDraw(SDL_Renderer *renderer, int width, int height)
         else snprintf(lines[count++], sizeof(lines[0]), "Window %dx%d", width, height);
         snprintf(lines[count++], sizeof(lines[0]), "FPS %d.%d", fps_tenths / 10, fps_tenths % 10);
         gamepad_text(lines[count++], sizeof(lines[0]));
-        for (i = 0; i < key_count && count < PANEL_LINES; i++)
+        for (i = 0; i < count; i++) kind[i] = LINE_INFO;
+        info = count;
+        for (i = 0; i < item_count; i++)
         {
-            const Game_OsdKey *entry = keys[i].entry;
-            const char *name = (keys[i].key != SDL_SCANCODE_UNKNOWN) ? SDL_GetScancodeName(keys[i].key) : "-";
+            const Game_OsdItem *entry = items[i];
 
-            if (entry->state != NULL && (entry->active == NULL || entry->active()))
-                snprintf(lines[count++], sizeof(lines[0]), "%-4s %s: %s", name, entry->label, entry->state());
-            else if (entry->active != NULL && !entry->active())
-                snprintf(lines[count++], sizeof(lines[0]), "%-4s %s (off)", name, entry->label);
-            else
-                snprintf(lines[count++], sizeof(lines[0]), "%-4s %s", name, entry->label);
+            if (entry->state != NULL) snprintf(lines[count], sizeof(lines[0]), "%s: %s", entry->label, entry->state());
+            else snprintf(lines[count], sizeof(lines[0]), "%s", entry->label);
+            kind[count++] = item_active(i) ? LINE_ITEM : LINE_GREY;
         }
+        if (osd_key != SDL_SCANCODE_UNKNOWN) snprintf(lines[count], sizeof(lines[0]), "Close (%s)", SDL_GetScancodeName(osd_key));
+        else snprintf(lines[count], sizeof(lines[0]), "Close");
+        kind[count++] = LINE_ITEM;
     }
-    if (message_live && count < PANEL_LINES)
+    if (message_live)
     {
         SDL_AtomicLock(&message_lock);
-        snprintf(lines[count++], sizeof(lines[0]), "%s", message);
+        snprintf(lines[count], sizeof(lines[0]), "%s", message);
         SDL_AtomicUnlock(&message_lock);
+        kind[count++] = LINE_MESSAGE;
     }
-    if (count == 0) return;
 
     panel_w = 0;
     for (i = 0; i < count; i++)
     {
-        int w = Game_UiTextWidth(lines[i], line_h);
+        int w = Game_UiTextWidth(lines[i], line_h) + ((kind[i] == LINE_ITEM || kind[i] == LINE_GREY) ? 2 * pad : 0);
 
         if (w > panel_w) panel_w = w;
     }
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 160);
-    Game_UiFillRect(renderer, pad, pad, panel_w + 2 * pad, count * line_h + 2 * pad);
+    /* a gap between the information and the items */
+    panel_h = count * line_h + 2 * pad + (osd_shown ? pad : 0);
+
+    SDL_AtomicLock(&message_lock);
+    drawn.x = pad;
+    drawn.y = pad;
+    drawn.w = osd_shown ? panel_w + 2 * pad : 0;
+    drawn.h = osd_shown ? panel_h : 0;
+    drawn.rows_y = 2 * pad + info * line_h + pad;
+    drawn.line_h = osd_shown ? line_h : 0;
+    drawn.W = width;
+    drawn.H = height;
+    SDL_AtomicUnlock(&message_lock);
+    if (count == 0) return;
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 176);
+    Game_UiFillRect(renderer, pad, pad, panel_w + 2 * pad, panel_h);
     for (i = 0, y = 2 * pad; i < count; i++, y += line_h)
     {
-        /* the message under the panel in yellow */
-        if (message_live && i == count - 1) SDL_SetRenderDrawColor(renderer, 255, 230, 96, 255);
-        else SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        Game_UiText(renderer, lines[i], 2 * pad, y, line_h);
+        int x = 2 * pad;
+
+        if (i == info && osd_shown) y += pad;
+        if (kind[i] == LINE_ITEM || kind[i] == LINE_GREY)
+        {
+            x += pad;
+            if (i - info == sel)
+            {
+                SDL_SetRenderDrawColor(renderer, 70, 110, 190, 220);
+                Game_UiFillRect(renderer, pad + pad / 2, y, panel_w + pad, line_h);
+            }
+        }
+        switch (kind[i])
+        {
+            case LINE_INFO: SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255); break;
+            case LINE_GREY: SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255); break;
+            /* the message under the panel in yellow */
+            case LINE_MESSAGE: SDL_SetRenderDrawColor(renderer, 255, 230, 96, 255); break;
+            default: SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); break;
+        }
+        Game_UiText(renderer, lines[i], x, y, line_h);
     }
 }

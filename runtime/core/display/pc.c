@@ -28,8 +28,8 @@
  *
  * The flip thread expands the frame (Render_Width x Render_Height, 8 bits) through
  * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
- * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, with
- * the 2D filter of Display_Shader (smooth, sharp bilinear, when none is set).
+ * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, by
+ * the nearest pixel, or through the 2D filter of Display_Shader (Game_GlFilter).
  * Without OpenGL an SDL renderer scales it up by whole pixels.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
  * Set_Palette_Value (Game_dosvga.c) or by the Win32 palette calls.
@@ -78,12 +78,9 @@
 static SDL_GLContext gl_context;
 static GLuint gl_texture;
 static int gl_width, gl_height;
-static int gl_shader;
 
 static int gl_create(void)
 {
-    const char *env = getenv(GAME_ENV("SHADER"));
-
     gl_context = Game_GlCreateContext(Game_Window, 1);
     if (gl_context == NULL) return 0;
     glGenTextures(1, &gl_texture);
@@ -93,9 +90,6 @@ static int gl_create(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     gl_width = gl_height = 0;
-    /* no Display_Shader: smooth, the sharp scaling of the SDL renderer below */
-    gl_shader = ((env == NULL || env[0] == 0) && Game_Shader[0] == 0) ? Game_GlShaderParse("smooth")
-                                                                     : Game_GlConfigShader(GAME_NAME);
     return 1;
 }
 
@@ -114,7 +108,7 @@ static void gl_flip(void)
     }
     Game_OsdFrame(gl_width, gl_height, "OpenGL");
     /* mode 13h has non-square pixels made for a 4:3 monitor */
-    Game_GlPresentAspect(Game_Window, gl_texture, gl_width, gl_height, 4, 3, 1, 0, gl_shader);
+    Game_GlPresentAspect(Game_Window, gl_texture, gl_width, gl_height, 4, 3, 1, 0, Game_GlFilter());
 }
 #endif
 

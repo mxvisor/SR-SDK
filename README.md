@@ -271,7 +271,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_CD_OPTIONAL` | the game works without its disc: "no CD" is printed only when the CD trace is on |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
-| `GAME_OSD_KEYS()` | optional: after the settings, registers the port's own keys of the game (a toggle key say) with `Game_OsdAddKey` (`runtime/core/Game_osd.h`); they do not reach the game, the on-screen display (`Display_OSD_Key`, F12) lists them, and a press shows what it switched |
+| `GAME_OSD_ITEMS()` | optional: after the settings, registers the game's own items of the port's panel (a switch of a mod say) with `Game_OsdAddItem` (`runtime/core/Game_osd.h`). The panel's key (`Display_OSD_Key`, F12) is the port's only key: no item has a key of its own; an item with a key of the settings file is saved there when it is switched (`Game_ConfigSave`) |
 | `GAME_KEYBOARD_BLOCKED()`, `GAME_MOUSE_BLOCKED()` | optional: non-zero while the game reads keys or the mouse by itself |
 
 A DOS game (`runtime/dos`) also takes, all optional:
@@ -299,8 +299,8 @@ A DOS game (`runtime/dos`) also takes, all optional:
 functions the file's head names.
 
 `runtime/core/display/pc.c` is the window of every port (mode-13h palette, 4:3, shown through
-OpenGL with the 2D filter of `Display_Shader=none|smooth|pixelart|scanlines|crt`, `smooth` when
-the key is not set; an SDL renderer with whole-pixel scaling without OpenGL; on Win32 the window
+OpenGL by the nearest pixel, the original's look, or with the 2D filter of
+`Display_Shader=none|smooth|pixelart|scanlines|crt` (a mod, also an item of the port's panel); an SDL renderer with whole-pixel scaling without OpenGL; on Win32 the window
 stays hidden, the game draws in its own, and DirectDraw shows its picture through OpenGL too,
 with the same filter), `Game_state.c` the variables
 of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows program without

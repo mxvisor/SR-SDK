@@ -29,5 +29,9 @@
 /* --config-file=FILE out of argv; returns the new argc */
 int Game_ReadArgs(int argc, char *argv[]);
 void Game_ReadConfig(void);
+/* key=value into the settings file the port read (else a new <program>.cfg):
+ * the value of key's lines replaced, the rest of the file byte for byte as it
+ * was, or the line added at its end; 0 if it could not be written */
+int Game_ConfigSave(const char *key, const char *value);
 
 #endif /* _GAME_PORTCONFIG_H_INCLUDED_ */

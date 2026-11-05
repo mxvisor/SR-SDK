@@ -1373,18 +1373,19 @@ static int find_event(SDL_Event *event, int remove, int wait)
             if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             return FIND_EVENT_WAKE;
         }
+        if ((num_events > 0) && !Winapi_DialogOpen() && !Winapi_MenuBarOpen() && Game_OsdEvent(event))
+        {
+            /* the port's panel (Game_osd.h): its key, and all input while it is open;
+             * an open dialog or window menu keeps its own */
+            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+            continue;
+        }
         if ((num_events > 0) && (Winapi_DialogEvent(event) || Winapi_MenuBarEvent(event)))
         {
             /* a dialog or the window menu took it (WinApi-ui.h); when it has closed,
              * the caller looks at its queue again */
             if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen()) return FIND_EVENT_WAKE;
-            continue;
-        }
-        if ((num_events > 0) && ((event->type == SDL_KEYDOWN) || (event->type == SDL_KEYUP)) && Game_OsdKeyEvent(&event->key))
-        {
-            /* a key of the port (Game_osd.h): no message, no key of the guest's queue */
-            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             continue;
         }
         if (num_events == 0) // no events

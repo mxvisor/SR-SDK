@@ -557,6 +557,34 @@ static void gp_pad_steer(GPPad *pad, int x, int y, int press)
     }
 }
 
+/* the panel's button: down on it toggles the panel, the finger is its until up */
+int TouchGamepad_OsdEvent(const SDL_Event *event)
+{
+    Sint64 finger;
+
+    if (event->type != SDL_FINGERDOWN && event->type != SDL_FINGERUP && event->type != SDL_FINGERMOTION) return 0;
+    finger = event->tfinger.fingerId;
+    if (gp_osd.finger == finger)
+    {
+        if (event->type == SDL_FINGERUP)
+        {
+            gp_osd.finger = -1;
+            gp_stamp++;
+        }
+        return 1;
+    }
+    if (event->type == SDL_FINGERDOWN && gp_osd.finger < 0
+        && gp_in_osd((int)(event->tfinger.x * gp_W), (int)(event->tfinger.y * gp_H)))
+    {
+        Game_OsdToggle();
+        /* after the toggle: opening lets go of every finger of the gamepad */
+        gp_osd.finger = finger;
+        gp_stamp++;
+        return 1;
+    }
+    return 0;
+}
+
 static int gp_pad_with_finger(Sint64 finger)
 {
     int i;
@@ -589,23 +617,7 @@ int TouchGamepad_Event(SDL_Event *event)
 
     pad = gp_pad_with_finger(finger);
 
-    /* the panel's button: down on it toggles the panel, the finger is its until up */
-    if (gp_osd.finger == finger)
-    {
-        if (event->type == SDL_FINGERUP)
-        {
-            gp_osd.finger = -1;
-            gp_stamp++;
-        }
-        return 1;
-    }
-    if (event->type == SDL_FINGERDOWN && pad < 0 && gp_osd.finger < 0 && gp_in_osd(x, y))
-    {
-        gp_osd.finger = finger;
-        gp_stamp++;
-        Game_OsdToggle();
-        return 1;
-    }
+    if (pad < 0 && TouchGamepad_OsdEvent(event)) return 1;
 
     if (event->type == SDL_FINGERUP)
     {
@@ -717,6 +729,12 @@ int TouchGamepad_Event(SDL_Event *event)
 
 void TouchGamepad_ReleaseAll(void)
 {
+}
+
+int TouchGamepad_OsdEvent(const SDL_Event *event)
+{
+    (void)event;
+    return 0;
 }
 
 int TouchGamepad_ButtonAt(float x, float y)

@@ -24,9 +24,9 @@
 
 /* The OpenGL that does not belong to one game: the glad loader, a context on
  * an SDL window, shader programs, frame buffer objects, and the image of a
- * texture scaled to the window. A game enables this module with opengl=yes,
- * glide=yes or d3d_gl=yes in game.cfg. The window is not made here: a win32
- * game gets one from Winapi_ScreenOpenGL, others draw in Game_Window.
+ * texture scaled to the window. Every game has it (scons/game.py, GAME_GL).
+ * The window is not made here: a win32 game gets one from
+ * Winapi_ScreenOpenGL, others draw in Game_Window.
  *
  * GAME_GLES is the Android build (OpenGL ES 3.0, no glad, its header); gles=yes
  * of scons makes the same on a desktop. What differs is kept here: the pixels
@@ -84,9 +84,14 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
 /* the number of a name ("off" is none), -1 for an unknown one */
 int Game_GlShaderParse(const char *name);
 const char *Game_GlShaderName(int shader);
-/* the filter of the settings file (Display_Shader), <GAME>_SHADER over it; an unknown
- * name is none, with a message (tag: whose) */
-int Game_GlConfigShader(const char *tag);
+/* the filter of the process: at first that of the settings file (Display_Shader,
+ * <GAME>_SHADER over it; an unknown name is none, with a message), then what the
+ * port's panel switched to; the presenters read it at every frame */
+int Game_GlFilter(void);
+void Game_GlSetFilter(int shader);
+/* Game_OsdInit: the filter's item of the port's panel (Game_osd.h), active once a
+ * picture went through Game_GlPresentFiltered or Game_GlPresentAspect */
+void Game_GlOsdItems(void);
 /* Game_GlPresentTexture with a filter; for the filters the sampling is theirs */
 void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
                             int width, int height, int origin_upper_left,

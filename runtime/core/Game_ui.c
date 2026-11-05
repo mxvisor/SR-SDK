@@ -80,6 +80,20 @@ void Game_UiSize(int *width, int *height)
     *height = ui_height;
 }
 
+void Game_UiWindowPoint(Uint32 window_id, int *x, int *y)
+{
+    SDL_Window *window = SDL_GetWindowFromID(window_id);
+    int ww, wh;
+
+    if (window == NULL) return;
+    SDL_GetWindowSize(window, &ww, &wh);
+    if (ww > 0 && wh > 0 && ui_width > 0 && ui_height > 0)
+    {
+        *x = (int)((int64_t)*x * ui_width / ww);
+        *y = (int)((int64_t)*y * ui_height / wh);
+    }
+}
+
 void Game_UiPictureRect(int window_w, int window_h, int width, int height, SDL_Rect *rect)
 {
 #if defined(__ANDROID__) && (GAME_WINAPI_TOUCH_GAMEPAD || !defined(GAME_WINAPI))

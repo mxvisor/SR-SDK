@@ -24,9 +24,10 @@
 
 /* The menu bar of the window, drawn by the port over the picture (Game_ui.h):
  * the window has no frame, so the menu the game set (SetMenu, WinApi-window.c)
- * shows only when it is opened: by F10, by a click in the strip at the top of
- * the window, on Android by a button of the touch gamepad that sends F10 (not by
- * Alt, as in Windows: a game may have it among its keys).  While it is open it
+ * shows only when it is opened: by the item "Window menu" of the port's panel
+ * (Game_osd.h) or by a click in the strip at the top of the window (not by
+ * Alt or F10, as in Windows: a game may have them among its keys; the port's
+ * only key is the panel's).  While it is open it
  * takes every key, click and touch, and the message pump of the game waits
  * (find_event, WinApi-user32.c): the game stands still, as in the menu loop of
  * Windows.  A chosen item posts WM_COMMAND with its command to the window, as
@@ -337,9 +338,6 @@ static void key(SDL_Keycode sym)
             if (mb.depth > 0) mb.depth--;
             else close_menu();
             break;
-        case SDLK_F10:
-            close_menu();
-            break;
         case SDLK_LEFT:
             if (mb.depth > 1) mb.depth--;
             else move_bar(-1);
@@ -462,21 +460,6 @@ static void pointer_up(int x, int y)
     if (item(mb.popup[k], i, &flags, NULL, NULL) && !(flags & MF_POPUP_c)) activate(k, i);
 }
 
-/* window pixels to the pixels of the screen interface */
-static void to_ui(Uint32 window_id, int *x, int *y)
-{
-    SDL_Window *window = SDL_GetWindowFromID(window_id);
-    int ww, wh;
-
-    if (window == NULL) return;
-    SDL_GetWindowSize(window, &ww, &wh);
-    if (ww > 0 && wh > 0 && lo.W > 0 && lo.H > 0)
-    {
-        *x = (int)((int64_t)*x * lo.W / ww);
-        *y = (int)((int64_t)*y * lo.H / wh);
-    }
-}
-
 static void draw(SDL_Renderer *renderer, int W, int H);
 static int visible(void);
 static const Game_UiClient menubar_client = { draw, visible };
@@ -500,6 +483,27 @@ int Winapi_MenuBarOpen(void)
     return mb.open;
 }
 
+/* the item of the port's panel that opens the menu, for the windows that have one */
+static int menu_item_active(void)
+{
+    return bar_menu() != 0;
+}
+
+static void menu_item_press(void)
+{
+    if (bar_menu() == 0) return;
+    Game_OsdClose();
+    open_menu();
+    changed();
+}
+
+static const Game_OsdItem menu_item = { "Window menu", menu_item_active, menu_item_press, NULL, NULL };
+
+void Winapi_MenuBarOsdItems(void)
+{
+    Game_OsdAddItem(&menu_item);
+}
+
 /* An event of SDL before the game sees it: 1 if the menu took it */
 int Winapi_MenuBarEvent(const SDL_Event *event)
 {
@@ -507,20 +511,9 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
 
     if (!mb.open)
     {
-        static const Game_OsdKey menu_key = { "Window menu", NULL, NULL, NULL };
-        static int listed;
-
         if (bar_menu() == 0) return 0;
-        /* the panel of the port lists F10, which stays this menu's */
-        if (!listed) Game_OsdAddKey(SDL_SCANCODE_F10, &menu_key);
-        listed = 1;
         switch (event->type)
         {
-            case SDL_KEYDOWN:
-                if (event->key.keysym.sym != SDLK_F10 || event->key.repeat) return 0;
-                open_menu();
-                changed();
-                return 1;
             case SDL_MOUSEBUTTONDOWN:
             {
                 int W, H;
@@ -530,7 +523,7 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
                 layout(W, H);
                 x = event->button.x;
                 y = event->button.y;
-                to_ui(event->button.windowID, &x, &y);
+                Game_UiWindowPoint(event->button.windowID, &x, &y);
                 if (y < 0 || y >= lo.bar_h) return 0;
                 open_menu();
                 pointer_down(x, y);
@@ -563,7 +556,7 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
             if (event->motion.which == SDL_TOUCH_MOUSEID) return 1;
             x = event->motion.x;
             y = event->motion.y;
-            to_ui(event->motion.windowID, &x, &y);
+            Game_UiWindowPoint(event->motion.windowID, &x, &y);
             pointer_move(x, y);
             break;
         case SDL_MOUSEBUTTONDOWN:
@@ -571,7 +564,7 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
             if (event->button.which == SDL_TOUCH_MOUSEID) return 1;
             x = event->button.x;
             y = event->button.y;
-            to_ui(event->button.windowID, &x, &y);
+            Game_UiWindowPoint(event->button.windowID, &x, &y);
             if (event->type == SDL_MOUSEBUTTONDOWN) pointer_down(x, y);
             else pointer_up(x, y);
             break;
