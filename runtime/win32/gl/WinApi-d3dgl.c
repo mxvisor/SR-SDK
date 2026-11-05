@@ -126,6 +126,8 @@ static struct IDirectDrawSurface_c *scene_synced = NULL;
 static GLuint present_tex = 0;
 static uint32_t *present_buf = NULL;
 static int present_w = 0, present_h = 0;
+/* the 2D filter of the picture (Game_GlConfigShader), -1 before the first present */
+static int present_shader = -1;
 
 static uint32_t gl_state[MAX_GL_STATES];
 
@@ -1065,8 +1067,9 @@ void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window 
     Winapi_SurfaceToBgra(target, present_buf, present_w * 4);
     glBindTexture(GL_TEXTURE_2D, present_tex);
     Game_GlTexSubImageBgra(present_w, present_h, present_buf);
-    Game_OsdFrame(present_w, present_h, "Direct3D, OpenGL");
-    Game_GlPresentTexture(window, present_tex, present_w, present_h, 1, Display_ScalingQuality != 0);
+    Game_OsdFrame(present_w, present_h, Winapi_Direct3DGL() ? "Direct3D, OpenGL" : "DirectDraw, OpenGL");
+    if (present_shader < 0) present_shader = Game_GlConfigShader(GAME_NAME);
+    Game_GlPresentFiltered(window, present_tex, present_w, present_h, 1, Display_ScalingQuality != 0, present_shader);
     gl_release();
 }
 

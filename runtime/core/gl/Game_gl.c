@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <SDL.h>
 #include "Game_gl.h"
+#include "Game_defs.h"
+#include "Game_vars.h"
 #include "Game_hooks.h"
 #include "Game_ui.h"
 
@@ -346,6 +348,23 @@ const char *Game_GlShaderName(int shader)
     return ((shader >= 0) && (shader < GAME_GL_SHADERS)) ? filter_names[shader] : "none";
 }
 
+int Game_GlConfigShader(const char *tag)
+{
+    const char *name = getenv(GAME_ENV("SHADER"));
+    int shader;
+
+    if (name == NULL || name[0] == 0) name = Game_Shader;
+    if (name[0] == 0) return 0;
+    shader = Game_GlShaderParse(name);
+    if (shader < 0)
+    {
+        eprintf("%s: unknown Display_Shader: %s\n", tag, name);
+        return 0;
+    }
+    if (shader != 0) eprintf("%s: the picture filter: %s\n", tag, Game_GlShaderName(shader));
+    return shader;
+}
+
 /* The screen interface over the picture (Game_ui.h: the touch gamepad, the
  * window menu). It draws with an SDL_Renderer and a GL window has none: it
  * draws into a surface the size of the window, by SDL's software renderer, and
@@ -437,8 +456,8 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
 }
 
 static void present_texture(SDL_Window *window, GLuint tex,
-                            int width, int height, int origin_upper_left,
-                            int linear_filter, int shader)
+                            int width, int height, int aspect_w, int aspect_h,
+                            int origin_upper_left, int linear_filter, int shader)
 {
     static const float pos[8] = { -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f, 1.0f,  1.0f, 1.0f };
     static GLuint progs[GAME_GL_SHADERS];
@@ -493,7 +512,7 @@ static void present_texture(SDL_Window *window, GLuint tex,
 
     SDL_GL_GetDrawableSize(window, &ww, &wh);
     if (ww < 1 || wh < 1) return;
-    Game_UiPictureRect(ww, wh, width, height, &picture);
+    Game_UiPictureRect(ww, wh, aspect_w, aspect_h, &picture);
     vx = picture.x;
     vy = picture.y;
     vw = picture.w;
@@ -546,13 +565,20 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
                            int width, int height, int origin_upper_left,
                            int linear_filter)
 {
-    present_texture(window, tex, width, height, origin_upper_left, linear_filter, 0);
+    present_texture(window, tex, width, height, width, height, origin_upper_left, linear_filter, 0);
 }
 
 void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
                             int width, int height, int origin_upper_left,
                             int linear_filter, int shader)
 {
-    present_texture(window, tex, width, height, origin_upper_left, linear_filter, shader);
+    present_texture(window, tex, width, height, width, height, origin_upper_left, linear_filter, shader);
+}
+
+void Game_GlPresentAspect(SDL_Window *window, GLuint tex, int width, int height,
+                          int aspect_w, int aspect_h, int origin_upper_left,
+                          int linear_filter, int shader)
+{
+    present_texture(window, tex, width, height, aspect_w, aspect_h, origin_upper_left, linear_filter, shader);
 }
 

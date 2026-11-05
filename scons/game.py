@@ -189,10 +189,11 @@ if GLIDE:
     RUNTIME_DIRS.append(os.path.join(RUNTIME_DIRS[1], 'glide'))
 # OpenGL in the SDK: runtime/core/gl/ (glad, a context on an SDL window,
 # shaders, frame buffer objects, the scaled present), plus the gl/ directory
-# of the platform (a consumer like the winapi Direct3D backend). The module
-# is built for opengl=yes alone; glide=yes and d3d_gl=yes imply it.
+# of the platform (the winapi Direct3D backend, which also shows DirectDraw's
+# picture). Every game shows its picture through it (display/pc.c,
+# WinApi-ddraw.c); d3d_gl=yes adds Direct3D on it.
 D3D_GL = WINAPI and CFG.get('d3d_gl', 'no') == 'yes'
-GL = (CFG.get('opengl', 'no') == 'yes') or GLIDE or D3D_GL
+GL = True
 LLASM_SUPPORT = os.path.join(SR_ROOT, 'SR', 'llasm-support')
 # the runtime's llasm/ directories: includes, and (for a game without its own
 # game/llasm/SConscript) the .llasm and .c of its glue
@@ -377,6 +378,8 @@ if GLES:
 elif GL:
     # OpenGL: glad (runtime/core/gl/glad.c) loads it
     env.Append(LIBS=['opengl32' if device.endswith('windows') else 'GL'])
+if GL:
+    env.Append(CPPDEFINES=['GAME_GL'])
 if D3D_GL:
     env.Append(CPPDEFINES=['GAME_D3D_GL'])
 

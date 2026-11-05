@@ -84,9 +84,17 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
 /* the number of a name ("off" is none), -1 for an unknown one */
 int Game_GlShaderParse(const char *name);
 const char *Game_GlShaderName(int shader);
+/* the filter of the settings file (Display_Shader), <GAME>_SHADER over it; an unknown
+ * name is none, with a message (tag: whose) */
+int Game_GlConfigShader(const char *tag);
 /* Game_GlPresentTexture with a filter; for the filters the sampling is theirs */
 void Game_GlPresentFiltered(SDL_Window *window, GLuint tex,
                             int width, int height, int origin_upper_left,
                             int linear_filter, int shader);
+/* Game_GlPresentFiltered of a picture shown at aspect_w:aspect_h (4:3 for a 320x200
+ * mode of a 4:3 monitor), not at the aspect of its pixels */
+void Game_GlPresentAspect(SDL_Window *window, GLuint tex, int width, int height,
+                          int aspect_w, int aspect_h, int origin_upper_left,
+                          int linear_filter, int shader);
 
 #endif

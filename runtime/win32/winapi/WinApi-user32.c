@@ -584,16 +584,43 @@ static void warp_mouse(int x, int y)
 }
 
 /* A window without an SDL renderer (OpenGL) has no logical size to move the
- * mouse into the picture, as SDL_RenderSetLogicalSize does: its motion and
- * buttons come in window pixels, and go to the game in the display mode's,
- * from where Game_GlPresentTexture shows the picture (Game_UiPictureRect). */
+ * mouse into the picture, as SDL_RenderSetLogicalSize does: its motion,
+ * buttons and touches come in window pixels, and go to the game in the
+ * display mode's, from where Game_GlPresentTexture shows the picture
+ * (Game_UiPictureRect). The window is the DirectDraw one: an OpenGL window
+ * may be shown before it is that (Winapi_ScreenOpenGL), and a mode change of
+ * a shown window sends no SDL_WINDOWEVENT_SHOWN. 0: not such a window. */
+static int gl_picture(uint32_t window_id, SDL_Rect *picture, int *mode_w, int *mode_h)
+{
+    SDL_Window *window;
+    int window_w, window_h;
+
+    if ((window_id == 0) || (window_id != winapi_get_dd_window_id())) return 0;
+    if (!winapi_get_dd_mode(mode_w, mode_h) || (*mode_w <= 0) || (*mode_h <= 0)) return 0;
+    window = SDL_GetWindowFromID(window_id);
+    if ((window == NULL) || (SDL_GetRenderer(window) != NULL)) return 0;
+    mouse_window = window;
+    mouse_renderer = NULL;
+    mouse_clip_w = *mode_w;
+    mouse_clip_h = *mode_h;
+
+    SDL_GetWindowSize(window, &window_w, &window_h);
+    Game_UiPictureRect(window_w, window_h, *mode_w, *mode_h, picture);
+    if (picture->w <= 0 || picture->h <= 0)
+    {
+        picture->x = picture->y = 0;
+        picture->w = window_w;
+        picture->h = window_h;
+    }
+    return 1;
+}
+
 static void mouse_to_mode(SDL_Event *event)
 {
     SDL_Rect picture;
-    int window_w, window_h, mode_w, mode_h;
+    int mode_w, mode_h;
     uint32_t window_id;
     int32_t *x, *y;
-    SDL_Window *window;
 
     if (event->type == SDL_MOUSEMOTION)
     {
@@ -608,21 +635,7 @@ static void mouse_to_mode(SDL_Event *event)
         y = &event->button.y;
     }
     else return;
-    /* the DirectDraw window; an OpenGL one may be shown before it is that
-     * (Winapi_ScreenOpenGL), and a mode change of a shown window sends no
-     * SDL_WINDOWEVENT_SHOWN */
-    if ((window_id == 0) || (window_id != winapi_get_dd_window_id())) return;
-    if (!winapi_get_dd_mode(&mode_w, &mode_h) || (mode_w <= 0) || (mode_h <= 0)) return;
-    window = SDL_GetWindowFromID(window_id);
-    if ((window == NULL) || (SDL_GetRenderer(window) != NULL)) return;
-    mouse_window = window;
-    mouse_renderer = NULL;
-    mouse_clip_w = mode_w;
-    mouse_clip_h = mode_h;
-
-    SDL_GetWindowSize(mouse_window, &window_w, &window_h);
-    Game_UiPictureRect(window_w, window_h, mode_w, mode_h, &picture);
-    if ((picture.w <= 0) || (picture.h <= 0)) return;
+    if (!gl_picture(window_id, &picture, &mode_w, &mode_h)) return;
     if ((picture.x == 0) && (picture.y == 0) && (picture.w == mode_w) && (picture.h == mode_h)) return;
 
     if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, "[mouse window %d,%d", *x, *y);
@@ -2074,7 +2087,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
 #if GAME_WINAPI_TOUCH_GAMEPAD
             if (TouchGamepad_Event(event)) break;
 #endif
-            if (mouse_renderer != NULL)
+            if ((mouse_renderer != NULL) || ((mouse_window != NULL) && (SDL_GetRenderer(mouse_window) == NULL)))
             {
                 if (!virtual_keyboard_state)
                 {
@@ -2083,11 +2096,22 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 if (event->type == SDL_FINGERMOTION)
                 {
                     SDL_Rect viewport;
+                    int mode_w, mode_h, window_w, window_h;
 
-                    SDL_RenderGetViewport(mouse_renderer, &viewport);
+                    if (mouse_renderer != NULL)
+                    {
+                        SDL_RenderGetViewport(mouse_renderer, &viewport);
 
-                    mouse_x = (int)SDL_floorf(event->tfinger.x * viewport.w);
-                    mouse_y = (int)SDL_floorf(event->tfinger.y * viewport.h);
+                        mouse_x = (int)SDL_floorf(event->tfinger.x * viewport.w);
+                        mouse_y = (int)SDL_floorf(event->tfinger.y * viewport.h);
+                    }
+                    else if (gl_picture(SDL_GetWindowID(mouse_window), &viewport, &mode_w, &mode_h))
+                    {
+                        /* the touch is in the window, 0..1 */
+                        SDL_GetWindowSize(mouse_window, &window_w, &window_h);
+                        mouse_x = (int)SDL_floor(((double)event->tfinger.x * window_w - viewport.x) * mode_w / viewport.w);
+                        mouse_y = (int)SDL_floor(((double)event->tfinger.y * window_h - viewport.y) * mode_h / viewport.h);
+                    }
                 }
                 else if (event->type == SDL_FINGERDOWN)
                 {

@@ -100,9 +100,8 @@ input_exe=../path/to/GAME.EXE
 link=separate
 devices=pc64-linux,pc64-windows
 winapi=yes              # win32 only: the Win32 API layer, runtime/win32/winapi (default yes)
-opengl=no               # the shared OpenGL module, runtime/core/gl (glad, context, shaders, FBOs)
-glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide (implies opengl)
-d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl (implies opengl)
+glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide
+d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
 guest_data_in_memory=no # win32 only: the guest's data at the addresses of the original (llasm -guest-data-in-memory, runtime/win32/winapi/Game_guestdata.c)
 llasm_flags=            # more flags of llasm
@@ -285,7 +284,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_CONFIG()` | the port's configuration, read after the options and the defaults of `Init_Display`/`Init_Audio`/`Init_Input` (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
 | `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
 | `GAME_DISPLAY_INIT()`, `GAME_DISPLAY_INIT2()`, `GAME_DISPLAY_CLEANUP()`, `GAME_DISPLAY_DESTROY()` | `core/display/pc.c`, the default display: after the defaults of `Init_Display`; at the end of `Init_Display2` (may change `Render_Width`, `Render_Height`, `Display_Flip_Procedure`); in `Cleanup_Display`; in `Game_Display_Destroy` |
-| `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()`, `GAME_DISPLAY_OVERLAY(picture)` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip` (nonzero: the game showed the frame itself); drawn over the picture (an `SDL_Rect`) before the touch gamepad |
+| `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()`, `GAME_DISPLAY_OVERLAY(picture)` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip` (nonzero: the game showed the frame itself); drawn over the picture (an `SDL_Rect`) before the touch gamepad, by the SDL renderer without OpenGL only |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
@@ -299,8 +298,11 @@ A DOS game (`runtime/dos`) also takes, all optional:
 `SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the
 functions the file's head names.
 
-`runtime/core/display/pc.c` is the window of every port (mode-13h palette, whole-pixel scaling,
-4:3; on Win32 the window stays hidden, the game draws in its own), `Game_state.c` the variables
+`runtime/core/display/pc.c` is the window of every port (mode-13h palette, 4:3, shown through
+OpenGL with the 2D filter of `Display_Shader=none|smooth|pixelart|scanlines|crt`, `smooth` when
+the key is not set; an SDL renderer with whole-pixel scaling without OpenGL; on Win32 the window
+stays hidden, the game draws in its own, and DirectDraw shows its picture through OpenGL too,
+with the same filter), `Game_state.c` the variables
 of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows program without
 a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
 

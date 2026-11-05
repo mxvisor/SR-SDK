@@ -329,7 +329,7 @@ typedef struct _ddbltfx
 
 #include "WinApi-ddraw-priv.h"
 #include "WinApi-d3d.h"
-#ifdef GAME_D3D_GL
+#ifdef GAME_GL
 #include "WinApi-d3dgl.h"
 #endif
 
@@ -343,6 +343,13 @@ static SDL_Window *dd_spare_window = NULL;
 static SDL_Window *dd_gl_window = NULL;
 /* window ID of the active DirectDraw window, for focus events */
 static uint32_t winapi_dd_window_id = 0;
+
+/* the display shows its picture through OpenGL (Game_GlPresentFiltered), in the
+ * window of Winapi_ScreenOpenGL, without an SDL renderer */
+static int dd_uses_gl(const struct IDirectDraw_c *dd)
+{
+    return (dd->Window != NULL) && (dd->Window == dd_gl_window);
+}
 
 uint32_t winapi_get_dd_window_id(void)
 {
@@ -490,11 +497,11 @@ static void Present(struct IDirectDraw_c *dd)
 
     CountFrame();
     prim = dd->Primary;
-#ifdef GAME_D3D_GL
-    if (Winapi_Direct3DGL())
+#ifdef GAME_GL
+    if (dd_uses_gl(dd))
     {
-        if ((prim == NULL) || (dd->Window == NULL)) return;
-        Winapi_D3dPresentSurface(prim, dd->Window);
+        /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
+        if (prim != NULL) Winapi_D3dGLPresent(prim, dd->Window);
         return;
     }
 #endif
@@ -857,7 +864,12 @@ uint32_t CCALL IDirectDraw_Release_c(struct IDirectDraw_c *lpThis)
         /* the OpenGL window of Direct3D is the screen's, the next display mode shows it again: a
          * program that releases DirectDraw between modes (from a thread that did not make the
          * window) would hide it, and the hide waits for the thread that made it */
-        if ((lpThis->Window != NULL) && !(Winapi_Direct3DEnabled() && Winapi_Direct3DGL()))
+        if (dd_uses_gl(lpThis))
+        {
+            /* not a spare window of an SDL renderer: Winapi_ScreenOpenGL keeps it */
+            lpThis->Window = NULL;
+        }
+        if (lpThis->Window != NULL)
         {
             Game_HideWindow(lpThis->Window);
         }
@@ -1276,18 +1288,22 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
         return DDERR_UNSUPPORTEDMODE;
     }
 
+#ifdef GAME_GL
+    if (lpThis->Window == NULL || dd_uses_gl(lpThis))
+#else
     if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
+#endif
     {
         /* a new mode resizes the window of the last one */
         lpThis->Window = Winapi_ScreenOpenGL((Display_Width != 0)?Display_Width:dwWidth, (Display_Height != 0)?Display_Height:dwHeight);
-        /* no OpenGL: Direct3D goes on with the software rasteriser */
-        if (lpThis->Window == NULL) Winapi_Direct3DNoGL();
+        /* no OpenGL: an SDL renderer, and Direct3D goes on with the software rasteriser */
+        if ((lpThis->Window == NULL) && Winapi_Direct3DEnabled() && Winapi_Direct3DGL()) Winapi_Direct3DNoGL();
     }
 
-    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
+    if (dd_uses_gl(lpThis))
     {
-        /* the device is drawn with OpenGL: an OpenGL window without an SDL
-         * renderer, Present shows the primary through WinApi-d3d.c */
+        /* an OpenGL window without an SDL renderer: Present shows the primary
+         * through WinApi-d3dgl.c, and Direct3D draws there */
         Game_ShowWindow(lpThis->Window);
         winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
 

@@ -28,7 +28,9 @@
  *
  * The flip thread expands the frame (Render_Width x Render_Height, 8 bits) through
  * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
- * scales that up by whole pixels and keeps the picture 4:3 inside the window.
+ * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, with
+ * the 2D filter of Display_Shader (smooth, sharp bilinear, when none is set).
+ * Without OpenGL an SDL renderer scales it up by whole pixels.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
  * Set_Palette_Value (Game_dosvga.c) or by the Win32 palette calls.
  *
@@ -41,11 +43,11 @@
  *   GAME_DISPLAY_INIT2()                at the end of Init_Display2: it may change Render_Width and
  *                                       Render_Height and Display_Flip_Procedure
  *   GAME_DISPLAY_CLEANUP()              in Cleanup_Display
- *   GAME_DISPLAY_WINDOW_FLAGS           more SDL_WINDOW_* flags of the window (SDL_WINDOW_OPENGL)
+ *   GAME_DISPLAY_WINDOW_FLAGS           more SDL_WINDOW_* flags of the window
  *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip: nonzero, the game showed
  *                                       the frame itself (another renderer)
- *   GAME_DISPLAY_OVERLAY(picture)       after the picture is drawn, before the touch gamepad
- *                                       (picture: the SDL_Rect it is in)
+ *   GAME_DISPLAY_OVERLAY(picture)       after the picture is drawn by an SDL renderer, before
+ *                                       the touch gamepad (picture: the SDL_Rect it is in)
  *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the renderer goes
  * A game with a display altogether its own has its own game/display/pc.c with
  * Init_Display, Init_Display2, Config_Display, Cleanup_Display, Set_Palette_Value,
@@ -66,8 +68,55 @@
 #include "palette32bgra.h"
 #if defined(GAME_WINAPI)
 #include "WinApi-ddraw.h"
+#else
+#include "Game_gl.h"
 #endif
 #include "Game_hooks.h"
+
+#if !defined(GAME_WINAPI)
+/* The OpenGL of Game_Window: made and used on the main thread, which flips. */
+static SDL_GLContext gl_context;
+static GLuint gl_texture;
+static int gl_width, gl_height;
+static int gl_shader;
+
+static int gl_create(void)
+{
+    const char *env = getenv(GAME_ENV("SHADER"));
+
+    gl_context = Game_GlCreateContext(Game_Window, 1);
+    if (gl_context == NULL) return 0;
+    glGenTextures(1, &gl_texture);
+    glBindTexture(GL_TEXTURE_2D, gl_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    gl_width = gl_height = 0;
+    /* no Display_Shader: smooth, the sharp scaling of the SDL renderer below */
+    gl_shader = ((env == NULL || env[0] == 0) && Game_Shader[0] == 0) ? Game_GlShaderParse("smooth")
+                                                                     : Game_GlConfigShader(GAME_NAME);
+    return 1;
+}
+
+static void gl_flip(void)
+{
+    glBindTexture(GL_TEXTURE_2D, gl_texture);
+    if (gl_width != (int)Render_Width || gl_height != (int)Render_Height)
+    {
+        gl_width = Render_Width;
+        gl_height = Render_Height;
+        Game_GlTexImageBgra(0, gl_width, gl_height, Game_TextureData);
+    }
+    else
+    {
+        Game_GlTexSubImageBgra(gl_width, gl_height, Game_TextureData);
+    }
+    Game_OsdFrame(gl_width, gl_height, "OpenGL");
+    /* mode 13h has non-square pixels made for a 4:3 monitor */
+    Game_GlPresentAspect(Game_Window, gl_texture, gl_width, gl_height, 4, 3, 1, 0, gl_shader);
+}
+#endif
 
 static void Set_Palette_Value2(uint32_t index, uint32_t r, uint32_t g, uint32_t b)
 {
@@ -191,20 +240,25 @@ int Game_Display_Create(void)
     return 0;
 #endif
 
+#if !defined(GAME_WINAPI)
+#if defined(GAME_GLES)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#endif
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+#define WINDOW_GL_FLAG SDL_WINDOW_OPENGL
+#else
+#define WINDOW_GL_FLAG 0
+#endif
     Game_Window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
+                                   Display_Width, Display_Height, SDL_WINDOW_RESIZABLE | WINDOW_SHOWN_FLAG | WINDOW_GL_FLAG | GAME_DISPLAY_WINDOW_FLAGS);
     if (Game_Window == NULL) return -1;
     /* resizable; the picture keeps 4:3 inside whatever size the window gets */
     SDL_SetWindowMinimumSize(Game_Window, 320, 240);
-
-    Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (Game_Renderer == NULL) Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_SOFTWARE);
-    if (Game_Renderer == NULL) return -1;
-
-    Game_Texture[0] = SDL_CreateTexture(Game_Renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                        Render_Width, Render_Height);
-    if (Game_Texture[0] == NULL) return -1;
-    SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
 
     /* sized for the largest mode, so a mode change never moves it under the flip thread */
     Game_TextureData = calloc((Render_Width * Render_Height > 1024 * 768) ? Render_Width * Render_Height : 1024 * 768,
@@ -215,6 +269,20 @@ int Game_Display_Create(void)
         return -1;
     }
 
+#if !defined(GAME_WINAPI)
+    if (gl_create()) return 0;
+    fprintf(stderr, GAME_NAME ": no OpenGL, the picture of an SDL renderer\n");
+#endif
+
+    Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (Game_Renderer == NULL) Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_SOFTWARE);
+    if (Game_Renderer == NULL) return -1;
+
+    Game_Texture[0] = SDL_CreateTexture(Game_Renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                        Render_Width, Render_Height);
+    if (Game_Texture[0] == NULL) return -1;
+    SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
+
     return 0;
 }
 
@@ -222,6 +290,15 @@ void Game_Display_Destroy(void)
 {
 #ifdef GAME_DISPLAY_DESTROY
     GAME_DISPLAY_DESTROY();
+#endif
+#if !defined(GAME_WINAPI)
+    if (gl_context != NULL)
+    {
+        if (gl_texture != 0) glDeleteTextures(1, &gl_texture);
+        SDL_GL_DeleteContext(gl_context);
+        gl_texture = 0;
+        gl_context = NULL;
+    }
 #endif
     if (Game_ScaledTexture[0] != NULL) SDL_DestroyTexture(Game_ScaledTexture[0]);
     if (Game_Texture[0] != NULL) SDL_DestroyTexture(Game_Texture[0]);
@@ -266,6 +343,13 @@ void Game_Display_Flip(void)
 
 #ifdef GAME_DISPLAY_FLIP
     if (GAME_DISPLAY_FLIP()) return;
+#endif
+#if !defined(GAME_WINAPI)
+    if (gl_context != NULL)
+    {
+        gl_flip();
+        return;
+    }
 #endif
     if (Game_Renderer == NULL || Game_Texture[0] == NULL) return;
     /* the game changed video mode: a new texture of the new size */
