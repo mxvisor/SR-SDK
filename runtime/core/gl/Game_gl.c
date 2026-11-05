@@ -31,7 +31,9 @@
 #include "Game_hooks.h"
 #include "Game_ui.h"
 
-#if defined(__ANDROID__) && GAME_WINAPI_TOUCH_GAMEPAD
+/* the touch gamepad on Android: a win32 game's with GAME_WINAPI_TOUCH_GAMEPAD, every DOS game's
+ * (core/input/pc.c gives it the touches) */
+#if defined(__ANDROID__) && (GAME_WINAPI_TOUCH_GAMEPAD || !defined(GAME_WINAPI))
 #define GL_TOUCH_GAMEPAD 1
 #endif
 

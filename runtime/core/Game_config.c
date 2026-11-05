@@ -135,8 +135,11 @@ void Game_ReadConfig(void)
         }
         // else the write root, where the port keeps what it writes
         {
-            const char *write_root = Game_WriteRoot();
+            const char *write_root;
 
+            /* the config is read before Game_FilesInit (the DOS runtime): the write root is not chosen yet */
+            if (Game_SelectWriteRoot() != 0) return;
+            write_root = Game_WriteRoot();
             if (write_root == NULL) return;
             if (snprintf(filename, sizeof(filename), "%s/%s", write_root, GAME_CONFIG_FILENAME) >= (int)sizeof(filename)) return;
             f = fopen(filename, "rt");

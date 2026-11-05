@@ -198,13 +198,17 @@ static void mouse_move(int dx, int dy)
    moves it itself to a menu item: a host pointer beside it would part from it, and a compositor
    does not let a program warp its pointer. As with the exclusive mouse of DirectInput the
    host's is hidden and held in the window, from the first click in the window (which the game
-   does not see) until the window loses the focus. The watch only asks for it: the mode
-   changes on the thread that polls the device, not in the middle of SDL's pump. */
+   does not see) until the window loses the focus. A window that the game closes and opens
+   again (a new display mode: its 3D driver opens its own window) gives the focus to the new
+   one: the hold goes on there without a click (mouse_hold_given). The watch only asks for it:
+   the mode changes on the thread that polls the device, not in the middle of SDL's pump. */
 static int mouse_held, mouse_hold_wanted, mouse_skip_up;
+static int mouse_hold_given;            /* the click was made; a focus lost to another window ends it */
+static uint32_t mouse_lost_window;      /* the window that lost the focus last */
 
 static void mouse_apply_hold(void)
 {
-    if (mouse_held == mouse_hold_wanted) return;
+    if ((mouse_held == mouse_hold_wanted) && (SDL_GetRelativeMouseMode() == (mouse_held ? SDL_TRUE : SDL_FALSE))) return;
     mouse_held = mouse_hold_wanted;
     SDL_SetRelativeMouseMode(mouse_held ? SDL_TRUE : SDL_FALSE);
 }
@@ -215,11 +219,23 @@ static int SDLCALL mouse_event_watch(void *userdata, SDL_Event *event)
     (void)userdata;
     touchpad_event(event);
 #ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
-    if ((event->type == SDL_WINDOWEVENT) && (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST)) mouse_hold_wanted = 0;
+    if ((event->type == SDL_WINDOWEVENT) && (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST) &&
+        ((SDL_GetKeyboardFocus() == NULL) || (SDL_GetWindowID(SDL_GetKeyboardFocus()) == event->window.windowID)))
+    {
+        /* (not when the new window of the game has the focus already) */
+        mouse_hold_wanted = 0;
+        mouse_lost_window = event->window.windowID;
+    }
+    if ((event->type == SDL_WINDOWEVENT) && (event->window.event == SDL_WINDOWEVENT_FOCUS_GAINED))
+    {
+        /* the focus back to the window that lost it: another program had it, a click holds again */
+        if (event->window.windowID == mouse_lost_window) mouse_hold_given = 0;
+        else if (mouse_hold_given) mouse_hold_wanted = 1;
+    }
     if ((event->type == SDL_MOUSEMOTION) && !mouse_hold_wanted) return 0;
     if ((event->type == SDL_MOUSEBUTTONDOWN) && !mouse_hold_wanted)
     {
-        if (event->button.which != SDL_TOUCH_MOUSEID) { mouse_hold_wanted = 1; mouse_skip_up = 1; }
+        if (event->button.which != SDL_TOUCH_MOUSEID) { mouse_hold_wanted = 1; mouse_hold_given = 1; mouse_skip_up = 1; }
         return 0;
     }
     if ((event->type == SDL_MOUSEBUTTONUP) && mouse_skip_up)
@@ -416,6 +432,9 @@ uint32_t CCALL IDirectInputDevice_SetProperty_c(uint32_t a0, uint32_t a1, uint32
 uint32_t CCALL IDirectInputDevice_Acquire_c(uint32_t a0)
 {
     if (input_debug()) fprintf(stderr, "[dinput %08x Acquire]\n", a0);
+#ifdef GAME_DINPUT_EXCLUSIVE_MOUSE
+    if ((((di_device *)GUEST_MEM(a0))->kind == DEV_MOUSE) && mouse_hold_given) mouse_hold_wanted = 1;
+#endif
     return DI_OK;
 }
 
