@@ -1635,8 +1635,15 @@ static void put_texture(GLuint target, GLuint tex, int blend)
     glUseProgram(prog_draw);
     glUniform2f(u_inv_size, 2.0f / (float)scr_width, 2.0f / (float)scr_height);
     glUniform1f(u_psize, 1.0f);
+    /* the picture as it is: not the combine, alpha test and fog of the last triangles (gl_flush sets
+     * them again), nor the alpha test NEVER of uniforms never set (a program that only writes the LFB) */
     glUniform1i(u_cc, GR_COLORCOMBINE_DECAL_TEXTURE);
     glUniform1i(u_asrc, GR_ALPHASOURCE_TEXTURE_ALPHA);
+    glUniform1i(u_cc_raw, 0);
+    glUniform1i(u_ac_raw, 0);
+    glUniform1i(u_atest, 7);            /* GR_CMP_ALWAYS */
+    glUniform1i(u_fog, 0);
+    glUniform1f(u_lodbias, 0.0f);
     glUniform1i(u_chroma_on, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
