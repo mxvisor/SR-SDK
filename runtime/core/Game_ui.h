@@ -55,6 +55,10 @@ int Game_UiActive(void);
 void Game_UiForgetRenderer(void);
 /* the size Game_UiDraw had last: events in window pixels are scaled to it */
 void Game_UiSize(int *width, int *height);
+/* where a width x height frame is shown in a window_w x window_h window: the largest
+ * rectangle of the frame's aspect, centred (4:3 for every mode on the touch-gamepad
+ * builds); Game_GlPresentTexture shows it there */
+void Game_UiPictureRect(int window_w, int window_h, int width, int height, SDL_Rect *rect);
 
 /* The presenter that shows the last picture again: a client that holds the game
  * (a modal menu) redraws the screen through it */

@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include "Game_hooks.h"
 #include "Game_ui.h"
 #include "Game_osd.h"
 #include "touchgamepad.h"
@@ -77,6 +78,33 @@ void Game_UiSize(int *width, int *height)
 {
     *width = ui_width;
     *height = ui_height;
+}
+
+void Game_UiPictureRect(int window_w, int window_h, int width, int height, SDL_Rect *rect)
+{
+#if defined(__ANDROID__) && (GAME_WINAPI_TOUCH_GAMEPAD || !defined(GAME_WINAPI))
+    /* as DirectDraw's CopyToDisplay: every mode fills a 4:3 display (640x400 is
+     * not 4:3 in pixels) */
+    width = 4;
+    height = 3;
+#endif
+    if (width < 1 || height < 1)
+    {
+        width = window_w;
+        height = window_h;
+    }
+    if ((int64_t)window_w * height > (int64_t)window_h * width)
+    {
+        rect->h = window_h;
+        rect->w = (int)((int64_t)window_h * width / height);
+    }
+    else
+    {
+        rect->w = window_w;
+        rect->h = (int)((int64_t)window_w * height / width);
+    }
+    rect->x = (window_w - rect->w) / 2;
+    rect->y = (window_h - rect->h) / 2;
 }
 
 void Game_UiDraw(SDL_Renderer *renderer)

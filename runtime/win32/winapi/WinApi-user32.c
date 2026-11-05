@@ -567,10 +567,68 @@ static void warp_mouse(int x, int y)
     }
     else if (mouse_window != NULL)
     {
-        /* a window without an SDL renderer (Direct3D on OpenGL): the window
-         * is the display mode's size when there are no display overrides */
+        /* a window without an SDL renderer (OpenGL): from the display mode's
+         * pixels into the picture (mouse_to_mode) */
+        SDL_Rect picture;
+        int window_w, window_h, mode_w, mode_h;
+
+        SDL_GetWindowSize(mouse_window, &window_w, &window_h);
+        if (winapi_get_dd_mode(&mode_w, &mode_h) && (mode_w > 0) && (mode_h > 0))
+        {
+            Game_UiPictureRect(window_w, window_h, mode_w, mode_h, &picture);
+            x = picture.x + (int)(((int64_t)x * 2 + 1) * picture.w / (2 * mode_w));
+            y = picture.y + (int)(((int64_t)y * 2 + 1) * picture.h / (2 * mode_h));
+        }
         SDL_WarpMouseInWindow(mouse_window, x, y);
     }
+}
+
+/* A window without an SDL renderer (OpenGL) has no logical size to move the
+ * mouse into the picture, as SDL_RenderSetLogicalSize does: its motion and
+ * buttons come in window pixels, and go to the game in the display mode's,
+ * from where Game_GlPresentTexture shows the picture (Game_UiPictureRect). */
+static void mouse_to_mode(SDL_Event *event)
+{
+    SDL_Rect picture;
+    int window_w, window_h, mode_w, mode_h;
+    uint32_t window_id;
+    int32_t *x, *y;
+    SDL_Window *window;
+
+    if (event->type == SDL_MOUSEMOTION)
+    {
+        window_id = event->motion.windowID;
+        x = &event->motion.x;
+        y = &event->motion.y;
+    }
+    else if ((event->type == SDL_MOUSEBUTTONDOWN) || (event->type == SDL_MOUSEBUTTONUP))
+    {
+        window_id = event->button.windowID;
+        x = &event->button.x;
+        y = &event->button.y;
+    }
+    else return;
+    /* the DirectDraw window; an OpenGL one may be shown before it is that
+     * (Winapi_ScreenOpenGL), and a mode change of a shown window sends no
+     * SDL_WINDOWEVENT_SHOWN */
+    if ((window_id == 0) || (window_id != winapi_get_dd_window_id())) return;
+    if (!winapi_get_dd_mode(&mode_w, &mode_h) || (mode_w <= 0) || (mode_h <= 0)) return;
+    window = SDL_GetWindowFromID(window_id);
+    if ((window == NULL) || (SDL_GetRenderer(window) != NULL)) return;
+    mouse_window = window;
+    mouse_renderer = NULL;
+    mouse_clip_w = mode_w;
+    mouse_clip_h = mode_h;
+
+    SDL_GetWindowSize(mouse_window, &window_w, &window_h);
+    Game_UiPictureRect(window_w, window_h, mode_w, mode_h, &picture);
+    if ((picture.w <= 0) || (picture.h <= 0)) return;
+    if ((picture.x == 0) && (picture.y == 0) && (picture.w == mode_w) && (picture.h == mode_h)) return;
+
+    if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, "[mouse window %d,%d", *x, *y);
+    *x = (int32_t)SDL_floor((double)(*x - picture.x) * mode_w / picture.w);
+    *y = (int32_t)SDL_floor((double)(*y - picture.y) * mode_h / picture.h);
+    if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, " -> mode %d,%d of %dx%d]\n", *x, *y, mode_w, mode_h);
 }
 
 #ifdef __cplusplus
@@ -1391,6 +1449,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
 
         keep_event = 0;
+        mouse_to_mode(event);
         switch (event->type)
         {
         case SDL_KEYDOWN:

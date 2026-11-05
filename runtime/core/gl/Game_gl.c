@@ -446,7 +446,8 @@ static void present_texture(SDL_Window *window, GLuint tex,
     static SDL_GLContext prog_context;
     GLuint prog;
     float uv[8], top, bottom;
-    int ww, wh, vx, vy, vw, vh, aw = width, ah = height, i;
+    int ww, wh, vx, vy, vw, vh, i;
+    SDL_Rect picture;
 
     if (window == NULL || tex == 0) return;
     if (shader < 0 || shader >= GAME_GL_SHADERS) shader = 0;
@@ -492,24 +493,11 @@ static void present_texture(SDL_Window *window, GLuint tex,
 
     SDL_GL_GetDrawableSize(window, &ww, &wh);
     if (ww < 1 || wh < 1) return;
-#if defined(GL_TOUCH_GAMEPAD)
-    /* as DirectDraw's CopyToDisplay: every mode fills a 4:3 display (640x400 is
-     * not 4:3 in pixels) */
-    width = 4;
-    height = 3;
-#endif
-    if ((int64_t)ww * height > (int64_t)wh * width)
-    {
-        vh = wh;
-        vw = (int)((int64_t)wh * width / height);
-    }
-    else
-    {
-        vw = ww;
-        vh = (int)((int64_t)ww * height / width);
-    }
-    vx = (ww - vw) / 2;
-    vy = (wh - vh) / 2;
+    Game_UiPictureRect(ww, wh, width, height, &picture);
+    vx = picture.x;
+    vy = picture.y;
+    vw = picture.w;
+    vh = picture.h;
 
     /* row 0 of the image is the top of the screen (the bottom for a lower
      * left origin): v grows down the image, up the window */
@@ -535,7 +523,7 @@ static void present_texture(SDL_Window *window, GLuint tex,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear_filter ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear_filter ? GL_LINEAR : GL_NEAREST);
     glUniform1i(u_tex[shader], 0);
-    if (u_size[shader] >= 0) glUniform2f(u_size[shader], (float)aw, (float)ah);
+    if (u_size[shader] >= 0) glUniform2f(u_size[shader], (float)width, (float)height);
     if (u_out[shader] >= 0) glUniform2f(u_out[shader], (float)vw, (float)vh);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
