@@ -109,6 +109,7 @@ llasm_flags=            # more flags of llasm
 program=game                       # the port's name: build/bin/<device>/<program>, and
                                    # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)
+targets=                           # game/ only: the other programs, game-<name>/ (see "targets" below)
 android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
 ```
@@ -183,6 +184,22 @@ its files. It writes only the files it names, and deletes nothing.
 a Wise setup program (the game directory, `%MAINDIR%`). The format modules
 (`nrg.py`, `mds.py`, `ccd.py`, `rawbin.py`, `installshield.py`, `wise.py`) share
 `cdimage.py` with `portable_cd.py`.
+
+### Several programs of one game: targets
+
+A repository may build several programs of one game, each from another exe of
+the same disc (say, a 3dfx, a DirectDraw and a DOS exe).
+`game/` is the main target; each other one is a directory `game-<name>/` with
+a `game.cfg`, recomp inputs and code of its own (another `platform` too), and
+`game/game.cfg` lists them: `targets=win,dos`. `scons target=<name>` builds one
+(`target=default`, or none, the main one); its stages up to obj go to
+`build/target-<name>/`. One game directory serves them all: `game/portable.cfg`,
+`game/release/`, `build/disc`, `build/dist`, `build/bin` (each target has its own
+`program`). `make linux`, `make windows` and the stages build every target
+(`TARGETS=<name ...>` some of them), `make portable` puts all programs into the
+archive of the main one, `make apk TARGET=<name>` builds the APK of one (its own
+`android_id`; `android_apk.py --target`). The launchers take `--target=<name>`
+(`tools/run_common.sh`), the regression column 10 of `games.tsv`.
 
 The stages are `host` (SR, built from a copy in `build/`), `input` (the
 original, checked against its sha256), `recomp` (SR), `gen` (SR's output,
