@@ -74,7 +74,6 @@ EXTERNAL_VARIABLE int Game_AudioRate;				/* audio rate (Hz) */
 EXTERNAL_VARIABLE int Game_AudioBufferSize;			/* audio buffer size */
 
 // 3d engine variables
-EXTERNAL_CVAR_BGN volatile uint32_t Game_UseEnhanced3DEngine; EXTERNAL_CVAR_END
 EXTERNAL_VARIABLE int Game_3DWidth;             /* Display_3D_Resolution=WxH: the 3D drawn at that */
 EXTERNAL_VARIABLE int Game_3DHeight;            /* resolution (Glide); 0 = the screen's */
 EXTERNAL_VARIABLE char Game_Shader[16];         /* Display_Shader=none|smooth|pixelart|scanlines|crt: the 2D filter (Game_gl.h) */

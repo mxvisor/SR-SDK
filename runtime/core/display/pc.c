@@ -46,6 +46,9 @@
  *                                       Render_Height and Display_Flip_Procedure
  *   GAME_DISPLAY_CLEANUP()              in Cleanup_Display
  *   GAME_DISPLAY_WINDOW_FLAGS           more SDL_WINDOW_* flags of the window
+ *   GAME_DISPLAY_MAX_PIXELS             the most pixels the frame has, when the game's
+ *                                       Display_Flip_Procedure changes Render_Width and
+ *                                       Render_Height as it runs (else 1024x768)
  *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip: nonzero, the game showed
  *                                       the frame itself (another renderer)
  *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the OpenGL goes
@@ -202,6 +205,9 @@ void Cleanup_Display(void)
 #ifndef GAME_DISPLAY_WINDOW_FLAGS
 #define GAME_DISPLAY_WINDOW_FLAGS 0
 #endif
+#ifndef GAME_DISPLAY_MAX_PIXELS
+#define GAME_DISPLAY_MAX_PIXELS (1024 * 768)
+#endif
 
 /* The window, mode 13h's 320x200 at 4:3 (a game's bigger frame, as a DOS game's
  * enhanced 3D, is the same picture), and what the flip thread draws into:
@@ -244,9 +250,9 @@ int Game_Display_Create(void)
 #endif
     if (Game_Window == NULL) return -1;
 
-    /* sized for the largest mode, so a mode change never moves it under the flip thread */
-    Game_TextureData = calloc((Render_Width * Render_Height > 1024 * 768) ? Render_Width * Render_Height : 1024 * 768,
-                              Display_Bitsperpixel / 8);
+    /* sized for the largest frame, so a change never moves it under the flip thread */
+    Game_TextureData = calloc((Render_Width * Render_Height > GAME_DISPLAY_MAX_PIXELS) ? Render_Width * Render_Height
+                              : GAME_DISPLAY_MAX_PIXELS, Display_Bitsperpixel / 8);
     if (Game_TextureData == NULL)
     {
         SDL_OutOfMemory();
