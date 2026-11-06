@@ -355,6 +355,11 @@ if env['debug']:
 # dynamicbase for PE (MinGW's gcc takes no -fpie: all its code is PIC).
 LLASM_PIC = '-m64 -inline-idiv -pic -ptrofs'
 LLC_PIC = '--relocation-model=pic'
+# AArch64's llc runs the MachineOutliner by default: it indexes the instructions
+# of the whole module and finds nothing to outline in this code (the object is
+# byte for byte the same without it), but takes 2-3 times the memory of the rest
+# of llc (up to 2.9 GB against 1.6 GB), which a small board does not have.
+LLC_AARCH64 = ' -enable-machine-outliner=never'
 env.Append(LLASMFLAGS=LLASM_PIC)
 if device == 'pc64-linux':
     env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
@@ -369,12 +374,12 @@ elif device == 'arm64-linux':
                CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
                LINKFLAGS='-pie -Wl,-z,noexecstack',
                LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
-               LLVMFLAGS='-mtriple=aarch64-unknown-linux-gnu ' + LLC_PIC)
+               LLVMFLAGS='-mtriple=aarch64-unknown-linux-gnu ' + LLC_PIC + LLC_AARCH64)
 elif device == 'arm64-android':
     # the NDK linker loads the .so anywhere and forbids text relocations
     env.Append(CCFLAGS='-fPIC -DPTROFS_64BIT',
                LIBS=['SDL2_mixer', 'SDL2', 'android', 'log'],
-               LLVMFLAGS='-mtriple=aarch64-linux-android21 ' + LLC_PIC)
+               LLVMFLAGS='-mtriple=aarch64-linux-android21 ' + LLC_PIC + LLC_AARCH64)
 else:
     # a GUI program, as the other games: without a console main.c sends
     # stdout and stderr to a log in the write root, and shows its end
