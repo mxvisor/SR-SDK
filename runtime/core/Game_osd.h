@@ -23,7 +23,8 @@
  */
 
 /* The port's on-screen display: a panel over the picture, the only hot key of the
- * port (Display_OSD_Key, F12 by default; the OSD button of the touch gamepad).
+ * port (Display_OSD_Key, F12 by default; on a touch screen three fingers held
+ * still for 3 seconds in an empty place).
  *
  * The panel shows the game's picture and the output, the window, FPS and the
  * gamepad, and below them the port's settings: an item says what it switches
@@ -35,7 +36,7 @@
  * there at once (Game_ConfigSave), so the next start has it too.
  *
  * The items are registered once the settings are read: the runtime's own (the
- * filter of Game_gl.h, the window menu), then a game's in GAME_OSD_ITEMS() of
+ * filter of Game_gl.h, the whole screen), then a game's in GAME_OSD_ITEMS() of
  * its Game_hooks.h. */
 
 #if !defined(_GAME_OSD_H_INCLUDED_)
@@ -63,7 +64,7 @@ typedef struct {
 /* registers an item; the entry must stay */
 void Game_OsdAddItem(const Game_OsdItem *entry);
 
-/* opens or closes the panel (the display key, the OSD button of the touch gamepad) */
+/* opens or closes the panel (the display key, the three fingers) */
 void Game_OsdToggle(void);
 void Game_OsdClose(void);
 /* the panel is open: it takes the input */
@@ -72,7 +73,8 @@ int Game_OsdOpen(void);
 void Game_OsdInit(void);
 /* Display_OSD_Key of the settings file: non-zero if it was that */
 int Game_OsdConfigKey(const char *key, const char *value);
-/* an SDL event before the game sees it: non-zero if the panel took it */
+/* an SDL event before the game sees it: non-zero if the panel took it (the
+ * fingers of the three-finger hold go on to the game) */
 int Game_OsdEvent(const SDL_Event *event);
 /* for the input that reads the events by itself (DirectInput's event watches):
  * non-zero for the panel's key and, while it is open, for every press and move */

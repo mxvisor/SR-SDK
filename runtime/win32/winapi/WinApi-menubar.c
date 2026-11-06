@@ -24,10 +24,10 @@
 
 /* The menu bar of the window, drawn by the port over the picture (Game_ui.h):
  * the window has no frame, so the menu the game set (SetMenu, WinApi-window.c)
- * shows only when it is opened: by the item "Window menu" of the port's panel
- * (Game_osd.h) or by a click in the strip at the top of the window (not by
- * Alt or F10, as in Windows: a game may have them among its keys; the port's
- * only key is the panel's).  While it is open it
+ * shows only when it is opened: by a click or a touch in the strip at the top
+ * of the window, a touch not on a button of the touch gamepad (not by Alt or
+ * F10, as in Windows: a game may have them among its keys; the port's only
+ * key is its panel's).  While it is open it
  * takes every key, click and touch, and the message pump of the game waits
  * (find_event, WinApi-user32.c): the game stands still, as in the menu loop of
  * Windows.  A chosen item posts WM_COMMAND with its command to the window, as
@@ -37,7 +37,6 @@
 #include <string.h>
 #include <SDL.h>
 #include "Game_ui.h"
-#include "Game_osd.h"
 #include "touchgamepad.h"
 #include "WinApi-user32.h"
 #include "WinApi-ui.h"
@@ -483,27 +482,6 @@ int Winapi_MenuBarOpen(void)
     return mb.open;
 }
 
-/* the item of the port's panel that opens the menu, for the windows that have one */
-static int menu_item_active(void)
-{
-    return bar_menu() != 0;
-}
-
-static void menu_item_press(void)
-{
-    if (bar_menu() == 0) return;
-    Game_OsdClose();
-    open_menu();
-    changed();
-}
-
-static const Game_OsdItem menu_item = { "Window menu", menu_item_active, menu_item_press, NULL, NULL };
-
-void Winapi_MenuBarOsdItems(void)
-{
-    Game_OsdAddItem(&menu_item);
-}
-
 /* An event of SDL before the game sees it: 1 if the menu took it */
 int Winapi_MenuBarEvent(const SDL_Event *event)
 {
@@ -526,6 +504,22 @@ int Winapi_MenuBarEvent(const SDL_Event *event)
                 Game_UiWindowPoint(event->button.windowID, &x, &y);
                 if (y < 0 || y >= lo.bar_h) return 0;
                 open_menu();
+                pointer_down(x, y);
+                changed();
+                return 1;
+            }
+            case SDL_FINGERDOWN:
+            {
+                int W, H;
+
+                if (TouchGamepad_ButtonAt(event->tfinger.x, event->tfinger.y)) return 0;
+                Game_UiSize(&W, &H);
+                layout(W, H);
+                x = (int)(event->tfinger.x * W);
+                y = (int)(event->tfinger.y * H);
+                if (y < 0 || y >= lo.bar_h) return 0;
+                open_menu();
+                mb.finger = 1;
                 pointer_down(x, y);
                 changed();
                 return 1;

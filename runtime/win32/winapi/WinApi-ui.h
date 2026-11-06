@@ -38,8 +38,6 @@ extern "C" {
  * pump waits instead of letting the game run. */
 int Winapi_MenuBarEvent(const SDL_Event *event);
 int Winapi_MenuBarOpen(void);
-/* Game_OsdInit: the item "Window menu" of the port's panel */
-void Winapi_MenuBarOsdItems(void);
 int Winapi_DialogEvent(const SDL_Event *event);
 int Winapi_DialogOpen(void);
 /* a message to a control of the open dialog (SendMessageA): 1 and its result, or 0 */

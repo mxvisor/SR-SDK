@@ -37,8 +37,6 @@ void TouchGamepad_ForgetRenderer(void);
 /* changes when a button does: for a caller that keeps the drawn picture */
 int  TouchGamepad_Stamp(void);
 int  TouchGamepad_Event(SDL_Event *event);
-/* only the OSD button (the panel is open and takes the other touches) */
-int  TouchGamepad_OsdEvent(const SDL_Event *event);
 /* is a button at this place of the window (0..1)? */
 void TouchGamepad_ReleaseAll(void);
 int  TouchGamepad_ButtonAt(float x, float y);

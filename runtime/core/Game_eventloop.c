@@ -164,6 +164,19 @@ void Game_WindowFit(SDL_Window *window, int width, int height)
     if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
 }
 
+void Game_WindowSetFullscreen(int on)
+{
+#if !defined(__ANDROID__)
+    Game_Fullscreen = on ? 1 : 0;
+    if (port_window == NULL) return;
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
+    SDL_SetWindowFullscreen(port_window, Game_Fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+#else
+    (void)on;
+#endif
+}
+
 #if !defined(__ANDROID__)
 static int fullscreen_item_active(void)
 {
@@ -172,11 +185,7 @@ static int fullscreen_item_active(void)
 
 static void fullscreen_item_press(void)
 {
-    Game_Fullscreen = !Game_Fullscreen;
-    if (port_window == NULL) return;
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
-    SDL_SetWindowFullscreen(port_window, Game_Fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    Game_WindowSetFullscreen(!Game_Fullscreen);
 }
 
 static const char *fullscreen_item_state(void)

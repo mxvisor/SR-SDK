@@ -35,9 +35,6 @@
 #ifdef GAME_GL
 #include "gl/Game_gl.h"
 #endif
-#ifdef GAME_WINAPI
-#include "WinApi-ui.h"
-#endif
 #include "Game_hooks.h"
 
 #ifndef GAME_NAME
@@ -126,15 +123,109 @@ void Game_OsdClose(void)
     set_shown(0);
 }
 
+#if defined(__ANDROID__)
+/* The panel on a touch screen: three fingers held still for HOLD_MS in an empty
+ * place of the screen (not on a button of the touch gamepad).  The fingers go
+ * on to the game; the timer wakes the thread of the events with an event of
+ * its own, since fingers held still send none. */
+#define HOLD_FINGERS 3
+#define HOLD_MS 3000
+
+static struct {
+    int count;
+    SDL_TouchID touch;
+    SDL_FingerID id[HOLD_FINGERS];
+    float x[HOLD_FINGERS], y[HOLD_FINGERS];
+    Uint32 start;
+    SDL_TimerID timer;
+} hold;
+static Uint32 hold_event = (Uint32)-1;
+
+static Uint32 hold_timer(Uint32 interval, void *param)
+{
+    SDL_Event event;
+
+    (void)interval; (void)param;
+    SDL_zero(event);
+    event.type = hold_event;
+    SDL_PushEvent(&event);
+    return 0;
+}
+
+static void hold_reset(void)
+{
+    if (hold.timer != 0) SDL_RemoveTimer(hold.timer);
+    hold.timer = 0;
+    hold.count = 0;
+}
+
+static int hold_index(SDL_FingerID id)
+{
+    int i;
+
+    for (i = 0; i < hold.count; i++)
+    {
+        if (hold.id[i] == id) return i;
+    }
+    return -1;
+}
+
+/* the panel is closed: 1 if the event was the timer's */
+static int hold_event_seen(const SDL_Event *event)
+{
+    int i;
+
+    if (hold_event == (Uint32)-1) return 0;
+    if (event->type == hold_event)
+    {
+        if (hold.count == HOLD_FINGERS && SDL_GetNumTouchFingers(hold.touch) >= HOLD_FINGERS
+            && SDL_TICKS_PASSED(SDL_GetTicks(), hold.start + HOLD_MS - 50))
+        {
+            hold.timer = 0;
+            hold_reset();
+            Game_OsdToggle();
+        }
+        return 1;
+    }
+    switch (event->type)
+    {
+        case SDL_FINGERDOWN:
+            /* the first finger on the screen: what was counted before has gone
+             * (its lift may have gone to the panel, a dialog or the window menu) */
+            if (SDL_GetNumTouchFingers(event->tfinger.touchId) <= 1) hold_reset();
+            if (hold.count == HOLD_FINGERS || TouchGamepad_ButtonAt(event->tfinger.x, event->tfinger.y)) break;
+            hold.touch = event->tfinger.touchId;
+            hold.id[hold.count] = event->tfinger.fingerId;
+            hold.x[hold.count] = event->tfinger.x;
+            hold.y[hold.count] = event->tfinger.y;
+            if (++hold.count == HOLD_FINGERS)
+            {
+                hold.start = SDL_GetTicks();
+                hold.timer = SDL_AddTimer(HOLD_MS, hold_timer, NULL);
+            }
+            break;
+        case SDL_FINGERMOTION:
+            i = hold_index(event->tfinger.fingerId);
+            /* still: within a twentieth of the screen */
+            if (i >= 0 && (SDL_fabs(event->tfinger.x - hold.x[i]) > 0.05 || SDL_fabs(event->tfinger.y - hold.y[i]) > 0.05)) hold_reset();
+            break;
+        case SDL_FINGERUP:
+            if (hold_index(event->tfinger.fingerId) >= 0) hold_reset();
+            break;
+    }
+    return 0;
+}
+#endif
+
 void Game_OsdInit(void)
 {
+#if defined(__ANDROID__)
+    hold_event = SDL_RegisterEvents(1);
+#endif
 #ifdef GAME_GL
     Game_GlOsdItems();
 #endif
     Game_WindowOsdItems();
-#ifdef GAME_WINAPI
-    Winapi_MenuBarOsdItems();
-#endif
 #ifdef GAME_OSD_ITEMS
     GAME_OSD_ITEMS();
 #endif
@@ -255,7 +346,11 @@ int Game_OsdEvent(const SDL_Event *event)
         if (event->type == SDL_KEYDOWN && !event->key.repeat) Game_OsdToggle();
         return 1;
     }
+#if defined(__ANDROID__)
+    if (!osd_shown) return hold_event_seen(event);
+#else
     if (!osd_shown) return 0;
+#endif
 
     switch (event->type)
     {
@@ -316,8 +411,6 @@ int Game_OsdEvent(const SDL_Event *event)
         case SDL_FINGERDOWN:
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:
-            /* the OSD button of the touch gamepad closes it again */
-            if (TouchGamepad_OsdEvent(event)) return 1;
             if (event->type != SDL_FINGERDOWN) return 1;
             finger_point(event, &x, &y);
             row = row_at(x, y);

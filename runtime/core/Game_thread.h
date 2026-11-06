@@ -41,6 +41,9 @@ struct SDL_Window *Game_WindowCreate(int width, int height, unsigned int flags);
 /* a new mode of the game: the window gets its size, unless the player resized
  * it or it is on the whole screen; the minimum is the new size */
 void Game_WindowFit(struct SDL_Window *window, int width, int height);
+/* the window on the whole screen or not, for a game that switches it itself;
+ * the setting Display_Fullscreen is not written (the panel's item writes it) */
+void Game_WindowSetFullscreen(int on);
 /* Game_OsdInit: the item Fullscreen of the port's panel (Game_osd.h) */
 void Game_WindowOsdItems(void);
 
