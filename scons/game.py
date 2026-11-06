@@ -768,6 +768,7 @@ if want('obj'):
     obj_device = os.path.join(STAGE_BUILD, 'obj', device)
     obj_game = os.path.join(obj_device, 'game')
     gen_dir = os.path.join(obj_device, 'gen')
+    ir_dir = os.path.join(STAGE_BUILD, 'obj', 'ir')
     bin_device = os.path.join(BUILD, 'bin', device)
 
     # what game/llasm/SConscript asks for: where stage 3 put the generated
@@ -869,7 +870,7 @@ if want('obj'):
     game_objs += support_objs
     if os.path.exists(os.path.join(GAME_DIR, 'llasm', 'SConscript')):
         game_objs += SConscript(os.path.join(obj_game, 'llasm', 'SConscript'),
-                                exports='device env gen_dir llasm_tool llasm_deps '
+                                exports='device env gen_dir ir_dir llasm_tool llasm_deps '
                                         'gen_src_dir gen_main llasm_inc_dirs')
     else:
         game_llasm_dir = os.path.join(obj_game, 'llasm')
@@ -878,7 +879,7 @@ if want('obj'):
         sdk_root = SDK_ROOT
         obj_runtime = os.path.join(obj_device, 'runtime')
         game_objs += SConscript(os.path.join(SDK_ROOT, 'scons', 'llasm.SConscript'),
-                                exports='device env gen_dir llasm_tool llasm_deps '
+                                exports='device env gen_dir ir_dir llasm_tool llasm_deps '
                                         'gen_src_dir gen_main gen_deps dll_masters llasm_inc_dirs game_llasm_dir '
                                         'sdk_llasm_dirs sdk_root obj_runtime')
     defaults += game_objs

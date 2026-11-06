@@ -60,10 +60,11 @@ def collect(repo, devices, llasm, build_target='default'):
                     line = line[len("bash -o pipefail -c '"):-1]    # scons/llasm.SConscript wraps the pipe
                     line = line.split(' || {')[0]                  # and removes the object on failure
                 cmd = line.split(' | ')[0].replace('"%s"' % dummy, '"%s" "%s"' % (sys.executable, llasm), 1)
-                # the object is `> X` or `-o X`, depending on the SDK's scons/game.py
+                # the object is `> X` or `-o X`, or the bitcode `-o build/obj/ir/X.bc`
+                # (scons/llasm.SConscript); the key stays gen/<name> in all of them
                 target = re.search(r'(?:> |-o )(\S+)$', line)
                 r = subprocess.run(cmd, shell=True, cwd=repo, capture_output=True)
-                key = '%s/%s' % (device, re.sub(r'.*/(gen/[^/]+)\.o$', r'\1', target.group(1)) if target else '?')
+                key = '%s/%s' % (device, re.sub(r'.*/(?:gen|ir)/([^/]+)\.(?:o|bc)$', r'gen/\1', target.group(1)) if target else '?')
                 result.append((sha(r.stdout), 'llvm/%s rc=%d' % (key, r.returncode)))
     finally:
         os.unlink(dummy)

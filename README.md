@@ -44,9 +44,11 @@ callback; SDL2_mixer's own MIDI backend is then not needed.
 
 No D compiler is needed: llasm IR is translated by `llasm/llasm.py`, a Python
 version of SR's `llasm` that is developed here; on SR's reference games its output is byte-identical to the D original (see
-[`llasm/README.md`](llasm/README.md)). To find a procedure of the original in a debugger, delete
-`build/obj/<device>/gen/*.o` and build once with `LLASM_SYMBOLS=1`: every procedure keeps its name
-(`loc_XXXX`, the address in the original) in the object, for `nm` and `gdb`.
+[`llasm/README.md`](llasm/README.md)). `llasm.py` and `opt` make one bitcode per `.llasm` for all
+devices, `build/obj/ir/*.bc`; each device runs only `llc` on it, into `build/obj/<device>/gen/*.o`.
+To find a procedure of the original in a debugger, delete `build/obj/ir/*.bc` and build once with
+`LLASM_SYMBOLS=1`: every procedure keeps its name (`loc_XXXX`, the address in the original) in the
+object, for `nm` and `gdb` (the variable is not part of the command, so SCons does not see it change).
 
 ## Starting a new port
 
