@@ -487,40 +487,63 @@ def _write_guest_code_resolver():
         return None
 
     targets = []
-    for proc_name in sorted(G.proc_list.keys()):
+    for proc_name in G.proc_list.keys():
         m = re.match(r"^loc_([0-9A-Fa-f]+)$", proc_name)
         if m:
             targets.append((int(m.group(1), 16), proc_name))
+    targets.sort()
 
     if len(targets) == 0:
         return None
 
     proc_type = "i8*" if G.no_tail_calls else "void"
+    ptr_type = proc_type + "(%_cpu*)*"
+    count = str(len(targets))
+    vas_type = "[" + count + " x i32]"
+    ptrs_type = "[" + count + " x " + ptr_type + "]"
 
+    # the addresses, in order, and the procedures at them: a binary search, not
+    # a switch of every procedure, which takes llc longer than the rest of the
+    # module.  A program that adds an offset to a code pointer
+    # (guest_address_jumps.sci) also finds the address of a pointer in the list.
     add_output_line("")
     add_output_line("; the procedures by the addresses of the original program")
+    add_output_line("@llasm_guest_code_vas = internal constant " + vas_type + " [" +
+                    ", ".join("i32 " + str(_s32(t[0])) for t in targets) + "]")
+    add_output_line("@llasm_guest_code_ptrs = internal constant " + ptrs_type + " [" +
+                    ", ".join(ptr_type + " " + _llref(t[1]) for t in targets) + "]")
     add_output_line("define i32 @llasm_resolve_guest_code(i32 %va, i64 %ptrofs) nounwind {")
     add_output_line("entry:")
-    add_output_line("switch i32 %va, label %none [")
-    for i in range(len(targets)):
-        add_output_line("i32 " + str(_s32(targets[i][0])) + ", label %t" + str(i))
-    add_output_line("]")
-    for i in range(len(targets)):
-        add_output_line("t" + str(i) + ":")
-        add_output_line("%a" + str(i) + " = ptrtoint " + proc_type + "(%_cpu*)* " + _llref(targets[i][1]) + " to i64")
-        add_output_line("%b" + str(i) + " = sub i64 %a" + str(i) + ", %ptrofs")
-        add_output_line("%c" + str(i) + " = trunc i64 %b" + str(i) + " to i32")
-        add_output_line("ret i32 %c" + str(i))
+    add_output_line("br label %loop")
+    add_output_line("loop:")
+    add_output_line("%lo = phi i32 [ 0, %entry ], [ %lo1, %step ]")
+    add_output_line("%hi = phi i32 [ " + count + ", %entry ], [ %hi1, %step ]")
+    add_output_line("%more = icmp ult i32 %lo, %hi")
+    add_output_line("br i1 %more, label %probe, label %none")
+    add_output_line("probe:")
+    add_output_line("%sum = add i32 %lo, %hi")
+    add_output_line("%mid = lshr i32 %sum, 1")
+    add_output_line("%vp = getelementptr " + vas_type + ", " + vas_type + "* @llasm_guest_code_vas, i32 0, i32 %mid")
+    add_output_line("%v = load i32, i32* %vp")
+    add_output_line("%eq = icmp eq i32 %v, %va")
+    add_output_line("br i1 %eq, label %found, label %step")
+    add_output_line("step:")
+    add_output_line("%below = icmp ult i32 %v, %va")
+    add_output_line("%mid1 = add i32 %mid, 1")
+    add_output_line("%lo1 = select i1 %below, i32 %mid1, i32 %lo")
+    add_output_line("%hi1 = select i1 %below, i32 %hi, i32 %mid")
+    add_output_line("br label %loop")
+    add_output_line("found:")
+    add_output_line("%pp = getelementptr " + ptrs_type + ", " + ptrs_type + "* @llasm_guest_code_ptrs, i32 0, i32 %mid")
+    add_output_line("%p = load " + ptr_type + ", " + ptr_type + "* %pp")
+    add_output_line("%a = ptrtoint " + ptr_type + " %p to i64")
+    add_output_line("%b = sub i64 %a, %ptrofs")
+    add_output_line("%c = trunc i64 %b to i32")
+    add_output_line("ret i32 %c")
     add_output_line("none:")
     add_output_line("ret i32 0")
     add_output_line("}")
     add_output_line("")
-
-    # the addresses themselves: a program that adds an offset to a code pointer
-    # (guest_address_jumps.sci) finds the address of a pointer in this list
-    count = str(len(targets))
-    add_output_line("@llasm_guest_code_vas = internal constant [" + count + " x i32] [" +
-                    ", ".join("i32 " + str(_s32(t[0])) for t in targets) + "]")
     add_output_line("define i32 @llasm_guest_code_count() nounwind {")
     add_output_line("ret i32 " + count)
     add_output_line("}")

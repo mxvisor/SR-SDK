@@ -2,13 +2,13 @@
 # One command that answers "did I break anything?": SR's output for the reference
 # games, a build of every game, a smoke test of every port under Linux and Wine,
 # several runs of each port at different load addresses (ASLR), the hashes of
-# the llasm output, the conversion of the disc images (tools/image), and the names and the layout of the
-# game repositories. The result is compared with ref/results.tsv,
+# the llasm output, the conversion of the disc images (tools/image), the names and the layout of the
+# game repositories, and the Win32 stubs they link. The result is compared with ref/results.tsv,
 # the reference run, and the differences are listed.
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
-#   --only LIST      run only these checks, a comma list of: sr build smoke d3d aslr llasm image prefixes layout
+#   --only LIST      run only these checks, a comma list of: sr build smoke d3d aslr llasm image prefixes layout stubs
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
@@ -23,11 +23,11 @@
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
 #   CHECK  SUBJECT  STATUS  DETAIL
-# CHECK is sr, build, smoke, d3d, aslr, llasm-gen, llasm-llvm, image, prefixes or layout; STATUS is ok, fail or
+# CHECK is sr, build, smoke, d3d, aslr, llasm-gen, llasm-llvm, image, prefixes, layout or stubs; STATUS is ok, fail or
 # changed. A row of the comparison is: same | REGRESSION | improved | CHANGED | new.
 # Exit status: 1 if there is a REGRESSION or a CHANGED, else 0.
 . "$(dirname "$0")/lib.sh"
-ONLY="sr build smoke aslr llasm image prefixes layout d3d"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
+ONLY="sr build smoke aslr llasm image prefixes layout stubs d3d"; SR_COMMIT=HEAD; RUN_SECS=15; SAVE=0; WINE=1; JOBS=4; GAMES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY=$(echo "$2" | tr ',' ' '); shift ;;
@@ -175,6 +175,14 @@ if want layout; then
     done
 fi
 
+# after build: the objects and the program of each win32 game (pc64-linux)
+if want stubs; then
+    echo "## stubs: ${GAMES[*]} sdk" >&2
+    "$REGRESS_DIR/check_stubs.py" "${GAMES[@]}" | while IFS=$'\t' read -r kind subject status detail; do
+        add "$(printf '%s\t%s\t%s\t%s' "$kind" "$subject" "$status" "$detail")"
+    done
+fi
+
 # ---- comparison with the reference run
 REF="$REGRESS_DIR/ref/results.tsv"
 if [ "$SAVE" = 1 ]; then
@@ -217,11 +225,11 @@ only, games, wine = set(sys.argv[3].split()), set(sys.argv[4].split()), sys.argv
 
 def expected(key):
     # a row of the reference this run should have made too: of a check it ran, for a
-    # game it ran (sr: not per game; prefixes: also the SDK), not of Wine with --no-wine
+    # game it ran (sr: not per game; prefixes and stubs: also the SDK), not of Wine with --no-wine
     kind, subject = key
     if kind.split('-')[0] not in only or (not wine and subject.endswith(':wine')):
         return False
-    return kind == 'sr' or subject.split(':')[0] in games or (kind == 'prefixes' and subject == 'sdk')
+    return kind == 'sr' or subject.split(':')[0] in games or (kind in ('prefixes', 'stubs') and subject == 'sdk')
 
 def unchanged(key):
     # sr and image rows carry the output hash: a different hash is a change; a llasm row
