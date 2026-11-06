@@ -29,6 +29,13 @@ python3 llasm_compare.py -I <dir> FILE... # the .llasm of a game, with its inclu
 `tests/run.py` runs all of it (plus unit tests of the pure functions, which
 need no D build): quick by default, `--full` before a commit.
 
+The port also has what `llasm.d` has not, for the games of this SDK (`not reg`;
+`store8`/`store16` to a data label; `-guest-data-in-memory`). The fuzz writes only
+the language the two share: `PORT_ONLY` of `llasm_fuzz.py` replaces a form of the
+port by the one of `llasm.d`, or leaves the instruction out. An extension is
+tested by `PortOnly` of `tests/test_units.py`, against the IR the port has to
+make; a new one goes into both.
+
 ## Layout
 
 `llasm.py` is only the entry point; the port is the package `llasmlib/`, in

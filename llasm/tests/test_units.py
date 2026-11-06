@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Unit tests of the pure functions of llasmlib (no D build needed).
+"""Unit tests of llasmlib (no D build needed).
 
-The expected values are what llasm.d gives; the differential tests of the
-port (llasm_edge.py, llasm_fuzz.py, llasm_compare.py) are the authority.
+The expected values of the pure functions are what llasm.d gives; the
+differential tests of the port (llasm_edge.py, llasm_fuzz.py, llasm_compare.py)
+are the authority for the language the two share. PortOnly checks what only
+llasm.py has (PORT_ONLY of llasm_fuzz.py), which nothing can be compared with.
 """
 import os
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+LLASM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+sys.path.insert(0, LLASM_DIR)
 
 from llasmlib import expr, strutil, tables
 
@@ -55,6 +61,44 @@ class Names(unittest.TestCase):
     def test_tables(self):
         self.assertEqual(tables.registers_base_list[:3], ["eax", "ecx", "edx"])
         self.assertEqual(len(tables.registers_base_list), tables.NUM_REGS + 22)
+
+
+class PortOnly(unittest.TestCase):
+    """not reg, and store8/store16 to a data label: llasm.d has neither."""
+    PROGRAM = """datasegment seg0
+dlabel dl_one global
+db 4 dup 1
+endd
+proc p_main public
+    not eax
+    store8 eax, dl_one, 1
+    store16 ecx, dl_one, 2
+endp
+"""
+    # the flags of llasm_fuzz.py's first set, and those of a game's build (scons/game.py)
+    FLAGS = ([], ["-O", "-m64", "-inline-idiv", "-pic", "-ptrofs"])
+
+    def llasm(self, flags):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "t.llasm")
+            with open(src, "w") as f:
+                f.write(self.PROGRAM)
+            r = subprocess.run([sys.executable, os.path.join(LLASM_DIR, "llasm.py"), src] + flags,
+                               capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_not(self):
+        for flags in self.FLAGS:
+            ir = self.llasm(flags)
+            self.assertRegex(ir, r";    not eax\n(?:.*\n)*?%(\d+) = xor i32 %\d+, -1\n(?:.*\n)*?store i32 %\1, i32\* %\d+, align 4\n")
+
+    def test_store_to_label(self):
+        for flags in self.FLAGS:
+            ir = self.llasm(flags)
+            self.assertRegex(ir, r"%(\d+) = trunc i32 %\d+ to i8\nstore i8 %\1, i8\* @dl_one, align 1\n")
+            self.assertRegex(ir, r"%(\d+) = trunc i32 %\d+ to i16\n"
+                                 r"store i16 %\1, i16\* bitcast \(i8\* @dl_one to i16\*\), align 2\n")
 
 
 if __name__ == "__main__":

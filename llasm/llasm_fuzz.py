@@ -56,6 +56,15 @@ OPTION_SETS = [
 ]
 
 ERR = 0.002
+# What llasm.py has and llasm.d has not: the fuzz compares the two, so it writes
+# only the language they share (a form of llasm.py is replaced by the one of
+# llasm.d, None leaves the instruction out). The extensions have their own tests
+# in tests/test_units.py (PortOnly), with the IR llasm.py has to make.
+PORT_ONLY = {
+    "store8 reg/const, reg/externaddr/addr, const": "store8 reg/const, reg/externaddr, const",
+    "store16 reg/const, reg/externaddr/addr, const": "store16 reg/const, reg/externaddr, const",
+    "not reg": None,
+}
 REGS = L.registers_base_list[:9] + L.registers_base_list[12:]
 HIDDEN_REGS = ["st_top", "st_sw_cond", "st_cw"]
 
@@ -237,7 +246,8 @@ class Gen:
             out.append("endd")
 
         # procedures
-        instrs = list(L.instructions_base_list) + L.instructions_idiv_list + L.instructions_float_list + L.instructions_float2_list
+        instrs = [PORT_ONLY.get(i, i) for i in list(L.instructions_base_list) + L.instructions_idiv_list
+                  + L.instructions_float_list + L.instructions_float2_list if PORT_ONLY.get(i, i)]
         for pname in self.procs:
             if pname == "p_ext":
                 out.append("proc p_ext external")
