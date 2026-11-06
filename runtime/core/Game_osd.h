@@ -23,8 +23,7 @@
  */
 
 /* The port's on-screen display: a panel over the picture, the only hot key of the
- * port (Display_OSD_Key, F12 by default; on a touch screen three fingers held
- * still for 3 seconds in an empty place).
+ * port (Display_OSD_Key, F12 by default; on Android also the system's Back).
  *
  * The panel shows the game's picture and the output, the window, FPS and the
  * gamepad, and below them the port's settings: an item says what it switches
@@ -64,7 +63,7 @@ typedef struct {
 /* registers an item; the entry must stay */
 void Game_OsdAddItem(const Game_OsdItem *entry);
 
-/* opens or closes the panel (the display key, the three fingers) */
+/* opens or closes the panel (the display key, Back on Android) */
 void Game_OsdToggle(void);
 void Game_OsdClose(void);
 /* the panel is open: it takes the input */
@@ -73,8 +72,7 @@ int Game_OsdOpen(void);
 void Game_OsdInit(void);
 /* Display_OSD_Key of the settings file: non-zero if it was that */
 int Game_OsdConfigKey(const char *key, const char *value);
-/* an SDL event before the game sees it: non-zero if the panel took it (the
- * fingers of the three-finger hold go on to the game) */
+/* an SDL event before the game sees it: non-zero if the panel took it */
 int Game_OsdEvent(const SDL_Event *event);
 /* for the input that reads the events by itself (DirectInput's event watches):
  * non-zero for the panel's key and, while it is open, for every press and move */
