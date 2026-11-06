@@ -29,7 +29,7 @@
 #     stage 3  gen     build/gen/<module>/<arch>/    compact_source's output
 #     stage 4  obj     build/obj/<device>/{runtime,game,support,gen}
 #     stage 5  bin     build/bin/<device>/<program>
-#     stage 6  dist    build/dist/<device>/
+#     stage 6  dist    build/distrib/<device>/
 #
 # Everything a game is, it says in game/game.cfg; this file never names it.
 # All paths are absolute: it is read from the SDK's scons/, not from the root.
@@ -74,7 +74,7 @@ SR_ROOT = os.path.join(SDK_ROOT, 'SR')
 # disc): game/ is its main target, game-<name>/ the others, each with a game.cfg
 # of its own; game/game.cfg lists them (targets=). `scons target=<name>` builds
 # one, target=default (or none) the main one. The disc, the game directory
-# (game/portable.cfg), build/bin and build/dist are the repository's, shared by
+# (game/portable.cfg), build/bin and build/distrib are the repository's, shared by
 # all; the stages up to obj of a target go to build/target-<name>/.
 TARGET = ARGUMENTS.get('target', 'default')
 GAME_DIR = os.path.join(ROOT, 'game' if TARGET == 'default' else 'game-' + TARGET)
@@ -82,12 +82,38 @@ if not os.path.isfile(os.path.join(GAME_DIR, 'game.cfg')):
     raise Exception('target=%s: no %s' % (TARGET, os.path.join(GAME_DIR, 'game.cfg')))
 CFG = read_cfg(os.path.join(GAME_DIR, 'game.cfg'))
 
-# `scons clean` (and distclean, the same) builds nothing: the build tree (with
-# SCons's own database) and the run directory go.
+# `scons clean` and `scons distclean` build nothing.  distclean removes the build
+# tree (with SCons's own database) and the run directory.  clean keeps what is
+# unpacked from the disc image (build/disc, its cue sheet in build/cd, the game
+# directory build/distrib/data and its stamp): the rest is made from the sources
+# on any machine, but the tree is also copied to one that has no disc image.
+KEEP_ON_CLEAN = (('disc',), ('cd',), ('distrib', 'data'), ('distrib', 'data.stamp'))
+
+
+def clean_tree(directory, keep):
+    """Removes everything in directory but the paths of keep (tuples of names
+    below it) and the directories on the way to them."""
+    for entry in os.listdir(directory):
+        path = os.path.join(directory, entry)
+        inside = [k[1:] for k in keep if k[0] == entry]
+        if not inside:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+        elif all(inside):
+            clean_tree(path, inside)
+
+
 if {'clean', 'distclean'} & set(COMMAND_LINE_TARGETS):
-    for path in ('build', 'run'):
-        shutil.rmtree(os.path.join(ROOT, path), ignore_errors=True)
-    print('scons: cleaned build/ run/')
+    build_dir = os.path.join(ROOT, 'build')
+    if 'distclean' in COMMAND_LINE_TARGETS or not os.path.isdir(build_dir):
+        shutil.rmtree(build_dir, ignore_errors=True)
+        print('scons: cleaned build/ run/')
+    else:
+        clean_tree(build_dir, KEEP_ON_CLEAN)
+        print('scons: cleaned build/ run/ (kept build/disc, build/cd, build/distrib/data: distclean removes them)')
+    shutil.rmtree(os.path.join(ROOT, 'run'), ignore_errors=True)
     Exit(0)
 
 ARCHS = _keys(CFG, 'archs')
@@ -250,10 +276,12 @@ Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`
   linux          the native binary: build/bin/pc64-linux|arm64-linux/<program>
   windows        the MinGW cross build with the SDL DLLs beside the exe
   disc           build/disc, the disc image with game/portable.cfg over it
-  portable-data  build/dist/portable, the disc's files and music (game/portable.cfg)
-  portable       the release archives in build/dist/ (linux and windows must be built)
+  distrib-data  build/distrib/data, the disc's files and music (game/portable.cfg)
+  distrib        the release archives in build/distrib/ (linux and windows must be built)
   check          the native binary is there
-  clean          remove build/, run/ and SCons's database (distclean: the same)
+  clean          remove build/ and run/ but the disc's unpacked files (build/disc, build/cd,
+                 build/distrib/data), so the tree builds elsewhere without the image
+  distclean      remove build/ and run/ whole
 """)
 
 if device not in ('pc64-linux', 'pc64-windows', 'arm64-linux', 'arm64-android'):

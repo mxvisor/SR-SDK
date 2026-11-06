@@ -11,7 +11,7 @@
 #           build/disc/, made by tools/disc_tree.py, so the exe need not be unpacked by hand
 #   --image the disc image (.iso/.nrg/.mds/.bin/.cue; path relative to DIR, or absolute):
 #           game/portable.cfg gets image= (its cue sheet is made in build/cd/); the
-#           launchers take the game directory from build/dist/portable (make portable-data)
+#           launchers take the game directory from build/distrib/data (make distrib-data)
 #   --sdk   where SR-SDK comes from (default: the repository this script is in)
 #   --sr    where SR comes from (default: SR of the --sdk repository when that is a directory,
 #           else the URL in SR-SDK/.gitmodules)
@@ -161,7 +161,7 @@ cat > game/Game_hooks.h <<EOF
 EOF
 
 cat > Makefile <<'EOF'
-# The targets (linux, windows, portable, apk, clean, ...) are SR-SDK/scons/game.mk's.
+# The targets (linux, windows, distrib, apk, clean, ...) are SR-SDK/scons/game.mk's.
 include SR-SDK/scons/game.mk
 EOF
 
@@ -180,7 +180,7 @@ EOF
 }
 COMMON="PROG=$NAME
 ENVP=$ENVP
-DATA_MARKER=$ORIG_NAME                    # a file the game directory (build/dist/portable) must hold"
+DATA_MARKER=$ORIG_NAME                    # a file the game directory (build/distrib/data) must hold"
 launcher run-sdl.sh "Run the native port ($TITLE)." run_common.sh "$COMMON
 
 run_native \"\$@\""

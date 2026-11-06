@@ -248,6 +248,11 @@ def main():
 
     root = os.getcwd()
     cfg = read_cfg(args.cfg)
+    # a tree copied to a machine without the image: the unpacked disc is all there is
+    if not args.cue and cfg.get('image') and not os.path.isfile(os.path.join(root, cfg['image'])) \
+            and os.path.isfile(os.path.join(args.out, STAMP)):
+        print('disc: no image %s, %s is used as it is' % (cfg['image'], args.out))
+        return
     cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
     patches = [(os.path.join(root, archive), inner) for archive, inner in read_patches(args.cfg)]
     for archive, _ in patches:

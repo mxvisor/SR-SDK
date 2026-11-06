@@ -10,8 +10,8 @@
 #   WIN_EXE        Wine: the exe, relative to the data directory
 #   WINE_NAME      Wine, optional: the prefix under ~/.cache (default dos-recomp-wine)
 #
-# The game's files are build/dist/portable, the game directory as the portable copy
-# has it (make portable-data, made here when it is not there yet): C: of DOSBox, the
+# The game's files are build/distrib/data, the game directory as the portable copy
+# has it (make distrib-data, made here when it is not there yet): C: of DOSBox, the
 # directory with the exe for Wine.  The disc is the image of game/portable.cfg: its cue
 # sheet in build/cd/, mounted on D: with IMGMOUNT, or for Wine, which mounts no image,
 # build/disc (make disc), linked as the D: drive of the prefix.
@@ -28,11 +28,11 @@
 #   --help
 
 _orig_init() {
-  local v portable="$GAME_REPO/build/dist/portable"
+  local v portable="$GAME_REPO/build/distrib/data"
   v="${ENVP}_DATA_DIR"; DATA_DIR="${!v:-$portable}"
   v="${ENVP}_WRITE_ROOT"; WRITE_ROOT="${!v:-$GAME_REPO/build/run}"
   if [ "$DATA_DIR" = "$portable" ] && [ ! -f "$portable.stamp" ]; then
-    make -C "$GAME_REPO" portable-data || exit 1
+    make -C "$GAME_REPO" distrib-data || exit 1
   fi
   v="${ENVP}_CD_${1}"; CD="${!v:-}"
   if [ -z "$CD" ] && [ "$1" = DIR ]; then
@@ -99,7 +99,7 @@ run_orig_dosbox() {
   _orig_need dosbox
   [ -d "$DATA_DIR" ] || { echo "No game directory: $DATA_DIR" >&2; exit 1; }
   if [ -n "$CD" ] && [ ! -f "$CD" ]; then
-    echo "No CD image: $CD (make portable-data makes build/cd/, or pass --cd=none)" >&2
+    echo "No CD image: $CD (make distrib-data makes build/cd/, or pass --cd=none)" >&2
     exit 1
   fi
   local overlay="$WRITE_ROOT/orig-dosbox" conf cd_line="REM no D:"

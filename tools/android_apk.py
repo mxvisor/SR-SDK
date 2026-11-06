@@ -28,8 +28,8 @@
 # --target: one target of a repository of several (game-<name>/ in place of game/,
 # scons/game.py), with its own game.cfg and libmain.so.
 #
-# The defaults are what `make apk` (scons portable-data) leaves: the data is
-# <build>/dist/portable, the APK <build>/dist/<dist_name>-android-arm64.apk
+# The defaults are what `make apk` (scons distrib-data) leaves: the data is
+# <build>/distrib/data, the APK <build>/distrib/<dist_name>-android-arm64.apk
 # (dist_name= of game.cfg, default the program's name).
 #
 # 1. SDL2 and SDL2_mixer for arm64, by tools/android_sdl.sh, unless there;
@@ -100,8 +100,8 @@ def run(command, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description='Builds the Android APK of a game.')
-    parser.add_argument('--data', help="the game's data directory (default <build>/dist/portable)")
-    parser.add_argument('--out', help='the APK to write (default <build>/dist/<dist_name>-android-arm64.apk)')
+    parser.add_argument('--data', help="the game's data directory (default <build>/distrib/data)")
+    parser.add_argument('--out', help='the APK to write (default <build>/distrib/<dist_name>-android-arm64.apk)')
     parser.add_argument('--build', default='build', help='the build directory (default build)')
     parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count() or 1)
     parser.add_argument('--target', default='default',
@@ -113,9 +113,9 @@ def main():
     game_dir = os.path.join(root, 'game' if args.target == 'default' else 'game-' + args.target)
     stage_build = build if args.target == 'default' else os.path.join(build, 'target-' + args.target)
     cfg = read_cfg(os.path.join(game_dir, 'game.cfg'))
-    data = os.path.abspath(args.data or os.path.join(build, 'dist', 'portable'))
+    data = os.path.abspath(args.data or os.path.join(build, 'distrib', 'data'))
     out = os.path.abspath(args.out or os.path.join(
-        build, 'dist', '%s-android-arm64.apk' % (cfg.get('dist_name') or cfg.get('program') or 'game')))
+        build, 'distrib', '%s-android-arm64.apk' % (cfg.get('dist_name') or cfg.get('program') or 'game')))
     app_id = cfg.get('android_id') or fail('game.cfg has no android_id')
     app_name = cfg.get('android_name') or cfg.get('program') or app_id
     if not os.path.isdir(data):

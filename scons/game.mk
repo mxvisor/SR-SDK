@@ -3,11 +3,15 @@
 # it); everything the targets do is in scons/game.py and scons/release.SConscript.
 #
 #   make [linux windows]   the native binary / the MinGW cross build with the DLLs
-#   make portable          release archives in build/dist/ (builds both, and the data)
-#   make portable-data     build/dist/portable: the disc's files and music
-#   make apk               the Android APK in build/dist/ (tools/android_apk.py)
+#   make distrib           release archives in build/distrib/ (builds both, and the data)
+#   make distrib-data      build/distrib/data: the disc's files and music
+#   make apk               the Android APK in build/distrib/ (tools/android_apk.py)
 #   make disc | host | input | recomp | gen | obj    one stage (scons stage=...)
-#   make clean | test | help
+#   make clean             everything built, but not the disc's unpacked files (build/disc,
+#                          build/cd, build/distrib/data): the tree builds on another machine
+#                          without the disc image
+#   make distclean         build/ and run/ whole, the unpacked disc too
+#   make test | help
 #
 # A repository of several targets (targets= of game/game.cfg, game-<name>/; see
 # scons/game.py): `linux`, `windows` and the stages build every target in turn,
@@ -27,7 +31,7 @@ comma := ,
 # under `make -j`.  The parallelism is scons's own (JOBS).
 .NOTPARALLEL:
 
-.PHONY: all host input recomp gen obj linux windows disc portable-data portable apk \
+.PHONY: all host input recomp gen obj linux windows disc distrib-data distrib apk \
         clean distclean test help
 
 all: linux windows
@@ -38,13 +42,13 @@ host input recomp gen obj:
 linux windows:
 	set -e; for t in $(TARGETS); do $(SCONS) -j$(JOBS) target=$$t $@; done
 
-disc portable-data:
+disc distrib-data:
 	$(SCONS) -j$(JOBS) $@
 
-portable: linux windows portable-data
-	$(SCONS) portable
+distrib: linux windows distrib-data
+	$(SCONS) distrib
 
-apk: portable-data
+apk: distrib-data
 	python3 $(SDK)/tools/android_apk.py -j $(JOBS) --target $(TARGET)
 
 clean distclean:

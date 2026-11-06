@@ -59,7 +59,7 @@ launchers (`run-sdl.sh`, `run-sdl-wine.sh`, `run-orig-dosbox.sh` or
 `--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
 executable from the disc (`build/disc/`, unpacked by `tools/disc_tree.py`) instead of a
 file unpacked by hand. The disc image is the one path outside the repository: the
-launchers run the game on `build/dist/portable` (`make portable-data`, made on the first
+launchers run the game on `build/distrib/data` (`make distrib-data`, made on the first
 run) and the port writes into `build/run`.
 For a DOS program `tools/sr_run.py` runs SR twice when it must: SR's `--list_handlers=FILE`
 lists the routines the program gives to INT 21h AH=25h (EDX loaded with an address, directly or
@@ -74,7 +74,7 @@ Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 
 `run-orig-dosbox.sh` (DOS games) and `run-orig-wine.sh` (Windows games) of a game
 repository run the original as the reference for the port, on the game directory of
-the portable copy (`build/dist/portable`): DOSBox mounts it as `C:` with an overlay and
+the portable copy (`build/distrib/data`): DOSBox mounts it as `C:` with an overlay and
 the disc's cue sheet (`build/cd/`) as `D:`; Wine runs on a `fuse-overlayfs` mount of it
 (a copy when it is missing), and `D:` is the unpacked disc (`build/disc`). What the
 original writes lands in `build/run/orig-*`. `--headless[=N]` takes screenshots under
@@ -137,10 +137,11 @@ scons input_exe=/path/to/GAME.EXE
 The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets are scons's
 (`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.
 `make linux`, `make windows` (the MinGW build with the SDL DLLs beside the exe),
-`make portable-data` (`build/dist/portable`: the game directory of the fullest install with the music, from `game/portable.cfg`),
-`make portable` (both builds, the data, and `build/dist/<name>-x64.zip`:
+`make distrib-data` (`build/distrib/data`: the game directory of the fullest install with the music, from `game/portable.cfg`),
+`make distrib` (both builds, the data, and `build/distrib/<name>-x64.zip`:
 both programs with the Windows DLLs, `game/release/{linux,windows}/` and their `x64/`, and the data), `make apk`, `make disc`
-(`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean`, `make test`.
+(`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean` (everything built; the disc's unpacked files, `build/disc`, `build/cd` and
+`build/distrib/data`, stay, so the tree builds on a machine without the disc image), `make distclean` (those too), `make test`.
 The same names work as `scons <name>`; `MINGW_BIN=` points at the DLLs.
 
 For Android, `tools/android_apk.py` makes the whole APK, from the game
@@ -193,9 +194,9 @@ a `game.cfg`, recomp inputs and code of its own (another `platform` too), and
 `game/game.cfg` lists them: `targets=win,dos`. `scons target=<name>` builds one
 (`target=default`, or none, the main one); its stages up to obj go to
 `build/target-<name>/`. One game directory serves them all: `game/portable.cfg`,
-`game/release/`, `build/disc`, `build/dist`, `build/bin` (each target has its own
+`game/release/`, `build/disc`, `build/distrib`, `build/bin` (each target has its own
 `program`). `make linux`, `make windows` and the stages build every target
-(`TARGETS=<name ...>` some of them), `make portable` puts all programs into the
+(`TARGETS=<name ...>` some of them), `make distrib` puts all programs into the
 archive of the main one, `make apk TARGET=<name>` builds the APK of one (its own
 `android_id`; `android_apk.py --target`). The launchers take `--target=<name>`
 (`tools/run_common.sh`), the regression column 10 of `games.tsv`.
