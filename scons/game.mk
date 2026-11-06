@@ -31,10 +31,18 @@ comma := ,
 # under `make -j`.  The parallelism is scons's own (JOBS).
 .NOTPARALLEL:
 
-.PHONY: all host input recomp gen obj linux windows disc distrib-data distrib apk \
+.PHONY: all windows-skipped host input recomp gen obj linux windows disc distrib-data distrib apk \
         clean distclean test help
 
-all: linux windows
+# the Windows build needs the MinGW-w64 cross compiler: a host without it (a board) builds
+# the native binary and says so; `make windows` and `make distrib` insist
+MINGW_GCC ?= x86_64-w64-mingw32-gcc
+HAVE_MINGW := $(shell command -v $(MINGW_GCC) >/dev/null 2>&1 && echo yes)
+
+all: $(if $(HAVE_MINGW),,windows-skipped) linux $(if $(HAVE_MINGW),windows)
+
+windows-skipped:
+	@echo "make: the Windows build is skipped, no $(MINGW_GCC) (MinGW-w64); \`make windows\` says what is missing"
 
 host input recomp gen obj:
 	set -e; for t in $(TARGETS); do $(SCONS) target=$$t stage=$@; done

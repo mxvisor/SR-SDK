@@ -44,7 +44,8 @@
 #include "Game_memory.h"
 #include "WinApi-ui.h"
 
-static void StubLog(const char *name, int *calls)
+/* the object of a stub that does not report has no use for it */
+static void __attribute__((unused)) StubLog(const char *name, int *calls)
 {
     if (*calls < 3 && getenv("GAME_DEBUG_STUBS") != NULL) {
         (*calls)++;

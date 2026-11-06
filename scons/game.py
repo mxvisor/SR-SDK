@@ -448,10 +448,13 @@ if want('obj'):
 if want('bin') and not tool_exists(env['LINK']):
     missing.append('%s (linker of device %s)' % (env.subst(env['LINK']), device))
 if missing:
-    raise Exception('toolchain of device %s: missing %s\n'
-                    '  install LLVM (dnf install llvm / apt install llvm) and the C toolchain; '
-                    'a versioned opt-NN/llc-NN must also be on PATH as opt and llc'
-                    % (device, ', '.join(missing)))
+    hint = '  install LLVM (dnf install llvm / apt install llvm) and the C toolchain; ' \
+           'a versioned opt-NN/llc-NN must also be on PATH as opt and llc'
+    if device == 'pc64-windows':
+        hint = '  the Windows build is a cross build: install MinGW-w64 (dnf install mingw64-gcc / ' \
+               'apt install gcc-mingw-w64-x86-64), or toolprefix= for another prefix; `make` alone ' \
+               'skips it when there is none'
+    raise Exception('toolchain of device %s: missing %s\n%s' % (device, ', '.join(missing), hint))
 
 # ------------------------------------------------- stage 1: host tools --
 
