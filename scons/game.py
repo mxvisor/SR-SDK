@@ -122,6 +122,10 @@ MODULES = _keys(CFG, 'modules')
 DLL_MODULES = _keys(CFG, 'dll_modules') if 'dll_modules' in CFG else []
 VARIANTS = _keys(CFG, 'variants')
 DEVICES = _keys(CFG, 'devices')
+# the native device of an aarch64 Linux host (a board) is not a choice of the game:
+# `make linux` builds for it whatever devices= lists
+if 'arm64-linux' not in DEVICES:
+    DEVICES.append('arm64-linux')
 PROGRAM = CFG.get('program', '-'.join(MODULES).lower())
 # runtime .c files the game does not build, by file name (runtime_skip=Game_cdrom.c,...)
 RUNTIME_SKIP = set(_keys(CFG, 'runtime_skip')) if 'runtime_skip' in CFG else set()
