@@ -32,6 +32,8 @@ XPID=$!
 for _ in $(seq 1 50); do [ -s "$DF" ] && break; sleep 0.1; done
 [ -s "$DF" ] || { report fail "Xvfb did not start"; kill $XPID 2>/dev/null; exit 0; }
 export DISPLAY=:$(head -n1 "$DF"); rm -f "$DF"
+# the Xvfb goes with the script, also when the script is stopped (Ctrl-C, a kill)
+trap 'kill $XPID 2>/dev/null' EXIT
 unset WAYLAND_DISPLAY
 export SDL_AUDIODRIVER=dummy
 if [ $MODE = wine ]; then
@@ -67,6 +69,9 @@ for run in $(seq 1 "$RUNS"); do
     for p in /proc/[0-9]*; do
         { tr '\0' '\n' < "$p/environ"; } 2>/dev/null | grep -qx "SMOKE_TAG=$TAG" && kill -KILL "${p#/proc/}" 2>/dev/null
     done
+    # and the game itself: once its main thread has ended, its environ reads empty
+    # and the tag is not found, while its other threads go on (wait would wait for ever)
+    kill -KILL $GPID 2>/dev/null
     wait $GPID 2>/dev/null
     [ $MODE = wine ] && wineserver -k 2>/dev/null
     rm -rf "$WR"

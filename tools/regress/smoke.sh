@@ -48,6 +48,8 @@ XPID=$!
 for _ in $(seq 1 50); do [ -s "$DF" ] && break; sleep 0.1; done
 [ -s "$DF" ] || { report fail "Xvfb did not start"; kill $XPID 2>/dev/null; exit 0; }
 export DISPLAY=:$(head -n1 "$DF"); rm -f "$DF"
+# the Xvfb goes with the script, also when the script is stopped (Ctrl-C, a kill)
+trap 'kill $XPID 2>/dev/null' EXIT
 # without a WM; and never the real desktop: SDL would take Wayland first
 unset WAYLAND_DISPLAY
 export SDL_AUDIODRIVER=dummy
