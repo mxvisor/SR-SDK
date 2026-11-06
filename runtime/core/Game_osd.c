@@ -118,11 +118,6 @@ void Game_OsdToggle(void)
     set_shown(!osd_shown);
 }
 
-void Game_OsdClose(void)
-{
-    set_shown(0);
-}
-
 /* the panel's key: Display_OSD_Key, on Android also the system's Back (the
  * button or the gesture), so a touch screen needs nothing over the picture */
 static int panel_key(SDL_Scancode scancode)

@@ -33,7 +33,6 @@
 #include <stdlib.h>
 #include <SDL.h>
 #include "WinApi-config.h"
-#include "VKfont2.h"
 #include "WinApi-guest.h"
 #include "WinApi-kernel32.h"
 #include "Game_memory.h"
@@ -97,20 +96,8 @@
 #ifndef GAME_CLOSE_REQUEST
 #define GAME_CLOSE_REQUEST() 0
 #endif
-/* GAME_WINAPI_COMMAND_ON_IDLE: the command id the program gets when the user
- * picks the first item of its menu (the game asks "start a new game?" and
- * then starts the level); 0 = no such command */
-#ifndef GAME_WINAPI_COMMAND_ON_IDLE
-#define GAME_WINAPI_COMMAND_ON_IDLE 0
-#endif
-/* GAME_WINAPI_COMMAND_READY(): true when the program is ready for that command
- * (default 1: at once); until then the command waits */
-#ifndef GAME_WINAPI_COMMAND_READY
-#define GAME_WINAPI_COMMAND_READY() 1
-#endif
 
 static int paint_pending = 0;
-static int post_command_redraw = 0;
 
 #if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
 #define _WIN32
@@ -363,54 +350,9 @@ static int controller_frac_y;
 static uint32_t controller_mouse_last_time;
 static SDL_Event priority_event;
 static uint32_t window_thread_id;    /* the guest thread that created the pseudo window */
-static SDL_Surface *virtual_keyboard_surface = NULL;
-static SDL_Texture *virtual_keyboard_texture = NULL;
-static SDL_Surface *virtual_keyboard_texture_surface = NULL;
-static int virtual_keyboard_state = 0;
-static unsigned int virtual_keyboard_disabled = 0;
-static int virtual_keyboard_pos_x;
-static int virtual_keyboard_pos_y;
-static int virtual_keyboard_altlayout;
-
-#ifdef DISPLAY_FULL_VIRTUAL_KEYBOARD
-#define VK_LAYOUT_WIDTH 13
-static const uint8_t virtual_keyboard_layout[2][4][VK_LAYOUT_WIDTH] = { {
-    {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'},
-    {'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'},
-    {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='},
-    {',', '.', '/', ';', '\'', '[', ']', '\\', ' ', '\b', '\177', '\r', '\n'},
-}, {
-    {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'},
-    {'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'},
-    {'~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+'},
-    {'<', '>', '?', ':', '"', '{', '}', '|', ' ', '\b', '\177', '\r', '\n'},
-}, };
-#else
-#define VK_LAYOUT_WIDTH 10
-static const uint8_t virtual_keyboard_layout[2][4][VK_LAYOUT_WIDTH] = { {
-    {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'},
-    {'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'},
-    {'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4'},
-    {'5', '6', '7', '8', '9', '0', '\b', '\177', '\r', '\n'},
-}, {
-    {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'},
-    {'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'},
-    {'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4'},
-    {'5', '6', '7', '8', '9', '0', ' ', '\177', '\r', '\n'},
-}, };
-#endif
-
-static uint8_t virtual_keyboard_buffer[2 * VK_LAYOUT_WIDTH];
-static int virtual_keyboard_buflen;
-
 #if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
 /* how many of the messages of GAME_WINAPI_ACTIVATE_APP_ON_IDLE are sent */
 static int activate_app_state = 0;
-#endif
-
-#ifdef PYRA
-static SDL_Joystick *pyra_stick = NULL;
-static int pyra_key_l2 = 0;
 #endif
 
 
@@ -613,286 +555,6 @@ static void mouse_to_mode(SDL_Event *event)
     if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, " -> mode %d,%d of %dx%d]\n", *x, *y, mode_w, mode_h);
 }
 
-#ifdef __cplusplus
-extern "C"
-#endif
-void disable_virtual_keyboard(int disable)
-{
-    if (disable)
-    {
-        virtual_keyboard_state = 0;
-        virtual_keyboard_disabled++;
-    }
-    else
-    {
-        if (virtual_keyboard_disabled)
-        {
-            virtual_keyboard_disabled--;
-        }
-    }
-}
-
-#ifdef __cplusplus
-extern "C"
-#endif
-void delete_virtual_keyboard(void)
-{
-    virtual_keyboard_state = 0;
-    if (virtual_keyboard_surface != NULL)
-    {
-        SDL_FreeSurface(virtual_keyboard_surface);
-        virtual_keyboard_surface = NULL;
-    }
-    if (virtual_keyboard_texture != NULL)
-    {
-        SDL_DestroyTexture(virtual_keyboard_texture);
-        virtual_keyboard_texture = NULL;
-    }
-    if (virtual_keyboard_texture_surface != NULL)
-    {
-        SDL_FreeSurface(virtual_keyboard_texture_surface);
-        virtual_keyboard_texture_surface = NULL;
-    }
-}
-
-static void vk_draw_chr(SDL_Surface *surface, uint8_t chr, int x, int y)
-{
-    const uint8_t *src;
-    uint8_t *dst, prev_value, value;
-    int offset, sx, sy;
-
-    if (vkfont_chr_index[chr] < 0) return;
-
-    src = vkfont_chr_data + vkfont_chr_size * vkfont_chr_index[chr];
-    dst = ((uint8_t *)surface->pixels) + y * surface->pitch + (x >> 3);
-
-    offset = x & 7;
-
-    if (offset == 0)
-    {
-        for (sy = 0; sy < vkfont_chr_height; sy++)
-        {
-            for (sx = 0; sx < vkfont_chr_width_bytes; sx++)
-            {
-                dst[sx] |= src[sx];
-            }
-            src += vkfont_chr_width_bytes;
-            dst += surface->pitch;
-        }
-    }
-    else if (((8 - (vkfont_chr_width_pixels & 7)) & 7) >= offset)
-    {
-        for (sy = 0; sy < vkfont_chr_height; sy++)
-        {
-            prev_value = 0;
-            for (sx = 0; sx < vkfont_chr_width_bytes; sx++)
-            {
-                value = src[sx];
-                dst[sx] |= (value >> offset) | (prev_value << (8 - offset));
-                prev_value = value;
-            }
-            src += vkfont_chr_width_bytes;
-            dst += surface->pitch;
-        }
-    }
-    else
-    {
-        for (sy = 0; sy < vkfont_chr_height; sy++)
-        {
-            prev_value = 0;
-            for (sx = 0; sx < vkfont_chr_width_bytes; sx++)
-            {
-                value = src[sx];
-                dst[sx] |= (value >> offset) | (prev_value << (8 - offset));
-                prev_value = value;
-            }
-            dst[vkfont_chr_width_bytes] |= prev_value << (8 - offset);
-            src += vkfont_chr_width_bytes;
-            dst += surface->pitch;
-        }
-    }
-}
-
-static void vk_invert_area(SDL_Surface *surface, int x, int y, int w, int h)
-{
-    uint8_t *dst, mask1, mask2;
-    int sy, sx, bytes;
-
-    dst = ((uint8_t *)surface->pixels) + y * surface->pitch + (x >> 3);
-
-    mask1 = 0xff >> (x & 7);
-    mask2 = 0xff << ((8 - ((x + w) & 7)) & 7);
-
-    if (w <= (8 - (x & 7)))
-    {
-        mask1 &= mask2;
-
-        for (sy = 0; sy < h; sy++)
-        {
-            *dst ^= mask1;
-            dst += surface->pitch;
-        }
-    }
-    else if (w <= (16 - (x & 7)))
-    {
-        for (sy = 0; sy < h; sy++)
-        {
-            dst[0] ^= mask1;
-            dst[1] ^= mask2;
-            dst += surface->pitch;
-        }
-    }
-    else
-    {
-        bytes = (w + (x & 7) - 1) >> 3;
-
-        for (sy = 0; sy < h; sy++)
-        {
-            dst[0] ^= mask1;
-            for (sx = 1; sx < bytes; sx++)
-            {
-                dst[sx] ^= 0xff;
-            }
-            dst[bytes] ^= mask2;
-            dst += surface->pitch;
-        }
-    }
-}
-
-#ifdef __cplusplus
-extern "C"
-#endif
-int display_virtual_keyboard(SDL_Renderer *renderer)
-{
-    SDL_Rect vkrect;
-    int row, column;
-
-    if (!virtual_keyboard_state) return 0;
-
-    vkrect.w = (vkfont_chr_width_pixels + 2 * 2) * VK_LAYOUT_WIDTH + 4 * 2;
-    vkrect.h = (vkfont_chr_height + 2 * 2) * 6 + 4 * 2;
-    vkrect.x = (640 - vkrect.w) >> 1;
-    vkrect.y = (480 - vkrect.h) >> 1;
-
-    if (virtual_keyboard_state < 0)
-    {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-
-        SDL_RenderFillRect(renderer, &vkrect);
-
-        virtual_keyboard_state = 0;
-    }
-    else
-    {
-        if (virtual_keyboard_surface == NULL)
-        {
-            virtual_keyboard_surface = SDL_CreateRGBSurface(0, vkrect.w, vkrect.h, 1, 0, 0, 0, 0);
-            if (virtual_keyboard_surface == NULL)
-            {
-                return 0;
-            }
-
-            virtual_keyboard_surface->format->palette->colors[0].r = 0;
-            virtual_keyboard_surface->format->palette->colors[0].g = 0;
-            virtual_keyboard_surface->format->palette->colors[0].b = 0;
-            virtual_keyboard_surface->format->palette->colors[1].r = 255;
-            virtual_keyboard_surface->format->palette->colors[1].g = 255;
-            virtual_keyboard_surface->format->palette->colors[1].b = 255;
-            virtual_keyboard_surface->format->palette->colors[0].a = 128;
-            virtual_keyboard_surface->format->palette->colors[1].a = 255;
-        }
-        if (virtual_keyboard_texture == NULL)
-        {
-            Uint32 format, Rmask, Gmask, Bmask, Amask;
-            SDL_RendererInfo info;
-            int index, bpp;
-
-            format = SDL_PIXELFORMAT_ABGR8888;
-            if (SDL_GetRendererInfo(renderer, &info) <= 0)
-            {
-                for (index = 0; index < (int)info.num_texture_formats; ++index)
-                {
-                    if (info.texture_formats[index] == SDL_PIXELFORMAT_ARGB8888 ||
-                        info.texture_formats[index] == SDL_PIXELFORMAT_ABGR8888 ||
-                        info.texture_formats[index] == SDL_PIXELFORMAT_RGB888 ||
-                        info.texture_formats[index] == SDL_PIXELFORMAT_BGR888) {
-                        format = info.texture_formats[index];
-                        break;
-                    }
-                }
-            }
-
-            SDL_PixelFormatEnumToMasks(format, &bpp, &Rmask, &Gmask, &Bmask, &Amask);
-            virtual_keyboard_texture_surface = SDL_CreateRGBSurfaceFrom(NULL, vkrect.w, vkrect.h, bpp, 0, Rmask, Gmask, Bmask, Amask);
-            if (virtual_keyboard_texture_surface == NULL)
-            {
-                return 0;
-            }
-
-            virtual_keyboard_texture = SDL_CreateTexture(renderer, format, SDL_TEXTUREACCESS_STREAMING, vkrect.w, vkrect.h);
-            if (virtual_keyboard_texture == NULL)
-            {
-                SDL_FreeSurface(virtual_keyboard_texture_surface);
-                virtual_keyboard_texture_surface = NULL;
-                return 0;
-            }
-
-            if (Amask)
-            {
-                SDL_SetTextureBlendMode(virtual_keyboard_texture, SDL_BLENDMODE_BLEND);
-            }
-        }
-
-        memset(virtual_keyboard_surface->pixels, 0, virtual_keyboard_surface->h * virtual_keyboard_surface->pitch);
-
-        for (row = 0; row < 4; row++)
-        {
-            for (column = 0; column < VK_LAYOUT_WIDTH; column++)
-            {
-                vk_draw_chr(virtual_keyboard_surface, virtual_keyboard_layout[virtual_keyboard_altlayout][row][column], (vkfont_chr_width_pixels + 2 * 2) * column + 2 + 4, (vkfont_chr_height + 2 * 2) * row + 2 + 4);
-            }
-        }
-
-        if (virtual_keyboard_buflen <= VK_LAYOUT_WIDTH)
-        {
-            for (column = 0; column < virtual_keyboard_buflen; column++)
-            {
-                vk_draw_chr(virtual_keyboard_surface, virtual_keyboard_buffer[column], (vkfont_chr_width_pixels + 2 * 2) * column + 2 + 4, (vkfont_chr_height + 2 * 2) * 5 + 2 + 4);
-            }
-        }
-        else
-        {
-            for (column = 0; column < VK_LAYOUT_WIDTH; column++)
-            {
-                vk_draw_chr(virtual_keyboard_surface, virtual_keyboard_buffer[column], (vkfont_chr_width_pixels + 2 * 2) * column + 2 + 4, (vkfont_chr_height + 2 * 2) * 4 + 2 + 4);
-            }
-            for (column = VK_LAYOUT_WIDTH; column < virtual_keyboard_buflen; column++)
-            {
-                vk_draw_chr(virtual_keyboard_surface, virtual_keyboard_buffer[column], (vkfont_chr_width_pixels + 2 * 2) * (column - VK_LAYOUT_WIDTH) + 2 + 4, (vkfont_chr_height + 2 * 2) * 5 + 2 + 4);
-            }
-        }
-
-        if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-        {
-            vk_invert_area(virtual_keyboard_surface, (vkfont_chr_width_pixels + 2 * 2) * (VK_LAYOUT_WIDTH - 2) + 4, (vkfont_chr_height + 2 * 2) * 3 + 4, (vkfont_chr_width_pixels + 2 * 2) * 2, vkfont_chr_height + 2 * 2);
-        }
-        else
-        {
-            vk_invert_area(virtual_keyboard_surface, (vkfont_chr_width_pixels + 2 * 2) * virtual_keyboard_pos_x + 4, (vkfont_chr_height + 2 * 2) * virtual_keyboard_pos_y + 4, vkfont_chr_width_pixels + 2 * 2, vkfont_chr_height + 2 * 2);
-        }
-
-        if (SDL_LockTexture(virtual_keyboard_texture, NULL, &virtual_keyboard_texture_surface->pixels, &virtual_keyboard_texture_surface->pitch) >= 0)
-        {
-            SDL_UpperBlit(virtual_keyboard_surface, NULL, virtual_keyboard_texture_surface, NULL);
-            SDL_UnlockTexture(virtual_keyboard_texture);
-        }
-
-        SDL_RenderCopy(renderer, virtual_keyboard_texture, NULL, &vkrect);
-    }
-
-    return 1;
-}
-
 static void open_controller_or_joystick(int device_index)
 {
     int num_joysticks, index;
@@ -1019,56 +681,6 @@ static int check_controller_event(SDL_Event *event, int remove)
     if ((x <= Controller_Deadzone) && (x >= -Controller_Deadzone)) x = 0;
     y = controller_axis_y;
     if ((y <= Controller_Deadzone) && (y >= -Controller_Deadzone)) y = 0;
-
-    if (virtual_keyboard_state)
-    {
-        if ((x <= 8192) && (x >= -8192)) x = 0;
-        if ((y <= 8192) && (y >= -8192)) y = 0;
-
-        if ((x != 0) || (y != 0))
-        {
-            diff = SoundEngine_Counter - controller_mouse_last_time;
-
-            if (diff >= 10)
-            {
-                controller_mouse_last_time = SoundEngine_Counter;
-
-                if (y > 0)
-                {
-                    virtual_keyboard_pos_y = (virtual_keyboard_pos_y < 3) ? virtual_keyboard_pos_y + 1 : 0;
-                }
-                else if (y < 0)
-                {
-                    virtual_keyboard_pos_y = (virtual_keyboard_pos_y) ? virtual_keyboard_pos_y - 1 : 3;
-                }
-
-                if (x > 0)
-                {
-                    if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                    {
-                        virtual_keyboard_pos_x = 0;
-                    }
-                    else
-                    {
-                        virtual_keyboard_pos_x = (virtual_keyboard_pos_x < (VK_LAYOUT_WIDTH - 1)) ? virtual_keyboard_pos_x + 1 : 0;
-                    }
-                }
-                else if (x < 0)
-                {
-                    if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                    {
-                        virtual_keyboard_pos_x = (VK_LAYOUT_WIDTH - 3);
-                    }
-                    else
-                    {
-                        virtual_keyboard_pos_x = (virtual_keyboard_pos_x) ? virtual_keyboard_pos_x - 1 : (VK_LAYOUT_WIDTH - 1);
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
 
     if ((x != 0) || (y != 0))
     {
@@ -1428,7 +1040,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
             // key events; GAME_WINAPI_KEY_MESSAGES 0 (Game_hooks.h): the game reads
             // its keys elsewhere (DirectInput, the BIOS queue), and the message
             // pump must not deliver them too
-            if (GAME_WINAPI_KEY_MESSAGES && !virtual_keyboard_state)
+            if (GAME_WINAPI_KEY_MESSAGES)
             {
                 keep_event = 1;
             }
@@ -1494,10 +1106,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
         case SDL_MOUSEMOTION:
             // mouse motion events
-            if (!virtual_keyboard_state)
-            {
-                keep_event = 1;
-            }
+            keep_event = 1;
             mouse_buttons = event->motion.state;
             if (mouse_right_button_mod && (mouse_buttons & SDL_BUTTON_LMASK))
             {
@@ -1530,10 +1139,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
             else mouse_button = -1;
             if (mouse_button >= 0)
             {
-                if (!virtual_keyboard_state)
-                {
-                    keep_event = 1;
-                }
+                keep_event = 1;
             }
 
             mouse_x = event->button.x;
@@ -1573,43 +1179,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 {
                     if ((event->jhat.value & 0x0f) != joystick_hat_position)
                     {
-                        if (virtual_keyboard_state)
-                        {
-                            if ((event->jhat.value & 1) && !(joystick_hat_position & 1)) // UP
-                            {
-                                virtual_keyboard_pos_y = (virtual_keyboard_pos_y) ? virtual_keyboard_pos_y - 1 : 3;
-                            }
-                            if ((event->jhat.value & 2) && !(joystick_hat_position & 2)) // RIGHT
-                            {
-                                if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                                {
-                                    virtual_keyboard_pos_x = 0;
-                                }
-                                else
-                                {
-                                    virtual_keyboard_pos_x = (virtual_keyboard_pos_x < (VK_LAYOUT_WIDTH - 1)) ? virtual_keyboard_pos_x + 1 : 0;
-                                }
-                            }
-                            if ((event->jhat.value & 4) && !(joystick_hat_position & 4)) // DOWN
-                            {
-                                virtual_keyboard_pos_y = (virtual_keyboard_pos_y < 3) ? virtual_keyboard_pos_y + 1 : 0;
-                            }
-                            if ((event->jhat.value & 8) && !(joystick_hat_position & 8)) // LEFT
-                            {
-                                if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                                {
-                                    virtual_keyboard_pos_x = VK_LAYOUT_WIDTH - 3;
-                                }
-                                else
-                                {
-                                    virtual_keyboard_pos_x = (virtual_keyboard_pos_x) ? virtual_keyboard_pos_x - 1 : (VK_LAYOUT_WIDTH - 1);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            keep_event = 1;
-                        }
+                        keep_event = 1;
                         event->jhat.value = (event->jhat.value & 0x0f) | (joystick_hat_position << 4); // store previous hat position in upper nibble
                         if (remove || !keep_event)
                         {
@@ -1623,15 +1193,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
         case SDL_JOYBUTTONDOWN:
         case SDL_JOYBUTTONUP:
             // joystick button event
-#ifdef PYRA
-            if (pyra_stick != NULL)
-            {
-                if (event->jbutton.button == 8) // L2 button on Pyra
-                {
-                    pyra_key_l2 = (event->type == SDL_JOYBUTTONDOWN)?1:0;
-                }
-            }
-#endif
             if (joystick != NULL)
             {
                 mouse_button = -1;
@@ -1639,91 +1200,10 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 {
                 case 0:
                 case 1:
-                    if (virtual_keyboard_state)
-                    {
-                        if (event->type == SDL_JOYBUTTONDOWN)
-                        {
-                            if (event->jbutton.button == 0)
-                            {
-                                if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 3)))
-                                {
-                                    if (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2))
-                                    {
-                                        if (virtual_keyboard_state > 0)
-                                        {
-                                            virtual_keyboard_state = -1;
-                                            if (virtual_keyboard_buflen)
-                                            {
-                                                priority_event.type = SDL_USEREVENT;
-                                                priority_event.user.code = 4;
-                                                priority_event.user.data1 = NULL;
-                                                priority_event.user.data2 = NULL;
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (virtual_keyboard_buflen)
-                                        {
-                                            virtual_keyboard_buflen--;
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    if (virtual_keyboard_buflen < 2 * VK_LAYOUT_WIDTH)
-                                    {
-                                        virtual_keyboard_buffer[virtual_keyboard_buflen] = virtual_keyboard_layout[virtual_keyboard_altlayout][virtual_keyboard_pos_y][virtual_keyboard_pos_x];
-                                        virtual_keyboard_buflen++;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                if (virtual_keyboard_buflen)
-                                {
-                                    virtual_keyboard_buflen--;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        mouse_button = event->jbutton.button;
-                    }
-                    break;
-                case 2:
-                    if (event->type == SDL_JOYBUTTONDOWN)
-                    {
-                        if (!virtual_keyboard_disabled)
-                        {
-                            if (virtual_keyboard_state <= 0)
-                            {
-                                virtual_keyboard_state = 1;
-                                virtual_keyboard_pos_x = 0;
-                                virtual_keyboard_pos_y = 0;
-                                virtual_keyboard_altlayout = 0;
-                                virtual_keyboard_buflen = 0;
-                            }
-                            else
-                            {
-                                virtual_keyboard_state = -1;
-                            }
-                        }
-                    }
+                    mouse_button = event->jbutton.button;
                     break;
                 case 3:
-                    if (virtual_keyboard_state)
-                    {
-                        if (event->type == SDL_JOYBUTTONDOWN)
-                        {
-                            virtual_keyboard_altlayout = 1 - virtual_keyboard_altlayout;
-                        }
-                    }
-                    else
-                    {
-                        keep_event = 1;
-                    }
+                    keep_event = 1;
                     break;
                 default:
                     break;
@@ -1743,7 +1223,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
              * SC_CLOSE with nothing, and whichever thread dequeues this event takes
              * it from main.c's loop, so end the game thread the way main.c would. */
             if (GAME_CLOSE_REQUEST()) break;
-            virtual_keyboard_state = 0;
             Thread_Exit = 1;
             SDL_SemPost(Game_FlipSem);
             Game_StopMain();
@@ -1804,86 +1283,11 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 {
                 case SDL_CONTROLLER_BUTTON_A:
                 case SDL_CONTROLLER_BUTTON_X:
-                    if (virtual_keyboard_state)
-                    {
-                        if (event->type == SDL_CONTROLLERBUTTONDOWN)
-                        {
-                            if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 3)))
-                            {
-                                if (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2))
-                                {
-                                    if (virtual_keyboard_state > 0)
-                                    {
-                                        virtual_keyboard_state = -1;
-                                        if (virtual_keyboard_buflen)
-                                        {
-                                            priority_event.type = SDL_USEREVENT;
-                                            priority_event.user.code = 4;
-                                            priority_event.user.data1 = NULL;
-                                            priority_event.user.data2 = NULL;
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    if (virtual_keyboard_buflen)
-                                    {
-                                        virtual_keyboard_buflen--;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                if (virtual_keyboard_buflen < 2 * VK_LAYOUT_WIDTH)
-                                {
-                                    virtual_keyboard_buffer[virtual_keyboard_buflen] = virtual_keyboard_layout[virtual_keyboard_altlayout][virtual_keyboard_pos_y][virtual_keyboard_pos_x];
-                                    virtual_keyboard_buflen++;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        mouse_button = 0;
-                    }
+                    mouse_button = 0;
                     break;
                 case SDL_CONTROLLER_BUTTON_B:
                 case SDL_CONTROLLER_BUTTON_Y:
-                    if (virtual_keyboard_state)
-                    {
-                        if (event->type == SDL_CONTROLLERBUTTONDOWN)
-                        {
-                            if (virtual_keyboard_buflen)
-                            {
-                                virtual_keyboard_buflen--;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        mouse_button = 1;
-                    }
-                    break;
-
-                case SDL_CONTROLLER_BUTTON_START:
-                    if (event->type == SDL_CONTROLLERBUTTONDOWN)
-                    {
-                        if (!virtual_keyboard_disabled)
-                        {
-                            if (virtual_keyboard_state <= 0)
-                            {
-                                virtual_keyboard_state = 1;
-                                virtual_keyboard_pos_x = 0;
-                                virtual_keyboard_pos_y = 0;
-                                virtual_keyboard_altlayout = 0;
-                                virtual_keyboard_buflen = 0;
-                            }
-                            else
-                            {
-                                virtual_keyboard_state = -1;
-                            }
-                        }
-                    }
+                    mouse_button = 1;
                     break;
 
                 case SDL_CONTROLLER_BUTTON_BACK:
@@ -1891,48 +1295,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
                 case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                    if (virtual_keyboard_state)
-                    {
-                        if (event->type == SDL_CONTROLLERBUTTONDOWN)
-                        {
-                            switch (event->cbutton.button)
-                            {
-                            case SDL_CONTROLLER_BUTTON_BACK:
-                                virtual_keyboard_altlayout = 1 - virtual_keyboard_altlayout;
-                                break;
-                            case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                                virtual_keyboard_pos_y = (virtual_keyboard_pos_y) ? virtual_keyboard_pos_y - 1 : 3;
-                                break;
-                            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                                virtual_keyboard_pos_y = (virtual_keyboard_pos_y < 3) ? virtual_keyboard_pos_y + 1 : 0;
-                                break;
-                            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                                if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                                {
-                                    virtual_keyboard_pos_x = (VK_LAYOUT_WIDTH - 3);
-                                }
-                                else
-                                {
-                                    virtual_keyboard_pos_x = (virtual_keyboard_pos_x) ? virtual_keyboard_pos_x - 1 : (VK_LAYOUT_WIDTH - 1);
-                                }
-                                break;
-                            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                                if ((virtual_keyboard_pos_y == 3) && (virtual_keyboard_pos_x >= (VK_LAYOUT_WIDTH - 2)))
-                                {
-                                    virtual_keyboard_pos_x = 0;
-                                }
-                                else
-                                {
-                                    virtual_keyboard_pos_x = (virtual_keyboard_pos_x < (VK_LAYOUT_WIDTH - 1)) ? virtual_keyboard_pos_x + 1 : 0;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        keep_event = 1;
-                    }
+                    keep_event = 1;
                     break;
 
                 default:
@@ -1968,11 +1331,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
                     controller_axis_y = 0;
                     controller_mouse_motion = 0;
 
-                    if (virtual_keyboard_state)
-                    {
-                        virtual_keyboard_state = -1;
-                    }
-
                     printf("Controller disconnected\n");
                 }
             }
@@ -2004,10 +1362,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
 #endif
             if (mouse_window != NULL)
             {
-                if (!virtual_keyboard_state)
-                {
-                    keep_event = 1;
-                }
+                keep_event = 1;
                 if (event->type == SDL_FINGERMOTION)
                 {
                     SDL_Rect viewport;
@@ -2023,15 +1378,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 }
                 else if (event->type == SDL_FINGERDOWN)
                 {
-#ifdef PYRA
-                    if (pyra_key_l2 || (keyboard_mods & KMOD_RALT)) // L2/R2 button on Pyra
-                    {
-                        event->tfinger.timestamp |= 1; // remember which mouse button
-                        mouse_buttons |= SDL_BUTTON_RMASK;
-                        mouse_right_button_mod = 1;
-                    }
-                    else
-#endif
                     {
                         event->tfinger.timestamp &= 0xfffffffeUL; // remember which mouse button
                         mouse_buttons |= SDL_BUTTON_LMASK;
@@ -2075,11 +1421,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
                     controller_axis_y = 0;
                     controller_mouse_motion = 0;
 
-                    if (virtual_keyboard_state)
-                    {
-                        virtual_keyboard_state = -1;
-                    }
-
                     printf("Joystick disconnected\n");
                 }
             }
@@ -2114,7 +1455,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
             case SDL_WINDOWEVENT_CLOSE:
                 /* without a WM the close of the window is only this event */
                 if (GAME_CLOSE_REQUEST()) break;
-                virtual_keyboard_state = 0;
                 Thread_Exit = 1;
                 SDL_SemPost(Game_FlipSem);
                 Game_StopMain();
@@ -2261,17 +1601,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
         0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x07, 0x0c, /*  80- 95 */
         0x29, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  96-111 */
         0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x29, 0x53, /* 112-127 */
-    };
-
-    const static uint8_t vk_shift_table[128] = {
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0- 15 */
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  16- 31 */
-        0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, /*  32- 47 */
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, /*  48- 63 */
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /*  64- 79 */
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, /*  80- 95 */
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  96-111 */
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, /* 112-127 */
     };
 
     memset((void *)lpMsg, 0, sizeof(msg));
@@ -2838,57 +2167,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
         case 3:
             lpMsg->message = WM_APP + event->user.code - 2;
             break;
-        case 4:
-            index = virtual_keyboard_buffer[(uintptr_t)event->user.data1];
-            switch ((uintptr_t)event->user.data2)
-            {
-            case 0:
-                translate_key(lpMsg, 1, VK_SHIFT, 0x36, 0); // release right shift
-                if (remove)
-                {
-                    event->user.data2 = (void *)(intptr_t)1;
-                }
-                break;
-            case 1:
-                translate_key(lpMsg, (vk_shift_table[index])?0:1, VK_SHIFT, 0x2a, 0); // press/release left shift
-                if (remove)
-                {
-                    event->user.data2 = (void *)(intptr_t)2;
-                }
-                break;
-            case 2:
-                translate_key(lpMsg, 0, vkey_table[index], scancode_table[index], 0); // press key
-                if (remove)
-                {
-                    event->user.data2 = (void *)(intptr_t)3;
-                }
-                break;
-            case 3:
-                translate_key(lpMsg, 1, vkey_table[index], scancode_table[index], 0); // release key
-                if (remove)
-                {
-                    if (1 + (intptr_t)event->user.data1 < virtual_keyboard_buflen)
-                    {
-                        event->user.data1 = (void *)(1 + (uintptr_t)event->user.data1);
-                        event->user.data2 = (void *)(intptr_t)((vk_shift_table[index] == vk_shift_table[virtual_keyboard_buffer[(uintptr_t)event->user.data1]])?2:1);
-                    }
-                    else
-                    {
-                        event->user.data2 = (void *)(intptr_t)((vk_shift_table[index])?4:5);
-                    }
-                }
-                break;
-            case 4:
-                translate_key(lpMsg, 1, VK_SHIFT, 0x2a, 0); // release left shift
-                if (remove)
-                {
-                    event->user.data2 = (void *)(intptr_t)5;
-                }
-                break;
-            }
-            break;
-        case 5:
-            break;
         case EC_WINAPI_TIMER:
             /* Timer callback: data1 = guest function address, data2 = dwUser of timeSetEvent.
                The callback is a stdcall TIMECALLBACK taking 5 arguments. */
@@ -3056,18 +2334,6 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
     priority_event.type = 0;
     controller_mouse_last_time = SoundEngine_Counter;
 
-#ifdef PYRA
-    if (pyra_stick == NULL)
-    {
-        SDL_InitSubSystem(SDL_INIT_JOYSTICK);
-
-        pyra_stick = SDL_JoystickOpen(0);
-        if (pyra_stick == NULL)
-        {
-            SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
-        }
-    }
-#else
     if (Input_GameController && (joystick == NULL) && (controller == NULL))
     {
         SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
@@ -3081,7 +2347,6 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
 
         open_controller_or_joystick(-1);
     }
-#endif
 
     return PSEUDO_HANDLE_MAIN_WINDOW;
 }
@@ -3664,6 +2929,7 @@ uint32_t CCALL OffsetRect_c(void *lprc, int32_t dx, int32_t dy)
  * send it. */
 static int peek_idle(void *lpMsg)
 {
+    (void)lpMsg;
 #if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
     if (activate_app_state < 2 && lpfnWndProc != NULL && lpMsg != NULL)
     {
@@ -3672,19 +2938,6 @@ static int peek_idle(void *lpMsg)
         ((lpmsg)lpMsg)->wParam = (activate_app_state == 0) ? 0 : 1;
         ((lpmsg)lpMsg)->lParam = 0;
         activate_app_state++;
-        return 1;
-    }
-#endif
-#if GAME_WINAPI_COMMAND_ON_IDLE
-    if (activate_app_state == 2 && lpfnWndProc != NULL && lpMsg != NULL && GAME_WINAPI_COMMAND_READY())
-    {
-        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-        ((lpmsg)lpMsg)->message = WM_COMMAND;
-        ((lpmsg)lpMsg)->wParam = GAME_WINAPI_COMMAND_ON_IDLE;
-        ((lpmsg)lpMsg)->lParam = 0;
-        activate_app_state++;
-        /* After New Game, schedule a WM_PAINT on the next idle cycle */
-        post_command_redraw = 1;
         return 1;
     }
 #endif
@@ -3698,16 +2951,6 @@ static int peek_idle(void *lpMsg)
         return 1;
     }
 #endif
-
-    if (post_command_redraw && lpfnWndProc != NULL && lpMsg != NULL)
-    {
-        ((lpmsg)lpMsg)->hwnd = (void *)PSEUDO_HANDLE_MAIN_WINDOW;
-        ((lpmsg)lpMsg)->message = WM_PAINT;
-        ((lpmsg)lpMsg)->wParam = 0;
-        ((lpmsg)lpMsg)->lParam = 0;
-        post_command_redraw = 0;
-        return 1;
-    }
 
     if (Game_Wing_Tick != NULL)
     {

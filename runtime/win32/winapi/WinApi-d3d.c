@@ -2821,22 +2821,12 @@ int Winapi_Direct3DGL(void)
 /* The presentation and the context live in the GL backend
  * (runtime/win32/gl/WinApi-d3dgl.c). */
 
-void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window)
-{
-    Winapi_D3dGLPresent(prim, window);
-}
-
 void Winapi_D3dPresentDeinit(void)
 {
     Winapi_D3dGLShutdown();
 }
 
 #else
-
-void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window)
-{
-    (void)prim; (void)window;
-}
 
 void Winapi_D3dPresentDeinit(void)
 {

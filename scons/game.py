@@ -761,8 +761,7 @@ if want('obj'):
                + [os.path.join(SDK_ROOT, 'extern', 'tsf')]
                + ([os.path.join(RUNTIME_CORE, 'gl'),
                    os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
-               + [os.path.join(RUNTIME_CORE, 'display'),
-                  os.path.join(SR_ROOT, 'scaler-plugins'), LLASM_SUPPORT])
+               + [os.path.join(RUNTIME_CORE, 'display'), LLASM_SUPPORT])
 
     VariantDir(obj_game, GAME_DIR, duplicate=0)
 

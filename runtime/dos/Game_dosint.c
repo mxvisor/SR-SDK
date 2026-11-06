@@ -162,11 +162,6 @@ uint32_t Game_DosGetVector(uint8_t vector)
     return vectors[vector];
 }
 
-void Game_DosSetVector(uint8_t vector, uint32_t address)
-{
-    vectors[vector] = address;
-}
-
 int Game_DosGuestInterruptsEnabled(void)
 {
     return X86_InterruptFlag != 0 && !isr_running;

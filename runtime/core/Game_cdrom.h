@@ -63,7 +63,6 @@ extern "C" {
 int Game_CdInit(const char *game_dir);
 void Game_CdDeinit(void);
 int Game_CdPresent(void);
-const char *Game_CdCue(void);
 
 /* `path` is relative to the CD's root, '\' or '/' separated, any case. */
 int Game_CdFind(const char *path, game_cd_entry *entry);

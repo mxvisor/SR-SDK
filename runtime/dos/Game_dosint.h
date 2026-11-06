@@ -43,7 +43,6 @@ extern "C" {
 void Game_DosIntInit(uint32_t null_isr);
 
 uint32_t Game_DosGetVector(uint8_t vector);
-void Game_DosSetVector(uint8_t vector, uint32_t address);
 
 /* Runs the guest code at target as a hardware interrupt runs a handler: an
  * iret frame (return address 0, which unwinds to the host), IF set, the

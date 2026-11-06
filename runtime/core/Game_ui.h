@@ -67,7 +67,7 @@ void Game_UiPictureRect(int window_w, int window_h, int width, int height, SDL_R
 void Game_UiSetRepaint(void (*repaint)(void));
 void Game_UiRepaint(void);
 
-/* Text in the font of the virtual keyboard (ASCII; Latin-1 letters lose their
+/* Text in the bitmap font of VKfont2.h (ASCII; Latin-1 letters lose their
  * accents), h pixels high */
 int Game_UiTextWidth(const char *text, int h);
 void Game_UiText(SDL_Renderer *renderer, const char *text, int x, int y, int h);

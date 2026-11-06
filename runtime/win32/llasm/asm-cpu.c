@@ -84,6 +84,13 @@ EXTERNC _cpu *x86_initialize_cpu(void)
     return cpu;
 }
 
+/* the CPU of this thread, NULL on a thread that runs no guest code; nothing
+ * is allocated (a crash report asks, Game-asm.c) */
+EXTERNC _cpu *x86_current_cpu(void)
+{
+    return thread_cpu_ptr;
+}
+
 EXTERNC void x86_deinitialize_cpu(void)
 {
     _cpu *cpu;

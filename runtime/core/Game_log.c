@@ -26,25 +26,73 @@
  * stopped, and the report of a crash (Game_log.h).  Elsewhere only the report
  * of a crash. */
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "Game_log.h"
+#include "Game_memory.h"
+
+/* the registers of the guest code of this thread (Game-asm.c) */
+#ifdef __cplusplus
+extern "C"
+#endif
+int Game_GuestRegisters(uint32_t regs[8]);
+
+/* copies guest memory without faulting again: 0 when it is not readable */
+static int Crash_Copy(void *dst, uintptr_t src, size_t size);
+
+/* The guest's side of a crash: an address in the guest's window as the guest
+ * sees it, the registers of the guest code that ran on the thread and the top
+ * of its stack. */
+static void Crash_GuestAddress(FILE *f, const char *what, uintptr_t address)
+{
+    if (address >= (uintptr_t)pointer_offset && address - (uintptr_t)pointer_offset < 0x100000000ull)
+    {
+        fprintf(f, "  %s: guest address %08" PRIx32 "\n", what, (uint32_t)(address - (uintptr_t)pointer_offset));
+    }
+}
+
+static void Crash_Guest(FILE *f)
+{
+    uint32_t regs[8], stack[16];
+    unsigned int index;
+
+    if (!Game_GuestRegisters(regs)) return;
+    fprintf(f, "  guest: eax=%08" PRIx32 " ecx=%08" PRIx32 " edx=%08" PRIx32 " ebx=%08" PRIx32
+               " esp=%08" PRIx32 " ebp=%08" PRIx32 " esi=%08" PRIx32 " edi=%08" PRIx32 "\n",
+            regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6], regs[7]);
+    if (Crash_Copy(stack, (uintptr_t)pointer_offset + regs[4], sizeof(stack)))
+    {
+        fprintf(f, "  guest stack:");
+        for (index = 0; index < 16; index++) fprintf(f, "%s %08" PRIx32, (index == 8) ? "\n              " : "", stack[index]);
+        fprintf(f, "\n");
+    }
+}
 
 #if !defined(_WIN32)
 
-#include <inttypes.h>
 #include <signal.h>
-#include <string.h>
 #include <ucontext.h>
+#include <unistd.h>
 #include <dlfcn.h>
 #if defined(__ANDROID__)
 #include <SDL.h>
 #endif
 
 #include "Game_defs.h"
-#include "Game_memory.h"
+
+/* guest memory is read through a pipe: write() fails with EFAULT on an
+ * address that is not readable, where a read would fault again */
+static int Crash_Pipe[2] = { -1, -1 };
+
+static int Crash_Copy(void *dst, uintptr_t src, size_t size)
+{
+    if (Crash_Pipe[1] < 0 || write(Crash_Pipe[1], (const void *)src, size) != (ssize_t)size) return 0;
+    return read(Crash_Pipe[0], dst, size) == (ssize_t)size;
+}
 
 /* A signal nobody handles ends the process without a word.  Write what is
  * known (the signal, the address, the registers, the module and offset of the
@@ -75,7 +123,7 @@ static void Crash_Report(FILE *f, int sig, uintptr_t addr, uintptr_t pc, const u
     fprintf(f, ", pointer_offset %p", (void *)(uintptr_t)pointer_offset);
     fprintf(f, "\n");
     /* a jump to an address outside of the code is not a read of zeros */
-    if (pc == addr) fprintf(f, "  the guest jumped to %" PRIxPTR " (guest address %" PRIxPTR ")\n", addr, addr - (uintptr_t)pointer_offset);
+    Crash_GuestAddress(f, (pc == addr) ? "a jump to the address" : "the address", addr);
     Crash_Symbol(f, pc);
 #if defined(__x86_64__) && defined(REG_RIP)
     {
@@ -99,6 +147,7 @@ static void Crash_Report(FILE *f, int sig, uintptr_t addr, uintptr_t pc, const u
 #else
     (void)context;
 #endif
+    Crash_Guest(f);
     fflush(f);
 }
 
@@ -142,6 +191,7 @@ void Game_CrashHandlerInstall(void)
 
     if (external != NULL) snprintf(Crash_Path, sizeof(Crash_Path), "%s/crash-native.txt", external);
 #endif
+    if (pipe(Crash_Pipe) != 0) Crash_Pipe[0] = Crash_Pipe[1] = -1;
     memset(&action, 0, sizeof(action));
     action.sa_sigaction = Crash_Handler;
     action.sa_flags = SA_SIGINFO | SA_NODEFER;
@@ -244,9 +294,18 @@ void Game_LogShow(void)
     MessageBoxA(NULL, text, GAME_NAME, MB_OK | MB_ICONERROR);
 }
 
-/* An exception nobody handles ends the process without a word.  Write what
- * is known (code, address with its module, registers, the faulting access,
- * the stack) to the log, then let Windows go on. */
+static int Crash_Copy(void *dst, uintptr_t src, size_t size)
+{
+    SIZE_T done = 0;
+
+    return ReadProcessMemory(GetCurrentProcess(), (LPCVOID)src, dst, size, &done) && done == size;
+}
+
+/* An exception nobody handles ends the process without a word, or leaves a
+ * frozen window behind Windows' dialog.  Write what is known (code, address
+ * with its module, registers, the faulting access, the stack, the guest's
+ * registers) to the log and end the process.  What is not an error (a debug
+ * message, a thread's name, a breakpoint) goes on to the next handler. */
 static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
 {
     EXCEPTION_RECORD *record = info->ExceptionRecord;
@@ -254,6 +313,12 @@ static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
     HMODULE module = NULL;
     char name[MAX_PATH] = "?";
     uintptr_t address = (uintptr_t)record->ExceptionAddress;
+
+    if (record->ExceptionCode < 0x80000000u || record->ExceptionCode == EXCEPTION_BREAKPOINT ||
+        record->ExceptionCode == EXCEPTION_SINGLE_STEP)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
 
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)address, &module))
     {
@@ -265,6 +330,7 @@ static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
     {
         fprintf(stderr, "  %s address %p\n", record->ExceptionInformation[0] == 0 ? "read of" : (record->ExceptionInformation[0] == 1 ? "write to" : "execute of"),
                 (void *)record->ExceptionInformation[1]);
+        Crash_GuestAddress(stderr, "the address", (uintptr_t)record->ExceptionInformation[1]);
     }
 #if defined(_M_X64) || defined(__x86_64__)
     fprintf(stderr, "  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n  r8 =%016llx r9 =%016llx r10=%016llx r11=%016llx\n  r12=%016llx r13=%016llx r14=%016llx r15=%016llx\n",
@@ -290,8 +356,10 @@ static LONG WINAPI Crash_Filter(EXCEPTION_POINTERS *info)
         }
     }
 #endif
+    Crash_Guest(stderr);
     fflush(stderr);
-    return EXCEPTION_CONTINUE_SEARCH;
+    TerminateProcess(GetCurrentProcess(), 3);
+    return EXCEPTION_EXECUTE_HANDLER;
 }
 
 void Game_CrashHandlerInstall(void)

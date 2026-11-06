@@ -255,7 +255,7 @@ turns a guest address into a pointer and back with `GAME_GUEST32_TO_PTR` /
   under the same name.
 
 Headers are looked up in `game/` first, then in the runtime, then in SR's
-`scaler-plugins/` and `llasm-support/`. A runtime `.c` finds the runtime's own
+`llasm-support/`. A runtime `.c` finds the runtime's own
 headers first, so a header the game overrides affects only the game's code.
 
 ## What a game provides
@@ -337,7 +337,6 @@ the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
 | `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: the host pointer is hidden and held in the window from the first click in it until the focus is lost |
-| `GAME_WINAPI_COMMAND_ON_IDLE`, `GAME_WINAPI_COMMAND_READY()` | the command id the program gets when the user picks the first item of its menu (0: none), and whether the program is ready for it (default 1) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D`; the log says which renderer runs |
 | `GAME_D3D_FOG_HIDDEN` | optional: an expression, non-zero while a toggle of the port hides the fog the program turns on (read at every draw; Direct3D on OpenGL) |
 | `GAME_D3D_FOG_TABLE_W` | optional: an expression, the 64 bytes of a fog table as Glide's `grFogTable` (by W, 0 no fog, 255 all) or `NULL`: with a table the fog of a vertex comes from its W, not from its specular alpha, and is drawn whatever `RS_FOGENABLE` says (a driver that has such a table but looks it up by z) |
@@ -402,7 +401,7 @@ tools/run_common.sh     the common part of a game's run-sdl.sh / run-sdl-wine.sh
 tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)
 tools/regress/          regression checks: SR's output, builds, smoke tests, llasm hashes
 android/                what the APK adds to SDL's android-project
-runtime/core/           threads, memory, frontends, virtual keyboard, printf,
+runtime/core/           threads, memory, frontends, the OSD and its font, printf,
                         Android start-up, and what the DOS and the Win32 ports
                         share: WATCOM C library and file I/O (Game_clib, Game_vfs,
                         Game_file), the game directory (Game_gamedir), CD image

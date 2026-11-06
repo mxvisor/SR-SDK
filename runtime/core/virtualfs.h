@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright (C) 2016 Roman Pauer
+ *  Copyright (C) 2026 mxvisor
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -38,6 +39,5 @@ void vfs_visit_dir(file_entry *dir);
 int vfs_get_real_name(const char *origdosname, char *buf, file_entry **realdir);
 void vfs_add_file(file_entry *dir, const char *filepath, int attributes);
 file_entry *vfs_get_current_dir(void);
-file_entry *vfs_set_current_dir(const char *newdir);
 
 #endif /* _VIRTUALFS_H_INCLUDED_ */

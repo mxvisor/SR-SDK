@@ -58,8 +58,6 @@ struct SDL_Window;
  * software rasteriser (its picture goes through OpenGL too). */
 int Winapi_Direct3DGL(void);
 
-/* the GL presentation of the primary surface: convert, upload, scaled quad */
-void Winapi_D3dPresentSurface(struct IDirectDrawSurface_c *prim, struct SDL_Window *window);
 /* the GL context and the present texture go away (the window is going away) */
 void Winapi_D3dPresentDeinit(void);
 

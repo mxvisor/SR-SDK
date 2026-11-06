@@ -66,6 +66,7 @@ extern "C" {
 #endif
 
 extern _cpu *x86_initialize_cpu(void);
+extern _cpu *x86_current_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
 extern void CCALL GAME_ENTRY(CPU);
@@ -176,4 +177,17 @@ int CCALL Game_Main_Asm(int argc, char *argv[])
 
         return main_return_value;
     }
+}
+
+/* The guest's registers for a crash report (Game_log.c): eax, ecx, edx, ebx,
+ * esp, ebp, esi, edi of the CPU of this thread (of the game on DOS); 0 when
+ * there is none. */
+EXTERNC int Game_GuestRegisters(uint32_t regs[8])
+{
+    _cpu *cpu = x86_current_cpu();
+
+    if (cpu == NULL) return 0;
+    regs[0] = eax; regs[1] = ecx; regs[2] = edx; regs[3] = ebx;
+    regs[4] = esp; regs[5] = ebp; regs[6] = esi; regs[7] = edi;
+    return 1;
 }

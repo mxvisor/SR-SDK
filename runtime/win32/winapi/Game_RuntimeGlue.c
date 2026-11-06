@@ -107,26 +107,6 @@ EXTERNC uint32_t Winapi_HostToGuestPtr(void *p)
     return PTR2REG(p);
 }
 
-EXTERNC void *Winapi_GuestToHostPtr(uint32_t p)
-{
-    _cpu *cpu = x86_initialize_cpu();
-
-    if (p == 0) return 0;
-    return REG2PTR(p);
-}
-
-EXTERNC uint32_t Winapi_ReadGuest32(uint32_t addr)
-{
-    _cpu *cpu = x86_initialize_cpu();
-    return *((uint32_t *)REG2PTR(addr));
-}
-
-EXTERNC uint32_t Winapi_GuestEsp(void)
-{
-    _cpu *cpu = x86_initialize_cpu();
-    return esp;
-}
-
 EXTERNC void CCALL run_thread_asm(void *arglist, void (*start_address)(void *))
 {
     _cpu *cpu;

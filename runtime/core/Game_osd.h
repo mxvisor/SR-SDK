@@ -65,7 +65,6 @@ void Game_OsdAddItem(const Game_OsdItem *entry);
 
 /* opens or closes the panel (the display key, Back on Android) */
 void Game_OsdToggle(void);
-void Game_OsdClose(void);
 /* the panel is open: it takes the input */
 int Game_OsdOpen(void);
 /* after the settings: the runtime's items, then GAME_OSD_ITEMS() */

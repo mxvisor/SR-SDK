@@ -607,11 +607,6 @@ int Game_CdPresent(void)
     return data_file != NULL || disc_dir[0] != 0;
 }
 
-const char *Game_CdCue(void)
-{
-    return cue_path;
-}
-
 int Game_CdTrackInfo(int track, int32_t *start_frames, int *audio)
 {
     if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present) return -1;

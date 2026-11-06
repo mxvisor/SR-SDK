@@ -23,10 +23,8 @@
  *
  */
 
-/* The variables of Game_vars.h and Game_CleanState, which the thread code
- * calls when the guest's main thread ends. */
-
-#include <string.h>
+/* The variables of Game_vars.h and Game_CleanState, which the game thread
+ * calls before it runs the game. */
 
 #include <SDL.h>
 
@@ -39,36 +37,17 @@
 #include "Game_memory.h"
 #include "main.h"
 
-/* Game_CleanState of SR's DOS ports minus display/semaphore pieces the port does not own. */
+/* The state the game thread starts with (Game_MainThread): the video bank at
+ * the start of the video memory and the event queues empty. */
 void Game_CleanState(int imm)
 {
-    int i;
-
     (void)imm;
-
-    for (i = 0; i < 256; i++)
-    {
-        if (Game_AllocatedMemory[i] != NULL)
-        {
-            x86_free(Game_AllocatedMemory[i]);
-            Game_AllocatedMemory[i] = NULL;
-        }
-    }
 
     Game_ScreenWindow = Game_FrameBuffer;
     Game_ScreenWindowNum = 0;
-    Game_DisplayStart = 0;
-    Game_NextMemory = 0;
 
     Game_MQueueWrite = 0;
     Game_MQueueRead = 0;
     Game_KQueueWrite = 0;
     Game_KQueueRead = 0;
-    Game_KBufferWrite = 0;
-    Game_KBufferRead = 0;
-    Game_LastKeyStroke = 0;
-
-    memset(&Game_InterruptTable, 0, sizeof(Game_InterruptTable));
-    memset(&Game_MouseTable, 0, sizeof(Game_MouseTable));
-    memset(&Game_Palette_Or, 0, sizeof(Game_Palette_Or));
 }

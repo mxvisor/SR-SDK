@@ -21,8 +21,8 @@ follows:
 [mxvisor/SR](https://github.com/mxvisor/SR) of
 [M-HT/SR](https://github.com/M-HT/SR), branch `master`, which is upstream plus
 fixes that can be offered back to it. SR-SDK does not change it. The build uses
-`SR/SR/llasm-support/` (the `llasm_*.c` support code) and
-`SR/scaler-plugins/scaler-plugins.h` from there directly, without copies.
+`SR/SR/llasm-support/` (the `llasm_*.c` support code) from there directly,
+without copies.
 
 ## TinySoundFont and TinyMidiLoader
 
@@ -66,7 +66,6 @@ Each of these is identical to a file of one of SR's game ports in
 | File | Copyright |
 |---|---|
 | `runtime/core/Game_defs.h` | Roman Pauer |
-| `runtime/core/Game_scalerplugin.h` | Roman Pauer |
 | `runtime/core/VKfont2.h` | font bitmap data, from SR |
 | `runtime/core/audio.h`, `display.h`, `input.h`, `main.h` | Roman Pauer |
 | `runtime/core/display/palette32bgra.h`, `palettecommon.h` | Roman Pauer |
@@ -83,7 +82,6 @@ Each of these is identical to a file of one of SR's game ports in
 | `runtime/core/Game_thread.c`, `.h` | the ports' `Game_thread.c`, `.h` | Roman Pauer, mxvisor |
 | `runtime/core/Game_vars.h` | the ports' `Game_vars.h` | Roman Pauer, mxvisor |
 | `runtime/core/Game_memory.c`, `.h` | the ports' `Game_memory.c`, `.h` | Roman Pauer, mxvisor |
-| `runtime/core/Game_scalerplugin.c` | the ports' `Game_scalerplugin.c` | Roman Pauer, mxvisor |
 | `runtime/core/audio/pc.c`, `input/pc.c` | the ports' `audio/pc.c`, `input/pc.c` | Roman Pauer, mxvisor |
 | `runtime/core/touchgamepad.h` | the header of the ports' runtime headers | Roman Pauer, mxvisor |
 | `scons/game.py` | the ports' `SConstruct` files | Roman Pauer, mxvisor |
