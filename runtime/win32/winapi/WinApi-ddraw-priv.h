@@ -36,9 +36,7 @@
 struct IDirectDraw_c {
     PTR32(void) lpVtbl;
     uint32_t RefCount;
-    SDL_Window *Window;
-    SDL_Renderer *Renderer;
-    SDL_Texture *Texture;
+    SDL_Window *Window;             /* the window of Winapi_ScreenOpenGL, once a mode is set */
     uint32_t width, height, bpp;
     struct IDirectDrawSurface_c *Primary;
     struct IDirectDraw_c *base;     /* IDirectDraw2 proxy only: the object it stands for */

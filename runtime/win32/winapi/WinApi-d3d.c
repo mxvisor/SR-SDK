@@ -98,7 +98,6 @@ static int d3d_logging(void)
  * <GAME>_D3D_GL=0/1 override both. */
 static int d3d_cfg_enabled = -1;    /* -1: not set */
 static int d3d_cfg_gl = -1;
-static int d3d_gl_failed;
 
 /* 3D=direct3d | software | off: Direct3D on OpenGL, Direct3D with the software
  * rasteriser, the game's own software rendering (DirectDraw).  Returns 0 for
@@ -132,13 +131,6 @@ int Winapi_Direct3DAntialiasing(void)
     const char *e = getenv(GAME_ENV("ANTIALIASING"));
     if (e != NULL) return (strcasecmp(e, "on") == 0) ? 4 : atoi(e);
     return d3d_cfg_antialiasing;
-}
-
-/* the OpenGL window could not be made: Direct3D goes on with the software rasteriser */
-void Winapi_Direct3DNoGL(void)
-{
-    d3d_gl_failed = 1;
-    fprintf(stderr, "Direct3D: no OpenGL, the software rasteriser is used\n");
 }
 
 int Winapi_Direct3DEnabled(void)
@@ -2815,7 +2807,7 @@ int Winapi_Direct3DGL(void)
 {
 #ifdef GAME_D3D_GL
     const char *e = getenv(GAME_ENV("D3D_GL"));
-    if (!Winapi_Direct3DEnabled() || d3d_gl_failed) return 0;
+    if (!Winapi_Direct3DEnabled()) return 0;
     if (e != NULL) return atoi(e) != 0;
     /* the OpenGL backend is the normal one in a d3d_gl build */
     return (d3d_cfg_gl != 0);

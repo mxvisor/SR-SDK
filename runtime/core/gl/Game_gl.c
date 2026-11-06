@@ -26,6 +26,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <SDL.h>
 #include "Game_gl.h"
 #include "Game_defs.h"
@@ -49,23 +50,43 @@
 #endif
 
 
+void Game_GlUnavailable(const char *why)
+{
+    char text[1024];
+
+    snprintf(text, sizeof(text),
+#if defined(GAME_GLES)
+             "This game needs OpenGL ES 3.0, and the device has none.\n\n"
+#else
+             "This game needs OpenGL 2.0, and the system has none.\n"
+             "Install the driver of the video card (in a virtual machine: turn on its 3D acceleration).\n\n"
+#endif
+             "%s", why);
+    eprintf(GAME_NAME ": %s\n", text);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, GAME_NAME, text, NULL);
+    /* from whatever thread: the game's threads hold no state to save yet */
+    fflush(NULL);
+    _exit(1);
+}
+
 SDL_GLContext Game_GlCreateContext(SDL_Window *window, int vsync)
 {
     SDL_GLContext context;
 
     if (window == NULL) return NULL;
     context = SDL_GL_CreateContext(window);
-    if (context == NULL)
-    {
-        eprintf("Game_Gl: SDL_GL_CreateContext: %s\n", SDL_GetError());
-        return NULL;
-    }
+    if (context == NULL) Game_GlUnavailable(SDL_GetError());
 #if !defined(GAME_GLES)
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress) || !GLAD_GL_VERSION_2_0 || !GLAD_GL_ARB_framebuffer_object)
     {
-        eprintf("Game_Gl: OpenGL 2.0 with frame buffer objects is needed\n");
-        SDL_GL_DeleteContext(context);
-        return NULL;
+        /* glad's glGetString is NULL when it could load nothing */
+        const char *version = (glGetString != NULL) ? (const char *)glGetString(GL_VERSION) : NULL;
+        const char *renderer = (glGetString != NULL) ? (const char *)glGetString(GL_RENDERER) : NULL;
+        char why[256];
+
+        snprintf(why, sizeof(why), "The OpenGL of the system: %s, %s", (version != NULL) ? version : "?",
+                 (renderer != NULL) ? renderer : "?");
+        Game_GlUnavailable(why);
     }
 #endif
     SDL_GL_SetSwapInterval(vsync ? 1 : 0);

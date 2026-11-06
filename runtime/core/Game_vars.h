@@ -106,10 +106,6 @@ EXTERNAL_VARIABLE int Game_ExtraScalerThreads;		/* number of extra threads for a
 EXTERNAL_VARIABLE Game_Advanced_Flip_Procedure Display_Advanced_Flip_Procedure;	/* advanced flip procedure */
 
 EXTERNAL_VARIABLE SDL_Window *Game_Window;
-EXTERNAL_VARIABLE SDL_Renderer *Game_Renderer;
-EXTERNAL_VARIABLE SDL_Texture *Game_Texture[3];
-EXTERNAL_VARIABLE SDL_Texture *Game_Texture2[3];
-EXTERNAL_VARIABLE SDL_Texture *Game_ScaledTexture[3];
 EXTERNAL_VARIABLE void *Game_TextureData;
 EXTERNAL_VARIABLE void *Game_TextureData2;
 EXTERNAL_VARIABLE void *Game_ScaledTextureData;

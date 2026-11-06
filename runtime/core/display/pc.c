@@ -30,7 +30,7 @@
  * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
  * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, by
  * the nearest pixel, or through the 2D filter of Display_Shader (Game_GlFilter).
- * Without OpenGL an SDL renderer shows it the same way, by the nearest pixel.
+ * Without OpenGL there is no picture: Game_GlCreateContext says so and ends.
  * The window opens at the size of mode 13h on a 4:3 monitor, 320x240
  * (Game_WindowCreate); the player makes it bigger.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
@@ -48,9 +48,7 @@
  *   GAME_DISPLAY_WINDOW_FLAGS           more SDL_WINDOW_* flags of the window
  *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip: nonzero, the game showed
  *                                       the frame itself (another renderer)
- *   GAME_DISPLAY_OVERLAY(picture)       after the picture is drawn by an SDL renderer, before
- *                                       the touch gamepad (picture: the SDL_Rect it is in)
- *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the renderer goes
+ *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the OpenGL goes
  * A game with a display altogether its own has its own game/display/pc.c with
  * Init_Display, Init_Display2, Config_Display, Cleanup_Display, Set_Palette_Value,
  * Game_Display_Create, Game_Display_Destroy and Game_Display_Flip. */
@@ -85,7 +83,7 @@ static int gl_width, gl_height;
 static int gl_create(void)
 {
     gl_context = Game_GlCreateContext(Game_Window, 1);
-    if (gl_context == NULL) return 0;
+    if (gl_context == NULL) return -1;
     glGenTextures(1, &gl_texture);
     glBindTexture(GL_TEXTURE_2D, gl_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -93,7 +91,7 @@ static int gl_create(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     gl_width = gl_height = 0;
-    return 1;
+    return 0;
 }
 
 static void gl_flip(void)
@@ -212,7 +210,7 @@ int Game_Display_Create(void)
 {
 #if defined(GAME_WINAPI) && defined(__ANDROID__)
     /* Android has one window, and a Win32 game opens its own: nothing here
-     * may take it (Game_Display_Flip draws nothing without a renderer). */
+     * may take it. */
     Game_TextureData = calloc(1024 * 768, Display_Bitsperpixel / 8);
     if (Game_TextureData == NULL)
     {
@@ -256,20 +254,10 @@ int Game_Display_Create(void)
     }
 
 #if !defined(GAME_WINAPI)
-    if (gl_create()) return 0;
-    fprintf(stderr, GAME_NAME ": no OpenGL, the picture of an SDL renderer\n");
-#endif
-
-    Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (Game_Renderer == NULL) Game_Renderer = SDL_CreateRenderer(Game_Window, -1, SDL_RENDERER_SOFTWARE);
-    if (Game_Renderer == NULL) return -1;
-
-    Game_Texture[0] = SDL_CreateTexture(Game_Renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                        Render_Width, Render_Height);
-    if (Game_Texture[0] == NULL) return -1;
-    SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
-
+    return gl_create();
+#else
     return 0;
+#endif
 }
 
 void Game_Display_Destroy(void)
@@ -286,74 +274,20 @@ void Game_Display_Destroy(void)
         gl_context = NULL;
     }
 #endif
-    if (Game_Texture[0] != NULL) SDL_DestroyTexture(Game_Texture[0]);
-    if (Game_Renderer != NULL) SDL_DestroyRenderer(Game_Renderer);
     if (Game_Window != NULL) SDL_DestroyWindow(Game_Window);
     free(Game_TextureData);
 
-    Game_Texture[0] = NULL;
-    Game_Renderer = NULL;
     Game_Window = NULL;
     Game_TextureData = NULL;
 }
 
-/* Largest 4:3 rectangle centred in the output.  Mode 13h is 320x200 with
- * non-square pixels made for a 4:3 monitor; dosbox-staging's default
- * (aspect = true) shows it the same way. */
-static void Display_PictureRect(int output_width, int output_height, SDL_Rect *rect)
-{
-    rect->w = output_width;
-    rect->h = output_width * 3 / 4;
-    if (rect->h > output_height)
-    {
-        rect->h = output_height;
-        rect->w = output_height * 4 / 3;
-    }
-    rect->x = (output_width - rect->w) / 2;
-    rect->y = (output_height - rect->h) / 2;
-}
-
-/* Main thread only, on EC_DISPLAY_FLIP_FINISH.  The frame goes into the
- * picture by the nearest pixel, as through OpenGL without a filter. */
+/* Main thread only, on EC_DISPLAY_FLIP_FINISH. */
 void Game_Display_Flip(void)
 {
-    SDL_Rect picture;
-    int output_width, output_height;
-
 #ifdef GAME_DISPLAY_FLIP
     if (GAME_DISPLAY_FLIP()) return;
 #endif
 #if !defined(GAME_WINAPI)
-    if (gl_context != NULL)
-    {
-        gl_flip();
-        return;
-    }
+    if (gl_context != NULL) gl_flip();
 #endif
-    if (Game_Renderer == NULL || Game_Texture[0] == NULL) return;
-    /* the game changed video mode: a new texture of the new size */
-    int texture_width, texture_height;
-    if (SDL_QueryTexture(Game_Texture[0], NULL, NULL, &texture_width, &texture_height) == 0 &&
-        (texture_width != (int)Render_Width || texture_height != (int)Render_Height))
-    {
-        SDL_DestroyTexture(Game_Texture[0]);
-        Game_Texture[0] = SDL_CreateTexture(Game_Renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                            Render_Width, Render_Height);
-        if (Game_Texture[0] == NULL) return;
-        SDL_SetTextureScaleMode(Game_Texture[0], SDL_ScaleModeNearest);
-    }
-    SDL_UpdateTexture(Game_Texture[0], NULL, Game_TextureData, Render_Width * Display_Bitsperpixel / 8);
-    if (SDL_GetRendererOutputSize(Game_Renderer, &output_width, &output_height) != 0) return;
-    Display_PictureRect(output_width, output_height, &picture);
-    if (picture.w <= 0 || picture.h <= 0) return;
-    Game_OsdFrame(Render_Width, Render_Height, "SDL");
-
-    SDL_SetRenderDrawColor(Game_Renderer, 0, 0, 0, 255);
-    SDL_RenderClear(Game_Renderer);
-    SDL_RenderCopy(Game_Renderer, Game_Texture[0], NULL, &picture);
-#ifdef GAME_DISPLAY_OVERLAY
-    GAME_DISPLAY_OVERLAY(&picture);
-#endif
-    Game_UiDraw(Game_Renderer);
-    SDL_RenderPresent(Game_Renderer);
 }

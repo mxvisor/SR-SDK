@@ -138,7 +138,7 @@ uint32_t CCALL DirectDrawEnumerateA_c(uint32_t callback, uint32_t context);
 void Winapi_DestroyDirectDrawWindow(void);
 
 /* the pixels of a surface as ARGB8888 rows of dstpitch bytes (the primary's
- * conversion of the SDL renderer path and of the GL one alike) */
+ * conversion for the GL picture) */
 void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int dstpitch);
 
 /* The window of a renderer that is not DirectDraw (Glide): a window for

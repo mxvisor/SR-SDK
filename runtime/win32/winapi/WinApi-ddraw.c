@@ -324,30 +324,19 @@ typedef struct _ddbltfx
 
 /* The game draws into 8-bit palettized surfaces, so unlike the 16-bit
  * only DirectDraw of the original a surface here is a plain pixel buffer of
- * 8, 16 or 32 bits per pixel. The primary surface is converted through the
- * palette (8 bpp) into one ARGB8888 streaming texture whenever it changes. */
+ * 8, 16 or 32 bits per pixel. The primary surface is shown through OpenGL
+ * (WinApi-d3dgl.c) in the window of Winapi_ScreenOpenGL whenever it changes. */
 
 #include "WinApi-ddraw-priv.h"
 #include "WinApi-d3d.h"
-#ifdef GAME_GL
 #include "WinApi-d3dgl.h"
-#endif
 
 /* the display whose primary surface the palette changes are shown on */
 static struct IDirectDraw_c *winapi_dd_screen = NULL;
-/* the window of a released DirectDraw object, kept for the next one (IDirectDraw_Release) */
-static SDL_Window *dd_spare_window = NULL;
 /* the window of Winapi_ScreenOpenGL */
 static SDL_Window *dd_gl_window = NULL;
 /* window ID of the active DirectDraw window, for focus events */
 static uint32_t winapi_dd_window_id = 0;
-
-/* the display shows its picture through OpenGL (Game_GlPresentFiltered), in the
- * window of Winapi_ScreenOpenGL, without an SDL renderer */
-static int dd_uses_gl(const struct IDirectDraw_c *dd)
-{
-    return (dd->Window != NULL) && (dd->Window == dd_gl_window);
-}
 
 uint32_t winapi_get_dd_window_id(void)
 {
@@ -375,11 +364,6 @@ void Winapi_DestroyDirectDrawWindow(void)
         SDL_DestroyWindow(winapi_dd_screen->Window);
         winapi_dd_screen->Window = NULL;
     }
-    if (dd_spare_window != NULL)
-    {
-        SDL_DestroyWindow(dd_spare_window);
-        dd_spare_window = NULL;
-    }
     if (dd_gl_window != NULL)
     {
         SDL_DestroyWindow(dd_gl_window);
@@ -394,14 +378,6 @@ extern uint32_t IDirectDrawSurfaceVtbl_asm2c;
 extern uint32_t IDirectDrawPaletteVtbl_asm2c;
 extern uint32_t IDirectDrawClipperVtbl_asm2c;
 
-
-#ifdef __cplusplus
-extern "C"
-#endif
-SDL_Renderer *GetSurfaceRenderer(struct IDirectDrawSurface_c *lpThis)
-{
-    return lpThis->dd->Renderer;
-}
 
 void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int dstpitch)
 {
@@ -460,60 +436,11 @@ static void CountFrame(void)
     }
 }
 
-#if GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__)
-static void CopyToDisplay(struct IDirectDraw_c *dd)
-{
-    SDL_Rect picture;
-    int w, h;
-
-    if (SDL_GetRendererOutputSize(dd->Renderer, &w, &h) == 0)
-    {
-        picture.w = (w * 3 > h * 4) ? h * 4 / 3 : w;
-        picture.h = (w * 3 > h * 4) ? h : w * 3 / 4;
-        picture.x = (w - picture.w) / 2;
-        picture.y = (h - picture.h) / 2;
-
-        SDL_SetRenderDrawColor(dd->Renderer, 0, 0, 0, 255);
-        SDL_RenderClear(dd->Renderer);
-        SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, &picture);
-        Game_UiDraw(dd->Renderer);
-    }
-}
-#else
-static void CopyToDisplay(struct IDirectDraw_c *dd)
-{
-    SDL_RenderCopy(dd->Renderer, dd->Texture, NULL, NULL);
-    Game_UiDraw(dd->Renderer);
-}
-#endif
-
 static void Present(struct IDirectDraw_c *dd)
 {
-    struct IDirectDrawSurface_c *prim;
-    uint8_t *dst;
-    int dstpitch;
-
     CountFrame();
-    prim = dd->Primary;
-#ifdef GAME_GL
-    if (dd_uses_gl(dd))
-    {
-        /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
-        if (prim != NULL) Winapi_D3dGLPresent(prim, dd->Window);
-        return;
-    }
-#endif
-    if ((prim == NULL) || (dd->Texture == NULL)) return;
-    Game_OsdFrame((int)prim->width, (int)prim->height, "DirectDraw, SDL");
-
-    if (0 != SDL_LockTexture(dd->Texture, NULL, (void **)&dst, &dstpitch)) return;
-
-    Winapi_SurfaceToBgra(prim, (uint32_t *)dst, dstpitch);
-
-    SDL_UnlockTexture(dd->Texture);
-
-    CopyToDisplay(dd);
-    SDL_RenderPresent(dd->Renderer);
+    /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
+    if ((dd->Primary != NULL) && (dd->Window != NULL)) Winapi_D3dGLPresent(dd->Primary, dd->Window);
 }
 
 static struct IDirectDrawSurface_c *NewSurface(struct IDirectDraw_c *dd, uint32_t width, uint32_t height, uint32_t bpp)
@@ -859,37 +786,10 @@ uint32_t CCALL IDirectDraw_Release_c(struct IDirectDraw_c *lpThis)
     if (lpThis->RefCount == 0)
     {
         if (winapi_dd_screen == lpThis) winapi_dd_screen = NULL;
-        /* the OpenGL window of Direct3D is the screen's, the next display mode shows it again: a
-         * program that releases DirectDraw between modes (from a thread that did not make the
-         * window) would hide it, and the hide waits for the thread that made it */
-        if (dd_uses_gl(lpThis))
-        {
-            /* not a spare window of an SDL renderer: Winapi_ScreenOpenGL keeps it */
-            lpThis->Window = NULL;
-        }
-        if (lpThis->Window != NULL)
-        {
-            Game_HideWindow(lpThis->Window);
-        }
-        if (lpThis->Texture != NULL)
-        {
-            SDL_DestroyTexture(lpThis->Texture);
-            lpThis->Texture = NULL;
-        }
-        if (lpThis->Renderer != NULL)
-        {
-            SDL_DestroyRenderer(lpThis->Renderer);
-            lpThis->Renderer = NULL;
-        }
-        if (lpThis->Window != NULL)
-        {
-            /* Hidden, not destroyed: this runs in the game thread while main.c's
-             * thread pumps the window's X11 events, and a window destroyed under
-             * it ends the process with BadWindow.  The next SetDisplayMode takes
-             * it back, SDL_Quit (main thread) destroys it at exit. */
-            dd_spare_window = lpThis->Window;
-            lpThis->Window = NULL;
-        }
+        /* the window is the screen's, Winapi_ScreenOpenGL keeps it and the next display mode
+         * shows it again: a program that releases DirectDraw between modes (from a thread that
+         * did not make the window) would hide it, and the hide waits for the thread that made it */
+        lpThis->Window = NULL;
 
         x86_free(lpThis->proxy);
         x86_free(lpThis);
@@ -987,14 +887,11 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(struct IDirectDraw_c *lpThis, struct 
         uint32_t pwidth = lpThis->width, pheight = lpThis->height, pbpp = lpThis->bpp;
 
         if (lpThis->Primary != NULL) return DDERR_GENERIC;
-        if (lpThis->Renderer == NULL)
-        {
-            /* no display mode set: a program that only probes what DirectX can do (the
-             * version check at its start) gets a desktop-sized surface that is never shown */
-            if (pwidth == 0) pwidth = 640;
-            if (pheight == 0) pheight = 480;
-            if (pbpp == 0) pbpp = 32;
-        }
+        /* no display mode set: a program that only probes what DirectX can do (the
+         * version check at its start) gets a desktop-sized surface that is never shown */
+        if (pwidth == 0) pwidth = 640;
+        if (pheight == 0) pheight = 480;
+        if (pbpp == 0) pbpp = 32;
 
         s = NewSurface(lpThis, pwidth, pheight, pbpp);
         if (s == NULL) return DDERR_OUTOFVIDEOMEMORY;
@@ -1286,98 +1183,15 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
         return DDERR_UNSUPPORTEDMODE;
     }
 
-#ifdef GAME_GL
-    if (lpThis->Window == NULL || dd_uses_gl(lpThis))
-#else
-    if (Winapi_Direct3DEnabled() && Winapi_Direct3DGL())
-#endif
-    {
-        /* a new mode resizes the window of the last one */
-        lpThis->Window = Winapi_ScreenOpenGL(dwWidth, dwHeight);
-        /* no OpenGL: an SDL renderer, and Direct3D goes on with the software rasteriser */
-        if ((lpThis->Window == NULL) && Winapi_Direct3DEnabled() && Winapi_Direct3DGL()) Winapi_Direct3DNoGL();
-    }
+    /* a new mode resizes the window of the last one; the picture is shown through
+     * WinApi-d3dgl.c, and Direct3D draws there */
+    lpThis->Window = Winapi_ScreenOpenGL(dwWidth, dwHeight);
+    if (lpThis->Window == NULL) return DDERR_UNSUPPORTEDMODE;
+    Game_ShowWindow(lpThis->Window);
+    winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
 
-    if (dd_uses_gl(lpThis))
-    {
-        /* an OpenGL window without an SDL renderer: Present shows the primary
-         * through WinApi-d3dgl.c, and Direct3D draws there */
-        Game_ShowWindow(lpThis->Window);
-        winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
-
-        /* The window was just shown; a real Windows would send WM_ACTIVATEAPP */
-        Winapi_PostActivateApp(1);
-
-        winapi_dd_screen = lpThis;
-        lpThis->width = dwWidth;
-        lpThis->height = dwHeight;
-        lpThis->bpp = dwBPP;
-
-        return DD_OK;
-    }
-
-    if ((lpThis->Window == NULL) && (dd_spare_window != NULL))
-    {
-        lpThis->Window = dd_spare_window;
-        dd_spare_window = NULL;
-        Game_WindowFit(lpThis->Window, dwWidth, dwHeight);
-
-        lpThis->Renderer = SDL_CreateRenderer(lpThis->Window, -1, (Display_VSync)?SDL_RENDERER_PRESENTVSYNC:0);
-        if (lpThis->Renderer == NULL)
-        {
-            dd_spare_window = lpThis->Window;
-            lpThis->Window = NULL;
-            return DDERR_UNSUPPORTEDMODE;
-        }
-
-        Game_ShowWindow(lpThis->Window);
-        winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
-    }
-
-    if (lpThis->Window == NULL)
-    {
-        lpThis->Window = Game_WindowCreate(dwWidth, dwHeight, SDL_WINDOW_HIDDEN);
-        if (lpThis->Window == NULL)
-        {
-            return DDERR_UNSUPPORTEDMODE;
-        }
-
-        lpThis->Renderer = SDL_CreateRenderer(lpThis->Window, -1, (Display_VSync)?SDL_RENDERER_PRESENTVSYNC:0);
-        if (lpThis->Renderer == NULL)
-        {
-            SDL_DestroyWindow(lpThis->Window);
-            lpThis->Window = NULL;
-            return DDERR_UNSUPPORTEDMODE;
-        }
-
-        Game_ShowWindow(lpThis->Window);
-        winapi_dd_window_id = SDL_GetWindowID(lpThis->Window);
-    }
-
-    /* The window was just shown, so the program's window is now the active
-     * one; a real Windows would send WM_ACTIVATEAPP for this. */
+    /* The window was just shown; a real Windows would send WM_ACTIVATEAPP */
     Winapi_PostActivateApp(1);
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-
-    /* a logical size would also make SDL move the touches into the picture,
-     * away from the buttons: CopyToDisplay scales by itself */
-#if !(GAME_WINAPI_TOUCH_GAMEPAD && defined(__ANDROID__))
-    if (0 != SDL_RenderSetLogicalSize(lpThis->Renderer, dwWidth, dwHeight))
-    {
-        return DDERR_UNSUPPORTEDMODE;
-    }
-#endif
-
-    if (lpThis->Texture != NULL)
-    {
-        SDL_DestroyTexture(lpThis->Texture);
-    }
-    lpThis->Texture = SDL_CreateTexture(lpThis->Renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, dwWidth, dwHeight);
-    if (lpThis->Texture == NULL)
-    {
-        return DDERR_UNSUPPORTEDMODE;
-    }
 
     winapi_dd_screen = lpThis;
     lpThis->width = dwWidth;
@@ -2176,13 +1990,6 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
         return NULL;
     }
 
-    /* a window of the spare one's kind has no OpenGL */
-    if (dd_spare_window != NULL)
-    {
-        SDL_DestroyWindow(dd_spare_window);
-        dd_spare_window = NULL;
-    }
-
 #if defined(GAME_GLES)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -2212,8 +2019,8 @@ SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height)
 #ifdef GAME_EARLY_GL_WINDOW
 /* The window at the start of the program, before the game's long loading: a desktop
  * lets a window appear in front when it comes up right after the launch, not many seconds
- * later.  It gets one black frame (a Wayland window is mapped by its first buffer).  The
- * software renderer has a window of another kind: it gets none here. */
+ * later.  It gets one black frame (a Wayland window is mapped by its first buffer).  Only
+ * with Direct3D on OpenGL (3D=software has its window with the first display mode). */
 void Winapi_EarlyWindow(uint32_t width, uint32_t height)
 {
     SDL_Window *window;

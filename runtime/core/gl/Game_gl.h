@@ -43,9 +43,13 @@
 #include <glad/glad.h>
 #endif
 
-/* SDL_GL_CreateContext, then glad; GL 2.0 with frame buffer objects is
- * needed. NULL and a message if any of it is missing. */
+/* SDL_GL_CreateContext, then glad; GL 2.0 with frame buffer objects (GLES
+ * 3.0) is needed. Without it there is no picture at all: Game_GlUnavailable.
+ * NULL only for a NULL window. */
 SDL_GLContext Game_GlCreateContext(SDL_Window *window, int vsync);
+/* the port has no other way to show a picture: a message box that says what
+ * is missing (why: SDL's error), then the end of the process */
+void Game_GlUnavailable(const char *why);
 
 /* The bound texture, RGBA8, from rows of 0xAARRGGBB (pixels may be NULL). */
 void Game_GlTexImageBgra(GLint level, int width, int height, const void *pixels);

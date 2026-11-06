@@ -32,7 +32,7 @@
 #include "input.h"
 #include "touchgamepad.h"
 
-/* A key event as SDL would send it, for Game_virtualkeyboard.c.  The scan code
+/* A key event as SDL would send it.  The scan code
  * is set too: that is what the game's runtime reads. */
 void EmulateKey(int type, int key)
 {

@@ -67,7 +67,6 @@ Each of these is identical to a file of one of SR's game ports in
 |---|---|
 | `runtime/core/Game_defs.h` | Roman Pauer |
 | `runtime/core/Game_scalerplugin.h` | Roman Pauer |
-| `runtime/core/Game_virtualkeyboard.c`, `.h` | Roman Pauer |
 | `runtime/core/VKfont2.h` | font bitmap data, from SR |
 | `runtime/core/audio.h`, `display.h`, `input.h`, `main.h` | Roman Pauer |
 | `runtime/core/display/palette32bgra.h`, `palettecommon.h` | Roman Pauer |

@@ -51,14 +51,11 @@ int Winapi_Direct3DSetAntialiasing(const char *value);
  * Glide's buffers take it too */
 int Winapi_Direct3DAntialiasing(void);
 
-/* the OpenGL window failed: go on with the software rasteriser */
-void Winapi_Direct3DNoGL(void);
-
 struct SDL_Window;
 
-/* Direct3D on OpenGL (a d3d_gl=yes build): the window is an OpenGL one
- * without an SDL renderer and the device is drawn with the shared GL layer
- * of runtime/core/gl.  The game env D3D_GL=0 forces the SDL backend. */
+/* Direct3D on OpenGL (a d3d_gl=yes build): the device is drawn with the
+ * shared GL layer of runtime/core/gl.  The game env D3D_GL=0 forces the
+ * software rasteriser (its picture goes through OpenGL too). */
 int Winapi_Direct3DGL(void);
 
 /* the GL presentation of the primary surface: convert, upload, scaled quad */
