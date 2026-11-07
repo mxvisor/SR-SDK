@@ -23,7 +23,7 @@
  */
 
 
-/* The digital sound of WAIL32.DLL (GAME_WINAPI_WAIL32 1): WinApi-wail32.c. */
+/* The Miles Sound System of WAIL32.DLL (GAME_WINAPI_WAIL32 1): WinApi-wail32.c. */
 
 #if !defined(_WINAPI_WAIL32_H_INCLUDED_)
 #define _WINAPI_WAIL32_H_INCLUDED_
@@ -37,8 +37,11 @@ extern "C" {
 
 uint32_t CCALL AIL_startup_c(void);
 uint32_t CCALL AIL_shutdown_c(void);
+uint32_t CCALL AIL_set_preference_c(uint32_t number, uint32_t value);
 uint32_t CCALL AIL_waveOutOpen_c(uint32_t drvr, uint32_t lphWaveOut, uint32_t wDeviceID, uint32_t lpFormat);
 uint32_t CCALL AIL_waveOutClose_c(uint32_t dig);
+uint32_t CCALL AIL_midiOutOpen_c(uint32_t mdi, uint32_t lphMidiOut, uint32_t dwDeviceID);
+uint32_t CCALL AIL_midiOutClose_c(uint32_t mdi);
 uint32_t CCALL AIL_allocate_sample_handle_c(uint32_t dig);
 uint32_t CCALL AIL_release_sample_handle_c(uint32_t S);
 uint32_t CCALL AIL_init_sample_c(uint32_t S);
@@ -54,8 +57,19 @@ uint32_t CCALL AIL_stop_sample_c(uint32_t S);
 uint32_t CCALL AIL_resume_sample_c(uint32_t S);
 uint32_t CCALL AIL_end_sample_c(uint32_t S);
 uint32_t CCALL AIL_sample_status_c(uint32_t S);
+uint32_t CCALL AIL_allocate_sequence_handle_c(uint32_t mdi);
+uint32_t CCALL AIL_release_sequence_handle_c(uint32_t S);
+uint32_t CCALL AIL_init_sequence_c(uint32_t S, uint32_t start, uint32_t sequence_num);
+uint32_t CCALL AIL_start_sequence_c(uint32_t S);
+uint32_t CCALL AIL_stop_sequence_c(uint32_t S);
+uint32_t CCALL AIL_resume_sequence_c(uint32_t S);
+uint32_t CCALL AIL_end_sequence_c(uint32_t S);
+uint32_t CCALL AIL_sequence_status_c(uint32_t S);
 uint32_t CCALL AIL_serve_c(void);
 uint32_t CCALL AIL_last_error_c(void);
+uint32_t CCALL MEM_alloc_lock_c(uint32_t size);
+uint32_t CCALL MEM_free_lock_c(uint32_t ptr);
+uint32_t CCALL AIL_copy_to_MEM16_c(uint32_t dest, uint32_t src, uint32_t size);
 uint32_t CCALL FILE_read_c(uint32_t filename, uint32_t dest);
 
 #ifdef __cplusplus

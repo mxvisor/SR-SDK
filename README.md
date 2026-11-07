@@ -388,7 +388,7 @@ the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION
 | `GAME_WINAPI_WINDOW_MESSAGES` | 1: the game's message loop looks at the window of a message: input messages carry the window's handle, `PostMessageA` delivers the `WM_USER` range |
 | `GAME_WINDOW_WIDTH`, `GAME_WINDOW_HEIGHT` | both defined: `GetClientRect` and `GetWindowRect` give the game's window that size at the origin (the display mode it asks for; undefined: the stub, or the game's own function) |
 | `GAME_WINAPI_GDI` | 1: the game draws into DIB sections and copies them to its window with `BitBlt`/`StretchBlt` (`WinApi-gdi.c`: device contexts, bitmaps with their pixels in the guest's memory, palettes; the window's picture, its client size, shown through OpenGL) |
-| `GAME_WINAPI_WAIL32` | 1: the digital sound of the Miles Sound System for Win32 (`WinApi-wail32.c`, AIL 3.03): samples from WAV images or raw PCM, played on the port's mixer; a game that loads `WAIL32.DLL` with `LoadLibrary` lists the functions in `GAME_EXTRA_PROCS` and its import shim |
+| `GAME_WINAPI_WAIL32` | 1: the Miles Sound System for Win32 (`WinApi-wail32.c`, AIL 3.03, over `core/Game_ail.c`): samples from WAV images or raw PCM, played on the port's mixer, and XMIDI sequences (`soundfont.sf2` of the game directory); a game that loads `WAIL32.DLL` with `LoadLibrary` lists the functions in `GAME_EXTRA_PROCS` and its import shim |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
@@ -461,8 +461,8 @@ runtime/core/           threads, memory, frontends, the OSD and its font, printf
                         Android start-up, and what the DOS and the Win32 ports
                         share: WATCOM C library and file I/O (Game_clib, Game_vfs,
                         Game_file), the game directory (Game_gamedir), CD image
-                        (Game_cdrom), CD audio (Game_music), PC scancodes and
-                        AUTO_KEYS (Game_keys)
+                        (Game_cdrom), CD audio (Game_music), the Miles Sound
+                        System (Game_ail), PC scancodes and AUTO_KEYS (Game_keys)
 runtime/dos/            the runtime of a DOS4GW game: start and end, ports and segment
                         accesses (Game_dosrt), interrupts (Game_dosint), registers
                         (Game_dosregs.h), DOS memory (Game_dosmem), INT 21h file functions
@@ -490,6 +490,9 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_cdrom.c`, `.h`: drive D: from a cue sheet (ISO9660 data track,
   CDDA or ogg/flac/wav audio tracks) or from a copy of the disc;
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
+- `Game_ail.c`, `.h`: the Miles Sound System (AIL 3.x) without its entry points: digital
+  samples on reserved channels of the SDL_mixer device, XMIDI sequences through
+  `Game_midi`; `$<GAME>_AIL_LOG` logs what it plays;
 - `Game_dosrt.c`, `.h`: start and end of a DOS game's runtime, the I/O ports, the
   segment-override accesses (PSP, the last DOS block, a DOS address);
 - `Game_dosint.c`, `.h`: the interrupt vectors, the game's handlers run as hardware
