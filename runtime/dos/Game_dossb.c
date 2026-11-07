@@ -51,19 +51,7 @@
 #include "Game_memory.h"
 #include "Game_dosint.h"
 #include "Game_dossb.h"
-
-/* SDL has one playback device on Android: the card's own SDL_OpenAudioDevice,
- * after SDL_mixer's of Game_AudioInit, fails.  There the card's stream is
- * converted to SDL_mixer's format and added to its output after the mix.
- * GAME_SB_ON_MIXER 1 does the same on any platform. */
-#if !defined(GAME_SB_ON_MIXER) && defined(__ANDROID__)
-#define GAME_SB_ON_MIXER 1
-#endif
-
-#if GAME_SB_ON_MIXER
-#include <SDL_mixer.h>
-#include "Game_sound.h"
-#endif
+#include "Game_audiostream.h"
 
 #define SB_BASE GAME_SB_BASE
 #define SB_DMA GAME_SB_DMA
@@ -106,7 +94,7 @@ static int mixer_gain = 256;
  * the same one. */
 static const uint8_t sb_irq = GAME_SB_IRQ;
 
-static SDL_AudioDeviceID audio_device;
+static Game_AudioSource *audio_source;
 static SDL_mutex *audio_lock;
 static int audio_samples;
 static uint32_t play_rate;
@@ -165,115 +153,33 @@ static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int length)
     SDL_UnlockMutex(audio_lock);
 }
 
-#if GAME_SB_ON_MIXER
-
-/* The card's samples in SDL_mixer's format, and whether the post-mix hook is set. */
-static SDL_AudioStream *mixer_stream;
-static Uint16 mixer_format;
-static int mixer_hooked;
-
-static void SDLCALL mixer_post(void *udata, Uint8 *stream, int len)
-{
-    static Uint8 samples[128];
-    static Uint8 converted[4096];
-
-    (void)udata;
-    SDL_LockMutex(audio_lock);
-    while (mixer_stream != NULL && len > 0) {
-        const int part = len < (int)sizeof(converted) ? len : (int)sizeof(converted);
-        int got;
-
-        while (SDL_AudioStreamAvailable(mixer_stream) < part) {
-            sb_fill(samples, (int)sizeof(samples));
-            if (SDL_AudioStreamPut(mixer_stream, samples, (int)sizeof(samples)) != 0) break;
-        }
-        got = SDL_AudioStreamGet(mixer_stream, converted, part);
-        if (got <= 0) break;
-        SDL_MixAudioFormat(stream, converted, mixer_format, (Uint32)got, SDL_MIX_MAXVOLUME);
-        stream += got;
-        len -= got;
-    }
-    play_stamp = SDL_GetPerformanceCounter();
-    SDL_UnlockMutex(audio_lock);
-}
-
-/* The card on SDL_mixer's device, at the rate the DSP was given: 0 when
- * SDL_mixer has no device. */
-static int mixer_open(uint32_t rate)
-{
-    SDL_AudioStream *stream;
-    SDL_AudioStream *old;
-    int freq;
-    int channels;
-    Uint16 format;
-
-    if (!Game_AudioIsOpen() || Mix_QuerySpec(&freq, &format, &channels) == 0) return 0;
-    stream = SDL_NewAudioStream(AUDIO_U8, 1, (int)rate, format, (Uint8)channels, freq);
-    if (stream == NULL) return 0;
-    SDL_LockMutex(audio_lock);
-    old = mixer_stream;
-    mixer_stream = stream;
-    mixer_format = format;
-    /* the samples of a mixer buffer, at the card's rate */
-    audio_samples = (int)((uint64_t)Game_AudioBufferSize * rate / (uint32_t)freq);
-    play_rate = rate;
-    play_stamp = SDL_GetPerformanceCounter();
-    SDL_UnlockMutex(audio_lock);
-    if (old != NULL) SDL_FreeAudioStream(old);
-    if (!mixer_hooked) {
-        Mix_SetPostMix(mixer_post, NULL);
-        mixer_hooked = 1;
-    }
-    return 1;
-}
-
-static void mixer_close(void)
-{
-    if (mixer_hooked) Mix_SetPostMix(NULL, NULL);
-    mixer_hooked = 0;
-    if (mixer_stream != NULL) SDL_FreeAudioStream(mixer_stream);
-    mixer_stream = NULL;
-}
-
-#define output_open() (audio_device != 0 || mixer_stream != NULL)
-
-#else
-
-#define output_open() (audio_device != 0)
-
-#endif
-
 static void audio_open(void)
 {
     SDL_AudioSpec want;
     SDL_AudioSpec have;
     uint32_t rate = current_rate();
 
-    if (output_open() && play_rate == rate) return;
+    if (audio_source != NULL && play_rate == rate) return;
     if (audio_lock == NULL) audio_lock = SDL_CreateMutex();
-#if GAME_SB_ON_MIXER
-    if (mixer_open(rate)) return;
-#endif
-    if (audio_device != 0) {
-        SDL_CloseAudioDevice(audio_device);
-        audio_device = 0;
-    }
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return;
+    Game_AudioSourceClose(audio_source);
     SDL_zero(want);
     want.freq = (int)rate;
     want.format = AUDIO_U8;
     want.channels = 1;
     want.samples = 128;
     want.callback = audio_callback;
-    audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (audio_device == 0) {
+    audio_source = Game_AudioSourceOpen(&want, &have, 0);
+    if (audio_source == NULL) {
         fprintf(stderr, GAME_NAME ": no Sound Blaster output: %s\n", SDL_GetError());
         return;
     }
-    audio_samples = have.samples;
+    /* on SDL_mixer's device the card's samples go out a mixer buffer at a time */
+    audio_samples = Game_AudioSourceOnMixer(audio_source)
+        ? (int)((uint64_t)Game_AudioBufferSize * rate / (uint32_t)Game_AudioRate)
+        : have.samples;
     play_rate = rate;
     play_stamp = SDL_GetPerformanceCounter();
-    SDL_PauseAudioDevice(audio_device, 0);
+    Game_AudioSourcePause(audio_source, 0);
 }
 
 static void dsp_start(void)
@@ -367,7 +273,7 @@ static uint32_t sb_position(void)
     if (play_length == 0) return 0;
     SDL_LockMutex(audio_lock);
     position = play_position;
-    if (playing && output_open()) {
+    if (playing && audio_source != NULL) {
         const uint64_t elapsed = SDL_GetPerformanceCounter() - play_stamp;
         uint64_t ahead = elapsed * play_rate / SDL_GetPerformanceFrequency();
 
@@ -544,11 +450,8 @@ void Game_DosSbDeliverIrq(void)
 
 void Game_DosSbShutdown(void)
 {
-#if GAME_SB_ON_MIXER
-    mixer_close();
-#endif
-    if (audio_device != 0) SDL_CloseAudioDevice(audio_device);
-    audio_device = 0;
+    Game_AudioSourceClose(audio_source);
+    audio_source = NULL;
     playing = 0;
 }
 

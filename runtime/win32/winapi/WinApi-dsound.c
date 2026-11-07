@@ -27,14 +27,13 @@
 #include <inttypes.h>
 #endif
 #include <SDL.h>
-#include <SDL_mixer.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "WinApi-dsound.h"
 #include "WinApi-config.h"
 #include "Game_memory.h"
-#include "Game_sound.h"
+#include "Game_audiostream.h"
 #include "Game_hooks.h"
 
 
@@ -136,7 +135,7 @@ struct IDirectSoundBuffer_c {
             unsigned int num_channels;
             int16_t *conv_data;
             int32_t *accum_data;
-            SDL_AudioDeviceID device_id;
+            Game_AudioSource *source;  /* the speakers (Game_audiostream.h) */
         };
         struct {
             struct IDirectSoundBuffer_c *next;
@@ -1084,98 +1083,6 @@ uint32_t CCALL IDirectSound_Release_c(struct IDirectSound_c *lpThis)
     return lpThis->RefCount;
 }
 
-/* SDL has one playback device on Android: the second SDL_OpenAudioDevice, after
- * SDL_mixer's for the CD audio, fails. There the mix of the buffers is added to
- * SDL_mixer's stream. GAME_DSOUND_ON_MIXER 1 does the same on any platform. */
-#if !defined(GAME_DSOUND_ON_MIXER) && defined(__ANDROID__)
-#define GAME_DSOUND_ON_MIXER 1
-#endif
-
-#if GAME_DSOUND_ON_MIXER
-
-#define DS_MIXER_DEVICE 0x7fffffffu
-#define DS_MIXER_SAMPLES 1024
-
-static SDL_mutex *ds_mixer_lock;
-static int ds_mixer_paused;
-
-/* SDL_mixer's buffer has the size the device chose: fill_audio works in pieces
- * of the size of conv_data and accum_data */
-static void SDLCALL ds_mixer_post(void *udata, Uint8 *stream, int len)
-{
-    struct IDirectSoundBuffer_c *primary = (struct IDirectSoundBuffer_c *)udata;
-    static Uint8 piece[DS_MIXER_SAMPLES * 2 * sizeof(int16_t)];
-    int size = DS_MIXER_SAMPLES * primary->channels * (int)sizeof(int16_t);
-
-    SDL_LockMutex(ds_mixer_lock);
-    while (!ds_mixer_paused && (len > 0))
-    {
-        int part = (len < size) ? len : size;
-
-        fill_audio(udata, piece, part);
-        SDL_MixAudioFormat(stream, piece, AUDIO_S16SYS, (Uint32)part, SDL_MIX_MAXVOLUME);
-        stream += part;
-        len -= part;
-    }
-    SDL_UnlockMutex(ds_mixer_lock);
-}
-
-static SDL_AudioDeviceID Ds_OpenDevice(const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed_changes)
-{
-    int rate, channels;
-    Uint16 format;
-
-    if (Game_AudioIsOpen() && (Mix_QuerySpec(&rate, &format, &channels) != 0) &&
-        (format == AUDIO_S16SYS) && (channels <= 2))
-    {
-        if (ds_mixer_lock == NULL) ds_mixer_lock = SDL_CreateMutex();
-        memset(obtained, 0, sizeof(*obtained));
-        obtained->freq = rate;
-        obtained->format = format;
-        obtained->channels = (Uint8)channels;
-        obtained->samples = DS_MIXER_SAMPLES;
-        obtained->size = DS_MIXER_SAMPLES * channels * sizeof(int16_t);
-        ds_mixer_paused = 1;
-        Mix_SetPostMix(ds_mixer_post, desired->userdata);
-        return DS_MIXER_DEVICE;
-    }
-    return SDL_OpenAudioDevice(NULL, 0, desired, obtained, allowed_changes);
-}
-
-static void Ds_CloseDevice(SDL_AudioDeviceID device)
-{
-    if (device == DS_MIXER_DEVICE) Mix_SetPostMix(NULL, NULL);
-    else SDL_CloseAudioDevice(device);
-}
-
-static void Ds_LockDevice(SDL_AudioDeviceID device)
-{
-    if (device == DS_MIXER_DEVICE) SDL_LockMutex(ds_mixer_lock);
-    else SDL_LockAudioDevice(device);
-}
-
-static void Ds_UnlockDevice(SDL_AudioDeviceID device)
-{
-    if (device == DS_MIXER_DEVICE) SDL_UnlockMutex(ds_mixer_lock);
-    else SDL_UnlockAudioDevice(device);
-}
-
-static void Ds_PauseDevice(SDL_AudioDeviceID device, int pause)
-{
-    if (device == DS_MIXER_DEVICE) ds_mixer_paused = pause;
-    else SDL_PauseAudioDevice(device, pause);
-}
-
-#else
-
-#define Ds_OpenDevice(desired, obtained, allowed_changes) SDL_OpenAudioDevice(NULL, 0, desired, obtained, allowed_changes)
-#define Ds_CloseDevice SDL_CloseAudioDevice
-#define Ds_LockDevice SDL_LockAudioDevice
-#define Ds_UnlockDevice SDL_UnlockAudioDevice
-#define Ds_PauseDevice SDL_PauseAudioDevice
-
-#endif
-
 static void RecalculateConvFormat(struct IDirectSoundBuffer_c *lpThis)
 {
     switch (lpThis->format)
@@ -1291,8 +1198,8 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
         desired.callback = &fill_audio;
         desired.userdata = lpDSB_c;
 
-        lpDSB_c->device_id = Ds_OpenDevice(&desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
-        if (lpDSB_c->device_id == 0)
+        lpDSB_c->source = Game_AudioSourceOpen(&desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
+        if (lpDSB_c->source == NULL)
         {
             x86_free(lpDSB_c);
 
@@ -1304,14 +1211,14 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
 
         if ((obtained.channels > 2) || ((obtained.size / (obtained.samples * obtained.channels)) > 2))
         {
-            Ds_CloseDevice(lpDSB_c->device_id);
+            Game_AudioSourceClose(lpDSB_c->source);
 
-            lpDSB_c->device_id = Ds_OpenDevice(&desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
+            lpDSB_c->source = Game_AudioSourceOpen(&desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
                 #ifdef SDL_AUDIO_ALLOW_SAMPLES_CHANGE
                     | SDL_AUDIO_ALLOW_SAMPLES_CHANGE
                 #endif
             );
-            if (lpDSB_c->device_id == 0)
+            if (lpDSB_c->source == NULL)
             {
                 x86_free(lpDSB_c);
 
@@ -1340,8 +1247,8 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
         {
             if (lpDSB_c->conv_data != NULL) free(lpDSB_c->conv_data);
             if (lpDSB_c->accum_data != NULL) free(lpDSB_c->accum_data);
-            Ds_CloseDevice(lpDSB_c->device_id);
-            lpDSB_c->device_id = 0;
+            Game_AudioSourceClose(lpDSB_c->source);
+            lpDSB_c->source = NULL;
 
             x86_free(lpDSB_c);
 
@@ -1615,14 +1522,14 @@ static void StopPrimaryBuffer(struct IDirectSoundBuffer_c *lpThis)
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-        Ds_LockDevice(lpThis->device_id);
-        Ds_PauseDevice(lpThis->device_id, 1);
-        Ds_UnlockDevice(lpThis->device_id);
+        Game_AudioSourceLock(lpThis->source);
+        Game_AudioSourcePause(lpThis->source, 1);
+        Game_AudioSourceUnlock(lpThis->source);
         lpThis->status = SDL_AUDIO_STOPPED;
     }
 
-    Ds_CloseDevice(lpThis->device_id);
-    lpThis->device_id = 0;
+    Game_AudioSourceClose(lpThis->source);
+    lpThis->source = NULL;
 
     current = lpThis->first;
     while (current != NULL)
@@ -1683,11 +1590,11 @@ uint32_t CCALL IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
 
                 PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-                Ds_LockDevice(PrimaryBuffer->device_id);
+                Game_AudioSourceLock(PrimaryBuffer->source);
 
                 remove_from_list(PrimaryBuffer, lpThis, 1);
 
-                Ds_UnlockDevice(PrimaryBuffer->device_id);
+                Game_AudioSourceUnlock(PrimaryBuffer->source);
             }
 
             if (lpThis->data != NULL)
@@ -1917,7 +1824,7 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
 
         lpThis->status = SDL_AUDIO_PLAYING;
         lpThis->looping = 1;
-        Ds_PauseDevice(lpThis->device_id, 0);
+        Game_AudioSourcePause(lpThis->source, 0);
 
 #ifdef DEBUG_DSOUND
         eprintf("OK\n");
@@ -1929,7 +1836,7 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
 
     PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-    Ds_LockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceLock(PrimaryBuffer->source);
 
     lpThis->looping = (dwFlags & DSBPLAY_LOOPING)?1:0;
     if (lpThis->status != SDL_AUDIO_PLAYING)
@@ -1957,7 +1864,7 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
         }
     }
 
-    Ds_UnlockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceUnlock(PrimaryBuffer->source);
 
     /* DirectSound mixes into the primary buffer as soon as a secondary one plays;
      * only DSSCL_WRITEPRIMARY needs Play on the primary itself, and a program
@@ -1965,7 +1872,7 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
     if (PrimaryBuffer->status != SDL_AUDIO_PLAYING)
     {
         PrimaryBuffer->status = SDL_AUDIO_PLAYING;
-        Ds_PauseDevice(PrimaryBuffer->device_id, 0);
+        Game_AudioSourcePause(PrimaryBuffer->source, 0);
     }
 
 #ifdef DEBUG_DSOUND
@@ -1980,9 +1887,9 @@ uint32_t CCALL IDirectSoundBuffer_SetCurrentPosition_c(struct IDirectSoundBuffer
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-        Ds_LockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+        Game_AudioSourceLock(lpThis->DirectSound->PrimaryBuffer->source);
         lpThis->read_offset = dwNewPosition;
-        Ds_UnlockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+        Game_AudioSourceUnlock(lpThis->DirectSound->PrimaryBuffer->source);
     }
     else
     {
@@ -2061,13 +1968,13 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-        Ds_LockDevice(lpThis->device_id);
-        Ds_PauseDevice(lpThis->device_id, 1);
-        Ds_UnlockDevice(lpThis->device_id);
+        Game_AudioSourceLock(lpThis->source);
+        Game_AudioSourcePause(lpThis->source, 1);
+        Game_AudioSourceUnlock(lpThis->source);
     }
 
-    Ds_CloseDevice(lpThis->device_id);
-    lpThis->device_id = 0;
+    Game_AudioSourceClose(lpThis->source);
+    lpThis->source = NULL;
 
     if (lpThis->conv_data != NULL)
     {
@@ -2080,8 +1987,8 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
         lpThis->accum_data = NULL;
     }
 
-    lpThis->device_id = Ds_OpenDevice(&desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
-    if (lpThis->device_id == 0)
+    lpThis->source = Game_AudioSourceOpen(&desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
+    if (lpThis->source == NULL)
     {
         lpThis->status = SDL_AUDIO_STOPPED;
 #ifdef DEBUG_DSOUND
@@ -2092,14 +1999,14 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
 
     if ((obtained.channels > 2) || ((obtained.size / (obtained.samples * obtained.channels)) > 2))
     {
-        Ds_CloseDevice(lpThis->device_id);
+        Game_AudioSourceClose(lpThis->source);
 
-        lpThis->device_id = Ds_OpenDevice(&desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
+        lpThis->source = Game_AudioSourceOpen(&desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
             #ifdef SDL_AUDIO_ALLOW_SAMPLES_CHANGE
                 | SDL_AUDIO_ALLOW_SAMPLES_CHANGE
             #endif
         );
-        if (lpThis->device_id == 0)
+        if (lpThis->source == NULL)
         {
             lpThis->status = SDL_AUDIO_STOPPED;
 #ifdef DEBUG_DSOUND
@@ -2130,8 +2037,8 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
             free(lpThis->accum_data);
             lpThis->accum_data = NULL;
         }
-        Ds_CloseDevice(lpThis->device_id);
-        lpThis->device_id = 0;
+        Game_AudioSourceClose(lpThis->source);
+        lpThis->source = NULL;
 
 #ifdef DEBUG_DSOUND
         eprintf("error\n");
@@ -2141,7 +2048,7 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-        Ds_PauseDevice(lpThis->device_id, 0);
+        Game_AudioSourcePause(lpThis->source, 0);
     }
 
 #ifdef DEBUG_DSOUND
@@ -2233,10 +2140,10 @@ uint32_t CCALL IDirectSoundBuffer_SetFrequency_c(struct IDirectSoundBuffer_c *lp
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-        Ds_LockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+        Game_AudioSourceLock(lpThis->DirectSound->PrimaryBuffer->source);
         lpThis->freq = lpThis->base_freq = (int)dwFrequency;
         lpThis->resample_freq = 0;
-        Ds_UnlockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+        Game_AudioSourceUnlock(lpThis->DirectSound->PrimaryBuffer->source);
     }
     else
     {
@@ -2264,9 +2171,9 @@ uint32_t CCALL IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
 
     if (lpThis->primary)
     {
-        Ds_LockDevice(lpThis->device_id);
-        Ds_PauseDevice(lpThis->device_id, 1);
-        Ds_UnlockDevice(lpThis->device_id);
+        Game_AudioSourceLock(lpThis->source);
+        Game_AudioSourcePause(lpThis->source, 1);
+        Game_AudioSourceUnlock(lpThis->source);
         lpThis->status = SDL_AUDIO_PAUSED;
 
 #ifdef DEBUG_DSOUND
@@ -2277,14 +2184,14 @@ uint32_t CCALL IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
 
     PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-    Ds_LockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceLock(PrimaryBuffer->source);
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
         remove_from_list(PrimaryBuffer, lpThis, 0);
     }
 
-    Ds_UnlockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceUnlock(PrimaryBuffer->source);
 
 #ifdef DEBUG_DSOUND
     eprintf("OK\n");
@@ -2428,10 +2335,10 @@ static void SetDopplerShift(struct IDirectSoundBuffer_c *lpThis, float shift)
     }
     if (freq == lpThis->freq) return;
 
-    Ds_LockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+    Game_AudioSourceLock(lpThis->DirectSound->PrimaryBuffer->source);
     lpThis->freq = freq;
     lpThis->resample_freq = 0;
-    Ds_UnlockDevice(lpThis->DirectSound->PrimaryBuffer->device_id);
+    Game_AudioSourceUnlock(lpThis->DirectSound->PrimaryBuffer->source);
 }
 
 static float DopplerSpeed(const float *velocity, const float *relative, float distance, float factor)
@@ -2549,14 +2456,14 @@ uint32_t CCALL IDirectSound3DListener_CommitDeferredSettings_c(struct IDirectSou
 
     PrimaryBuffer = lpThis->owner;
 
-    Ds_LockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceLock(PrimaryBuffer->source);
     current = PrimaryBuffer->first;
     for (index = 0; index < PrimaryBuffer->num_channels; index++)
     {
         Update3D(current);
         current = current->next;
     }
-    Ds_UnlockDevice(PrimaryBuffer->device_id);
+    Game_AudioSourceUnlock(PrimaryBuffer->source);
 
     return DS_OK;
 }

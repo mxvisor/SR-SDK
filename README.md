@@ -294,6 +294,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `core/Game_audio.c`, the SDL_mixer device of every port (DOS and Win32): its channels (default SDL_mixer's 8) |
+| `GAME_AUDIO_ON_MIXER` | `core/Game_audiostream.c`: 1 plays the PCM streams (the Sound Blaster, DirectSound, a game's own driver) in SDL_mixer's output after its mix, 0 on devices of their own; the default is 1 on Android, where SDL has one playback device, and 0 elsewhere |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
@@ -461,6 +462,7 @@ skeleton/               a starting point for a new game repository -- to come
   of ports 40h/43h, when IRQ 0 is due (`Game_DosPitRun`), the BIOS ticks;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
+- `Game_audiostream.c/.h`: a stream of PCM (`Game_AudioSourceOpen`, SDL_OpenAudioDevice's calls: a fill callback or a queue) on a device of its own or in SDL_mixer's output, whose one post-mix hook it owns; the Sound Blaster, DirectSound and a game's own driver play through it.
 
 The `Game_dos*` files are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
