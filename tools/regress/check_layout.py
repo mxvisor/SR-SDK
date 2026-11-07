@@ -6,7 +6,7 @@ The notes and the research of a port live one level up, in <GAME>/ (<GAME>/resea
 ones named), the repository must not have, tracked or only on the disk:
   - research/;
   - tools/ (the input of tools/gen_import_shim.py is game/import_args.tsv);
-  - *.md at its root.
+  - *.md at its root, except README.md (the repository's page on GitHub).
 SR-SDK/ and build/ are not looked at. Exit status 1 when something is found.
 """
 import glob, os, subprocess, sys
@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.path.abspath(os.path.join(HERE, '..', '..'))
 ROOT = os.environ.get('DOS_RECOMP_ROOT') or os.path.dirname(SDK)
 FORBIDDEN_DIRS = ('research/', 'tools/')
+ALLOWED_MD = ('README.md',)
 
 def games():
     out = []
@@ -31,12 +32,14 @@ def tracked(repo):
 
 def check(gid, repo, found):
     for p in tracked(repo):
-        if p.startswith(FORBIDDEN_DIRS) or ('/' not in p and p.endswith('.md')):
+        if p.startswith(FORBIDDEN_DIRS) or ('/' not in p and p.endswith('.md') and p not in ALLOWED_MD):
             found.append('%s: %s is tracked' % (gid, p))
     for d in FORBIDDEN_DIRS:
         if os.path.isdir(os.path.join(repo, d)):
             found.append('%s: %s is on the disk' % (gid, d))
     for p in sorted(glob.glob(os.path.join(repo, '*.md'))):
+        if os.path.basename(p) in ALLOWED_MD:
+            continue
         found.append('%s: %s is on the disk' % (gid, os.path.basename(p)))
 
 def main():

@@ -19,7 +19,8 @@ game repository
 ```
 
 A game repository holds no notes and no research: no `research/`, no `tools/` and no
-`*.md` at its root. They go one level up, beside the repository. The input of
+`*.md` at its root other than `README.md`, the repository's page. They go one level up,
+beside the repository. The input of
 `tools/gen_import_shim.py` is `game/import_args.tsv`. `tools/regress/check_layout.py`
 checks it (`run_all.sh --only layout`).
 
