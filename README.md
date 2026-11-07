@@ -298,6 +298,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
+| `GAME_DOS_TIMER_TICK()` | what the PIT's channel 0 interrupt runs in `Game_dostimer.c`'s `SR_CheckTimer`, in place of `Game_DosTimerTick` (the guest's INT 8 and INT 1Ch handlers): a sound driver's timer service and then the game's handler |
 
 `Game_dosmain.c` is the `main` of a DOS game's port, `Game_dostimer.c` its
 `SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the

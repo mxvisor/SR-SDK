@@ -42,13 +42,18 @@
  * gets a turn: the window may have been closed, the keyboard is drained and its
  * interrupt delivered, the PIT's channel 0 interrupt (INT 8) is due, and the
  * screen is presented about 30 times a second, and the IRQ of the Sound
- * Blaster is due (GAME_DOS_SOUNDBLASTER).  A game that has to do more
- * at INT 8 (a sound driver's timer) defines its own SR_CheckTimer and lists
- * Game_dostimer.c in runtime_skip. */
+ * Blaster is due (GAME_DOS_SOUNDBLASTER).  A game that has to do something
+ * else at INT 8 (a sound driver's timer) says what in GAME_DOS_TIMER_TICK()
+ * of Game_hooks.h, in place of Game_DosTimerTick (the guest's INT 8 and
+ * INT 1Ch handlers). */
+
+#ifndef GAME_DOS_TIMER_TICK
+#define GAME_DOS_TIMER_TICK() Game_DosTimerTick()
+#endif
 
 static void pit_irq(void)
 {
-    Game_DosTimerTick();
+    GAME_DOS_TIMER_TICK();
     if (Thread_Exit) Game_StopMain();
 }
 
