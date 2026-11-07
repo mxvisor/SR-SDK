@@ -51,13 +51,9 @@ else is SR-SDK's.
   shape; picture filters through OpenGL; an on-screen panel on one key (F12) for the
   port's settings, saved in `<program>.cfg`; gamepads; on-screen buttons on Android;
   crash reports with the guest's registers.
-- **Checks**: `tools/regress/run_all.sh` builds and runs every port under Linux and
-  Wine, at different load addresses, and compares SR's output for SR's own reference
-  games.
-
-Each port is a repository of its own, with SR-SDK as a submodule and a `README.md`
-about the game. No game data is part of any of them: the build and the game need the
-user's own copy of the game's disc.
+- **Checks**: `tools/regress/run_all.sh` builds and runs the ports a workspace lists under
+  Linux and Wine, at different load addresses, and compares SR's output for SR's own
+  reference games.
 
 ## A game repository
 
@@ -69,11 +65,8 @@ game repository
     └── SR/          SR itself, a submodule
 ```
 
-A game repository holds no notes and no research: no `research/`, no `tools/` and no
-`*.md` at its root other than `README.md`, the repository's page. They go one level up,
-beside the repository. The input of
-`tools/gen_import_shim.py` is `game/import_args.tsv`. `tools/regress/check_layout.py`
-checks it (`run_all.sh --only layout`).
+Each port is a repository of its own, with SR-SDK as a submodule. No game data is part
+of it: the build and the game need the user's own copy of the game's disc.
 
 SR is used as it is: the submodule `SR/` is the fork
 [mxvisor/SR](https://github.com/mxvisor/SR), branch `master`, which is upstream
@@ -266,8 +259,10 @@ repository, so the checkouts of SR-SDK and SR stay clean.
 `tools/regress/run_all.sh` answers "did I break anything?" after a change to SR,
 to `llasm.py` or to the SDK: SR's output for SR's reference games, `make linux`
 and `make windows` of every game, a start-and-close smoke test of every port under
-Linux and Wine, runs at different load addresses (ASLR) the hashes of the llasm output and the conversion of the disc images, all compared with a saved
-reference run. See [`tools/regress/README.md`](tools/regress/README.md).
+Linux and Wine, runs at different load addresses (ASLR), the hashes of the llasm output
+and the conversion of the disc images, all compared with a saved reference run. The games
+it checks and that reference are the workspace's regression data (`$REGRESS_CONF`, by
+default `regress/` beside `SR-SDK/`), not part of the SDK. See [`tools/regress/README.md`](tools/regress/README.md).
 
 ## What the SDK builds
 

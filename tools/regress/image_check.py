@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 
+from regress_conf import rows
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SDK = os.path.dirname(os.path.dirname(HERE))
 ROOT = os.environ.get('DOS_RECOMP_ROOT') or os.path.dirname(SDK)
@@ -65,10 +67,7 @@ def check(game, image):
 
 def main():
     wanted = sys.argv[1:]
-    for line in open(os.path.join(HERE, 'images.tsv')):
-        if line.startswith('#') or '\t' not in line:
-            continue
-        game, image = line.rstrip('\n').split('\t')[:2]
+    for game, image in (f[:2] for f in rows('images.tsv')):
         if wanted and game not in wanted:
             continue
         status, detail = check(game, image)

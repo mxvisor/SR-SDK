@@ -1,7 +1,9 @@
 # Shared by the tools of tools/regress. Source it: . "$(dirname "$0")/lib.sh"
 #
 # Sets: REGRESS_DIR (this directory), SDK (the SR-SDK it is in), ROOT (the workspace
-# root: $DOS_RECOMP_ROOT, or the parent of SDK), OUT (scratch and reports:
+# root: $DOS_RECOMP_ROOT, or the parent of SDK), CONF (the workspace's regression data:
+# $REGRESS_CONF, or $ROOT/regress; games.tsv, images.tsv, markers.tsv, sr-inputs.sh, ref/;
+# exported as REGRESS_CONF for the tools), OUT (scratch and reports:
 # $REGRESS_OUT, default $ROOT/cache/sdk-regress; TMPDIR is
 # set to $ROOT/cache/tmp, so nothing of a run goes to /tmp).
 # Functions: game_ids, game_field ID N, game_repo ID, game_target ID, game_stage_build ID,
@@ -12,7 +14,10 @@ SDK="$(cd "$REGRESS_DIR/../.." && pwd)"
 ROOT="${DOS_RECOMP_ROOT:-$(dirname "$SDK")}"
 OUT="${REGRESS_OUT:-$ROOT/cache/sdk-regress}"
 export TMPDIR="$ROOT/cache/tmp"; mkdir -p "$TMPDIR"
-GAMES_TSV="${GAMES_TSV:-$REGRESS_DIR/games.tsv}"
+CONF="${REGRESS_CONF:-$ROOT/regress}"
+[ -f "$CONF/games.tsv" ] || { echo "no regression data in $CONF (games.tsv): set REGRESS_CONF" >&2; exit 2; }
+export REGRESS_CONF="$CONF"
+GAMES_TSV="$CONF/games.tsv"
 mkdir -p "$OUT"
 
 game_ids() { awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$GAMES_TSV"; }

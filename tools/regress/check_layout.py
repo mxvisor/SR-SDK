@@ -11,20 +11,12 @@ SR-SDK/ and build/ are not looked at. Exit status 1 when something is found.
 """
 import glob, os, subprocess, sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SDK = os.path.abspath(os.path.join(HERE, '..', '..'))
-ROOT = os.environ.get('DOS_RECOMP_ROOT') or os.path.dirname(SDK)
+from regress_conf import ROOT, rows
 FORBIDDEN_DIRS = ('research/', 'tools/')
 ALLOWED_MD = ('README.md',)
 
 def games():
-    out = []
-    for line in open(os.path.join(HERE, 'games.tsv')):
-        if line.startswith('#') or not line.strip():
-            continue
-        f = line.rstrip('\n').split('\t')
-        out.append((f[0], os.path.join(ROOT, f[1])))
-    return out
+    return [(f[0], os.path.join(ROOT, f[1])) for f in rows('games.tsv')]
 
 def tracked(repo):
     r = subprocess.run(['git', '-C', repo, 'ls-files', '-z'], capture_output=True)

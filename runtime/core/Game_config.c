@@ -23,8 +23,8 @@
  *
  */
 
-/* The port's settings of a DOS or a Win32 game, the Game_config.c of SR's ports with only
- * this port's keys.  The file is the one --config-file= names (Game_ReadArgs), else
+/* The port's settings of a DOS or a Win32 game, the Game_config.c of SR's ports
+ * (SR/games/) with only this port's keys.  The file is the one --config-file= names (Game_ReadArgs), else
  * <program>.cfg of the game directory (GAME_PROGRAM_NAME of scons/game.py); a
  * game names another file with GAME_CONFIG_FILENAME (Game_hooks.h).  Without
  * the file everything stays as Init_Display/Init_Audio/Init_Input set it.  The

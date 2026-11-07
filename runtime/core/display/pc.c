@@ -209,7 +209,7 @@ void Cleanup_Display(void)
 #define GAME_DISPLAY_MAX_PIXELS (1024 * 768)
 #endif
 
-/* The window, mode 13h's 320x200 at 4:3 (a game's bigger frame, as a DOS game's
+/* The window, mode 13h's 320x200 at 4:3 (a game's bigger frame, as a port's
  * enhanced 3D, is the same picture), and what the flip thread draws into:
  * Game_TextureData, Render_Width x Render_Height 32-bit pixels. */
 int Game_Display_Create(void)

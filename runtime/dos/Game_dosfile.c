@@ -294,7 +294,7 @@ static void dos_close(Game_DosRegs *regs)
 }
 
 /* DOS 8.3 wildcard match against an uppercased name (file_pattern_match
- * file_pattern_match, same algorithm). */
+ * of SR's DOS ports, same algorithm). */
 static int dos_pattern_match(const char *filename, const char *pattern)
 {
     int i, asterisk;
@@ -423,7 +423,7 @@ static void clear_find_results(void)
 /* Adds a match unless one with the same DOS name is already listed; the
  * write root is collected first, so its copy wins, as it does for reads.
  * Only HIDDEN/SYSTEM/SUBDIR are filtered against CX, the rule
- * Game_dos_findfirst uses; archive on a regular file always passes. */
+ * Game_dos_findfirst of SR's DOS ports uses; archive on a regular file always passes. */
 static void add_find_result(const char *dos_name, const char *host_path, uint8_t attr, uint16_t attr_mask,
                             int64_t cd_size)
 {

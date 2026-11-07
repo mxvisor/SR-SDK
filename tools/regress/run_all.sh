@@ -3,8 +3,9 @@
 # games, a build of every game, a smoke test of every port under Linux and Wine,
 # several runs of each port at different load addresses (ASLR), the hashes of
 # the llasm output, the conversion of the disc images (tools/image), the names and the layout of the
-# game repositories, and the Win32 stubs they link. The result is compared with ref/results.tsv,
-# the reference run, and the differences are listed.
+# game repositories, and the Win32 stubs they link. The result is compared with the reference
+# run, ref/results.tsv of the workspace's regression data (lib.sh: CONF), and the differences
+# are listed. The games, their images and the reference are that data's, not the SDK's.
 #
 #   run_all.sh [options] [GAME...]          (GAME: ids of games.tsv; default all)
 #
@@ -12,13 +13,13 @@
 #   --sr COMMIT      the SR commit to check (default HEAD of SR-SDK/SR; @worktree:
 #                    the checkout with its uncommitted changes)
 #   --run-secs N     how long a smoke test lets the game run (default 15)
-#   --save-ref       write this run as the new reference (ref/results.tsv)
+#   --save-ref       write this run as the new reference (CONF/ref/results.tsv)
 #   --jobs N         smoke and aslr tests run N at a time (default 4)
 #   --no-wine        smoke tests under Linux only
 #
 # Needs: scons, make, MinGW-w64 and Wine (for the windows builds and tests), Xvfb,
 # ImageMagick (import, convert), 7z, unrar, dosbox, nasm (see sr-regression.sh).
-# Environment: REGRESS_OUT (reports and logs, default <workspace>/cache/sdk-regress), SR_IMAGES,
+# Environment: REGRESS_OUT (reports and logs, default <workspace>/cache/sdk-regress), REGRESS_CONF,
 # DOS_RECOMP_ROOT (see lib.sh and sr-regression.sh).
 #
 # Results go to $REGRESS_OUT/results.tsv, TAB-separated:
@@ -144,7 +145,7 @@ if want llasm; then
         fi
         # --save-ref renews the listing too: its old verdict is only in the log
         renew=(); [ "$SAVE" = 1 ] && renew=(--renew)
-        "$REGRESS_DIR/llasm_hashes.py" "$repo" --target "$(game_target "$id")" --ref "$REGRESS_DIR/ref/llasm-$id.txt" --id "$id" "${renew[@]}" | while IFS= read -r line; do
+        "$REGRESS_DIR/llasm_hashes.py" "$repo" --target "$(game_target "$id")" --ref "$CONF/ref/llasm-$id.txt" --id "$id" "${renew[@]}" | while IFS= read -r line; do
             add "$line"
         done
     done
@@ -184,7 +185,7 @@ if want stubs; then
 fi
 
 # ---- comparison with the reference run
-REF="$REGRESS_DIR/ref/results.tsv"
+REF="$CONF/ref/results.tsv"
 if [ "$SAVE" = 1 ]; then
     # a partial run (--only, GAME...) replaces only its own rows of the reference
     python3 - "$REF" "$RESULTS" <<'PY2'
@@ -203,12 +204,12 @@ merged.update(rows(now))
 with open(ref, 'w') as out:
     out.writelines(merged[k] for k in sorted(merged))
 PY2
-    want sr && cp "$OUT/sr-hashes.txt" "$REGRESS_DIR/ref/sr-hashes.txt"
+    want sr && cp "$OUT/sr-hashes.txt" "$CONF/ref/sr-hashes.txt"
     echo "reference saved: $REF" >&2
     exit 0
 fi
 [ -f "$REF" ] || { echo "no reference run ($REF); use --save-ref" >&2; exit 0; }
-echo "## comparison with ref/results.tsv" >&2
+echo "## comparison with $REF" >&2
 python3 - "$REF" "$RESULTS" "$ONLY" "${GAMES[*]}" "$WINE" <<'PY'
 import sys
 

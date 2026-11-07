@@ -184,8 +184,8 @@ uint32_t CCALL timeGetDevCaps_c(void *ptc, uint32_t cbtc)
     return 0;
 }
 /* Joysticks: none is attached.  A success code would make a game read the
- * JOYCAPS/JOYINFOEX it passed in, which nobody filled (a game took the stack
- * garbage in dwButtons for a pressed button and skipped every movie). */
+ * JOYCAPS/JOYINFOEX it passed in, which nobody filled (a game took the
+ * stack garbage in dwButtons for a pressed button and skipped every movie). */
 
 #define JOYERR_PARMS_c     165
 #define JOYERR_UNPLUGGED_c 167

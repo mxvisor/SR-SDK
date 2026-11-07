@@ -16,18 +16,13 @@ DOS games, and a win32 game with winapi=no, have no row. Exit status 1 on a fail
 """
 import glob, os, re, subprocess, sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SDK = os.path.abspath(os.path.join(HERE, '..', '..'))
-ROOT = os.environ.get('DOS_RECOMP_ROOT') or os.path.dirname(SDK)
+from regress_conf import SDK, ROOT, rows
 DEVICE = 'pc64-linux'
 
 
 def games():
     out = []
-    for line in open(os.path.join(HERE, 'games.tsv')):
-        if line.startswith('#') or not line.strip():
-            continue
-        f = line.rstrip('\n').split('\t')
+    for f in rows('games.tsv'):
         target = f[9] if len(f) > 9 and f[9] else 'default'
         out.append((f[0], os.path.join(ROOT, f[1]), f[2], target))
     return out
