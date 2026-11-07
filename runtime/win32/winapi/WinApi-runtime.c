@@ -105,55 +105,6 @@ void X86_WriteMemProcedure(uint32_t address, uint32_t size, uint32_t value)
     fprintf(stderr, GAME_NAME ": unexpected segment-override write at %08x\n", address);
 }
 
-/* The SDL_mixer device that CD audio (Game_music.c) plays through, in the format
- * audio/pc.c's Init_Audio chose.  The digital sound of a Win32 game goes through
- * its own DirectSound layer (WinApi-dsound.c).  A failure only silences the music. */
-static int audio_open;
-
-int Game_AudioInit(void)
-{
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-        fprintf(stderr, GAME_NAME ": no audio: %s\n", SDL_GetError());
-        return -1;
-    }
-    if (Mix_OpenAudio(Game_AudioRate, (Uint16)Game_AudioFormat, (int)Game_AudioChannels, Game_AudioBufferSize) != 0) {
-        fprintf(stderr, GAME_NAME ": no audio: %s\n", Mix_GetError());
-        SDL_QuitSubSystem(SDL_INIT_AUDIO);
-        return -1;
-    }
-    /* SDL_mixer lets the device change the rate and the channels (Android's
-     * often runs at 48 kHz): what is mixed has to be made for what was opened. */
-    {
-        int rate = 0, channels = 0;
-        Uint16 format = 0;
-
-        if (Mix_QuerySpec(&rate, &format, &channels) != 0)
-        {
-            Game_AudioRate = rate;
-            Game_AudioChannels = (unsigned int)channels;
-            Game_AudioFormat = format;
-        }
-        fprintf(stderr, GAME_NAME ": audio %i Hz, %i channels, format %x, %i samples\n",
-                rate, channels, (unsigned int)format, Game_AudioBufferSize);
-    }
-    audio_open = 1;
-    return 0;
-}
-
-void Game_AudioDeinit(void)
-{
-    if (!audio_open) return;
-    Mix_HaltChannel(-1);
-    Mix_CloseAudio();
-    SDL_QuitSubSystem(SDL_INIT_AUDIO);
-    audio_open = 0;
-}
-
-int Game_AudioIsOpen(void)
-{
-    return audio_open;
-}
-
 int Game_RuntimeInit(void)
 {
     if (Game_FilesInit() != 0) return -1;

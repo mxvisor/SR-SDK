@@ -293,12 +293,12 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
-| `GAME_MIXER_CHANNELS` | `Game_dosaudio.c`: SDL_mixer channels (default 16) |
+| `GAME_MIXER_CHANNELS` | `core/Game_audio.c`, the SDL_mixer device of every port (DOS and Win32): its channels (default SDL_mixer's 8) |
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
 
-`Game_dosmain.c` is the `main` of a DOS game's port, `Game_dosaudio.c` the SDL_mixer device, `Game_dostimer.c`
+`Game_dosmain.c` is the `main` of a DOS game's port, `Game_dostimer.c` its
 `SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the
 functions the file's head names.
 
@@ -460,7 +460,7 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dospit.c`, `.h`: PIT channel 0 on the host clock: the reload value and the counter
   of ports 40h/43h, when IRQ 0 is due (`Game_DosPitRun`), the BIOS ticks;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
-- `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio and a game's digital sound.
+- `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
 
 The `Game_dos*` files are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.

@@ -23,11 +23,11 @@
  */
 
 
-/* The default audio device of a DOS game: SDL_mixer opened in the format
- * audio/pc.c's Init_Audio chose, with GAME_MIXER_CHANNELS channels (default
- * 16).  A game that plays its own sound through it (digital sound, a sound
- * cache to free at the end) lists Game_dosaudio.c in runtime_skip and brings
- * Game_AudioInit, Game_AudioDeinit and Game_AudioIsOpen. */
+/* The SDL_mixer device of every port, DOS and Win32: CD audio (Game_music.c)
+ * and MIDI (Game_midi.c) play through it, and so does a game's own digital
+ * sound on SDL_mixer channels.  It opens in the format audio/pc.c's
+ * Init_Audio chose; GAME_MIXER_CHANNELS sets the channels (default SDL_mixer's
+ * own).  A failure only silences the port. */
 
 #include <stdio.h>
 
@@ -39,25 +39,34 @@
 #include "Game_sound.h"
 #include "Game_hooks.h"
 
-#ifndef GAME_MIXER_CHANNELS
-#define GAME_MIXER_CHANNELS 16
-#endif
-
 static int audio_open;
 
 int Game_AudioInit(void)
 {
+    int rate = 0, channels = 0;
+    Uint16 format = 0;
+
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "%s: no audio: %s\n", GAME_NAME, SDL_GetError());
         return -1;
     }
-    /* the format audio/pc.c's Init_Audio chose */
     if (Mix_OpenAudio(Game_AudioRate, (Uint16)Game_AudioFormat, (int)Game_AudioChannels, Game_AudioBufferSize) != 0) {
         fprintf(stderr, "%s: no audio: %s\n", GAME_NAME, Mix_GetError());
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return -1;
     }
+    /* SDL_mixer lets the device change the rate and the channels (Android's
+     * often runs at 48 kHz): what is mixed has to be made for what was opened. */
+    if (Mix_QuerySpec(&rate, &format, &channels) != 0) {
+        Game_AudioRate = rate;
+        Game_AudioChannels = (unsigned int)channels;
+        Game_AudioFormat = format;
+    }
+    fprintf(stderr, "%s: audio %i Hz, %i channels, format %x, %i samples\n",
+            GAME_NAME, rate, channels, (unsigned int)format, Game_AudioBufferSize);
+#ifdef GAME_MIXER_CHANNELS
     Mix_AllocateChannels(GAME_MIXER_CHANNELS);
+#endif
     audio_open = 1;
     return 0;
 }
