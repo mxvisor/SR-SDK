@@ -88,7 +88,7 @@ static int playing_sequence = -1;  /* the sequence Game_midi plays */
 static int sequences_allocated;     /* Game_midi is AIL's to shut down */
 static int ail_log = -1;
 
-#define AIL_LOG(...) do { if (ail_log < 0) ail_log = (getenv(GAME_ENV("AIL_LOG")) != NULL); \
+#define AIL_LOG(...) do { if (ail_log < 0) ail_log = (getenv(GAME_ENV("TRACE_SOUND")) != NULL); \
                           if (ail_log) fprintf(stderr, "ail: " __VA_ARGS__); } while (0)
 
 static ail_sample *sample_get(int sample)
@@ -456,6 +456,13 @@ uint32_t Game_AilSampleStatus(int sample)
     if (s == NULL) return GAME_AIL_FREE;
     if (s->status == GAME_AIL_PLAYING && !sample_playing(sample)) s->status = GAME_AIL_DONE;
     return s->status;
+}
+
+const void *Game_AilSampleData(int sample)
+{
+    ail_sample *s = sample_get(sample);
+
+    return (s != NULL) ? s->data : NULL;
 }
 
 /* ---- sequences ---- */

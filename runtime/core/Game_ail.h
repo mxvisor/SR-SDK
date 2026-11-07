@@ -84,6 +84,8 @@ void Game_AilStopSample(int sample);
 void Game_AilResumeSample(int sample);
 void Game_AilEndSample(int sample);
 uint32_t Game_AilSampleStatus(int sample);
+/* the PCM AIL_set_sample_address (or the WAV image) gave it, NULL for none */
+const void *Game_AilSampleData(int sample);
 
 /* a sequence of the pool, done; -1 when none is free */
 int Game_AilAllocateSequence(void);

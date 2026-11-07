@@ -346,6 +346,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DOS_INTERRUPT(number, regs)` | the game's own INT services, tried first (nonzero: served) |
 | `GAME_DOS_REALMODE_INTERRUPT(vector, regs, es)` | DPMI 0300h (a real-mode interrupt) for a vector the shared services do not know, on the copy of the call structure; `es` is the structure's ES (nonzero: served; otherwise INT 10h, 1Ah, 21h and 2Fh go to the shared services and every other vector fails with CF set) |
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
+| `GAME_DOS_AIL_PERIOD_POINTER()` / `GAME_DOS_AIL_SAMPLE_NAME(address)` / `GAME_DOS_AIL_SERVICE_US` | `Game_dosail.c`: where the game reads AIL's current PIT period (a dword of microseconds, kept current); the name of the sound at a guest address, for `$<GAME>_TRACE_SOUND`; the period of the DIG driver's own service timer (default 5000 us, SB16.DIG's) |
 | `GAME_DOS_TIMER_TICK()` | what the PIT's channel 0 interrupt runs in `Game_dostimer.c`'s `SR_CheckTimer`, in place of `Game_DosTimerTick` (the guest's INT 8 and INT 1Ch handlers): a sound driver's timer service and then the game's handler |
 
 `Game_dosmain.c` is the `main` of a DOS game's port, `Game_dostimer.c` its
@@ -467,8 +468,9 @@ runtime/dos/            the runtime of a DOS4GW game: start and end, ports and s
                         accesses (Game_dosrt), interrupts (Game_dosint), registers
                         (Game_dosregs.h), DOS memory (Game_dosmem), INT 21h file functions
                         (Game_dosfile), the keyboard (Game_doskbd), MSCDEX (Game_doscd),
-                        the PIT (Game_dospit), the VGA ports (Game_dosvga)
-runtime/dos/llasm/      shared llasm includes of the DOS ports
+                        the PIT (Game_dospit), the VGA ports (Game_dosvga), the
+                        Miles AIL a game was linked with (Game_dosail)
+runtime/dos/llasm/      shared llasm includes of the DOS ports (ail.llinc: AIL's entry points)
 runtime/win32/          what every port of a Windows original needs: platform.h, X86_FS_mem.c,
                         llasm/ (asm-cpu.c, Game-asm.c); glide/ (Glide 2 on OpenGL), gl/ (Direct3D on OpenGL)
 runtime/win32/winapi/   the Win32 API layer: kernel32, user32, gdi32, DirectDraw, Direct3D,
@@ -492,7 +494,7 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_music.c`, `.h`: MSCDEX audio playback through SDL_mixer;
 - `Game_ail.c`, `.h`: the Miles Sound System (AIL 3.x) without its entry points: digital
   samples on reserved channels of the SDL_mixer device, XMIDI sequences through
-  `Game_midi`; `$<GAME>_AIL_LOG` logs what it plays;
+  `Game_midi`; `$<GAME>_TRACE_SOUND` logs what it plays;
 - `Game_dosrt.c`, `.h`: start and end of a DOS game's runtime, the I/O ports, the
   segment-override accesses (PSP, the last DOS block, a DOS address);
 - `Game_dosint.c`, `.h`: the interrupt vectors, the game's handlers run as hardware
@@ -514,6 +516,10 @@ skeleton/               a starting point for a new game repository -- to come
   contents and the audio status (IOCTL input), PLAY/STOP/RESUME AUDIO through `Game_music.c`;
 - `Game_dospit.c`, `.h`: PIT channel 0 on the host clock: the reload value and the counter
   of ports 40h/43h, when IRQ 0 is due (`Game_DosPitRun`), the BIOS ticks;
+- `Game_dosail.c`, `.h`: the Miles AIL 3.x a game was linked with, over `Game_ail.c`: its
+  timer service on the PIT (`Game_AIL_TimerInterrupt` from the game's `GAME_DOS_TIMER_TICK()`),
+  the digital driver (`$<GAME>_NOSOUND`) and its samples; the game's `external_procedures.sci`
+  routes AIL's entry points to the `SR_AIL_*` of `llasm/ail.llinc`, which its own llasm includes;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
 - `Game_audiostream.c/.h`: a stream of PCM (`Game_AudioSourceOpen`, SDL_OpenAudioDevice's calls: a fill callback or a queue) on a device of its own or in SDL_mixer's output, whose one post-mix hook it owns; the Sound Blaster, DirectSound and a game's own driver play through it.

@@ -1,0 +1,280 @@
+;;
+;;  Copyright (C) 2016-2026 Roman Pauer
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+;;
+
+;; The Miles AIL 3.x of a DOS4GW game (runtime/dos/Game_dosail.c): the
+;; procedures its external_procedures.sci routes the entry points to, for the
+;; game's own llasm to include.  cdecl: arguments on the stack from [esp + 4],
+;; the caller pops them, the result in eax.  AIL's own wrappers preserve ebx,
+;; esi, edi and ebp; these leave every register but eax untouched.
+
+funcv Game_AIL_startup
+funcv Game_AIL_shutdown
+func Game_AIL_set_preference number, value
+func Game_AIL_register_timer callback
+funcv Game_AIL_set_timer_period timer, microseconds
+funcv Game_AIL_start_timer timer
+funcv Game_AIL_stop_timer timer
+funcv Game_AIL_release_timer_handle timer
+func Game_AIL_install_DIG_INI *dig
+funcp Game_AIL_allocate_sample_handle *dig
+funcv Game_AIL_release_sample_handle *S
+funcv Game_AIL_init_sample *S
+funcv Game_AIL_set_sample_address *S, *start, len
+funcv Game_AIL_set_sample_type *S, format, flags
+funcv Game_AIL_start_sample *S
+funcv Game_AIL_stop_sample *S
+funcv Game_AIL_resume_sample *S
+funcv Game_AIL_end_sample *S
+funcv Game_AIL_set_sample_playback_rate *S, playback_rate
+funcv Game_AIL_set_sample_volume *S, volume
+funcv Game_AIL_set_sample_pan *S, pan
+funcv Game_AIL_set_sample_loop_count *S, loop_count
+func Game_AIL_sample_status *S
+
+proc SR_AIL_startup public
+    call Game_AIL_startup
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_shutdown public
+    call Game_AIL_shutdown
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_preference public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_preference tmp0, tmp1
+    mov eax, tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_register_timer public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_register_timer tmp0
+    mov eax, tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_timer_period public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_timer_period tmp0, tmp1
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_start_timer public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_start_timer tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_stop_timer public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_stop_timer tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_release_timer_handle public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_release_timer_handle tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_install_DIG_INI public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_install_DIG_INI tmp0
+    mov eax, tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_allocate_sample_handle public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_allocate_sample_handle tmp0
+    mov eax, tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_release_sample_handle public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_release_sample_handle tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_init_sample public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_init_sample tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_address public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    add tmp2, esp, 3*4
+    load tmp2, tmp2, 4
+    call Game_AIL_set_sample_address tmp0, tmp1, tmp2
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_type public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    add tmp2, esp, 3*4
+    load tmp2, tmp2, 4
+    call Game_AIL_set_sample_type tmp0, tmp1, tmp2
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_start_sample public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_start_sample tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_stop_sample public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_stop_sample tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_resume_sample public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_resume_sample tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_end_sample public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_end_sample tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_playback_rate public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_sample_playback_rate tmp0, tmp1
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_volume public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_sample_volume tmp0, tmp1
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_pan public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_sample_pan tmp0, tmp1
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_set_sample_loop_count public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    add tmp1, esp, 2*4
+    load tmp1, tmp1, 4
+    call Game_AIL_set_sample_loop_count tmp0, tmp1
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
+
+proc SR_AIL_sample_status public
+    add tmp0, esp, 4
+    load tmp0, tmp0, 4
+    call Game_AIL_sample_status tmp0
+    mov eax, tmp0
+    load tmp0, esp, 4
+    add esp, esp, 4
+    tcall tmp0
+endp
