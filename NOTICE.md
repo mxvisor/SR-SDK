@@ -9,7 +9,9 @@ Where a file comes from, its header says:
 
 - a file taken from SR, changed or not, keeps SR's header with Roman Pauer's
   copyright and the permission notice; a changed one adds a
-  `Copyright (C) 2026 mxvisor` line;
+  `Copyright (C) 2026 mxvisor` line. A file that has another name here than in
+  SR, or holds a part of a file of SR, gives the name of SR's file in
+  parentheses: `Copyright (C) 2016-2026 Roman Pauer (main.c)`;
 - a file written for SR-SDK carries `Copyright (C) 2026 mxvisor` and the MIT
   notice;
 - third-party code (below) keeps its own header and license.
