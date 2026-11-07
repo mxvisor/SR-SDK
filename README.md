@@ -519,8 +519,7 @@ has no use for them leaves them out with `runtime_skip`.
 
 MIT, see [`LICENSE`](LICENSE). SR-SDK contains files taken from SR and
 derived from it; they keep Roman Pauer's copyright, and files changed here add
-their own line. [`NOTICE.md`](NOTICE.md) lists where each file comes from and
-gives SR's license text, and that of `printf` by Marco Paland, which SR
-includes.
+their own line. [`NOTICE.md`](NOTICE.md) names the third-party code (SR,
+TinySoundFont, printf, blast, SDL's Android project) with its license texts.
 
 Thanks to Roman Pauer for SR and its ports, on which all of this stands.

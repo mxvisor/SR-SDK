@@ -2,18 +2,22 @@
 
 SR-SDK is built on [SR](https://github.com/M-HT/SR) by Roman Pauer. SR is
 released under the MIT license (and, for use in GPL projects, also under
-GPLv2 or later and LGPLv2.1 or later); SR-SDK uses it under the MIT license.
-The MIT license asks that its copyright notice and permission notice go with
-every copy or substantial portion of the software. SR-SDK meets this as
-follows:
+GPLv2 or later and LGPLv2.1 or later); SR-SDK uses it under the MIT license,
+whose text is below under "SR's license".
 
-- every file taken from SR keeps its header with Roman Pauer's copyright and
-  the permission notice;
-- a file changed here keeps that header and adds a `Copyright (C) 2026
-  mxvisor` line;
-- `LICENSE` names both copyright holders and carries the MIT text;
-- this file lists where each file comes from and gives SR's license text
-  below.
+Where a file comes from, its header says:
+
+- a file taken from SR, changed or not, keeps SR's header with Roman Pauer's
+  copyright and the permission notice; a changed one adds a
+  `Copyright (C) 2026 mxvisor` line;
+- a file written for SR-SDK carries `Copyright (C) 2026 mxvisor` and the MIT
+  notice;
+- third-party code (below) keeps its own header and license.
+
+`runtime/core/VKfont2.h`, a font bitmap without a header, is SR's file, unchanged
+(Roman Pauer, MIT).
+
+`LICENSE` names both copyright holders and carries the MIT text.
 
 ## SR itself
 
@@ -58,36 +62,6 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-## Files copied from SR unchanged
-
-Each of these is identical to a file of one of SR's game ports in
-`SR/games/`:
-
-| File | Copyright |
-|---|---|
-| `runtime/core/Game_defs.h` | Roman Pauer |
-| `runtime/core/VKfont2.h` | font bitmap data, from SR |
-| `runtime/core/audio.h`, `display.h`, `input.h`, `main.h` | Roman Pauer |
-| `runtime/core/display/palette32bgra.h`, `palettecommon.h` | Roman Pauer |
-| `runtime/core/ptr32.h` | Roman Pauer |
-| `runtime/core/virtualfs.c`, `.h` | Roman Pauer |
-| `runtime/core/printf_x86.c`, `.h` | Marco Paland, MIT (see below); SR's modified version |
-| `runtime/dos/llasm/SR-asm-calls.llinc` | Roman Pauer |
-| `runtime/dos/llasm/macros.llinc` | Roman Pauer |
-
-## Files derived from SR and changed here
-
-| File | Derived from | Copyright |
-|---|---|---|
-| `runtime/core/Game_thread.c`, `.h` | the ports' `Game_thread.c`, `.h` | Roman Pauer, mxvisor |
-| `runtime/core/Game_vars.h` | the ports' `Game_vars.h` | Roman Pauer, mxvisor |
-| `runtime/core/Game_memory.c`, `.h` | the ports' `Game_memory.c`, `.h` | Roman Pauer, mxvisor |
-| `runtime/core/audio/pc.c`, `input/pc.c` | the ports' `audio/pc.c`, `input/pc.c` | Roman Pauer, mxvisor |
-| `runtime/core/touchgamepad.h` | the header of the ports' runtime headers | Roman Pauer, mxvisor |
-| `scons/game.py` | the ports' `SConstruct` files | Roman Pauer, mxvisor |
-| `tools/compact_source.py` | SR's per-game `compact_source*.py` (no header of their own; SR's MIT license) | Roman Pauer, mxvisor |
-| `llasm/llasm.py` | a port to Python of SR's `llasm/llasm.d` | Roman Pauer, mxvisor |
-
 ## SDL
 
 SR-SDK contains no SDL sources. `tools/android_sdl.sh` downloads the release
@@ -118,16 +92,6 @@ freely, subject to the following restrictions:
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 ```
-
-## Files written for SR-SDK
-
-`runtime/core/Game_clib.c`, `Game_cdrom.*`, `Game_file.*`, `Game_gamedir.c`,
-`Game_keys.*`, `Game_music.*`, `Game_sound.h`, `Game_vfs.*`, `Game_android.*`,
-`runtime/dos/Game_dosfile.*`, `Game_doskbd.*`, `Game_doscd.*`, `Game_dospit.*`,
-`Game_dosint.*`, `Game_dosrt.*`, `Game_dosvga.*`, `Game_dosregs.h`,
-`android/GameActivity.java`, `tools/android_apk.py`, `tools/android_sdl.sh`
-and `llasm/llasm_compare.py`, `llasm_edge.py`, `llasm_fuzz.py`: Copyright (C)
-2026 mxvisor, MIT; so are `tools/image/*.py` and `tools/regress/*`.
 
 ## blast
 
