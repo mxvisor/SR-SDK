@@ -99,6 +99,25 @@ int Winapi_MenuItem(uint32_t hMenu, unsigned int pos, uint32_t *flags, uint32_t 
 /* a copy (malloc) of a resource of the game's EXE: lpName is an id below 0x10000,
  * else the guest's name ("#123" is an id); NULL if there is none */
 uint8_t *Winapi_LoadResource(uint32_t type, uint32_t lpName, uint32_t *size);
+
+/* bridged by a game's import shim: the arguments are numbers */
+uint32_t CCALL LoadStringA_c(uint32_t hInstance, uint32_t uID, uint32_t lpBuffer, uint32_t cchBufferMax);
+uint32_t CCALL CopyRect_c(uint32_t lprcDst, uint32_t lprcSrc);
+uint32_t CCALL MoveWindow_c(uint32_t hWnd, uint32_t X, uint32_t Y, uint32_t nWidth, uint32_t nHeight, uint32_t bRepaint);
+uint32_t CCALL GetFocus_c(void);
+uint32_t CCALL SetCapture_c(uint32_t hWnd);
+uint32_t CCALL ReleaseCapture_c(void);
+uint32_t CCALL CallWindowProcA_c(uint32_t lpPrevWndFunc, uint32_t hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam);
+uint32_t CCALL GetKeyNameTextA_c(uint32_t lParam, uint32_t lpString, uint32_t cchSize);
+uint32_t CCALL GetDlgCtrlID_c(uint32_t hWnd);
+uint32_t CCALL CheckDlgButton_c(uint32_t hDlg, uint32_t nIDButton, uint32_t uCheck);
+uint32_t CCALL IsDlgButtonChecked_c(uint32_t hDlg, uint32_t nIDButton);
+uint32_t CCALL CheckRadioButton_c(uint32_t hDlg, uint32_t nIDFirstButton, uint32_t nIDLastButton, uint32_t nIDCheckButton);
+uint32_t CCALL PropertySheetA_c(uint32_t lppsph);
+uint32_t CCALL CreateDialogParamA_c(uint32_t hInstance, uint32_t lpTemplateName, uint32_t hWndParent, uint32_t lpDialogFunc, uint32_t dwInitParam);
+uint32_t CCALL InitCommonControls_c(void);
+uint32_t CCALL CreateStatusWindowA_c(uint32_t style, uint32_t lpszText, uint32_t hwndParent, uint32_t wID);
+uint32_t CCALL DrawStatusTextA_c(uint32_t hDC, uint32_t lprc, uint32_t pszText, uint32_t uFlags);
 unsigned char Winapi_AnsiChar(uint32_t ch);
 
 #ifdef __cplusplus

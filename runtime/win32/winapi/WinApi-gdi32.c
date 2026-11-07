@@ -26,6 +26,7 @@
 #if defined(DEBUG_GDI32)
 #include <inttypes.h>
 #endif
+#include "Game_hooks.h"
 #include "WinApi-gdi32.h"
 #include "WinApi.h"
 #include <stdio.h>
@@ -35,6 +36,7 @@
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 
+#if !GAME_WINAPI_GDI    /* else WinApi-gdi.c */
 uint32_t CCALL BitBlt_c(void */*hdcDest*/, int32_t /*nXDest*/, int32_t /*nYDest*/, int32_t /*nWidth*/, int32_t /*nHeight*/, void */*hdcSrc*/, int32_t /*nXSrc*/, int32_t /*nYSrc*/, uint32_t /*dwRop*/)
 {
     eprintf("Unimplemented: %s\n", "BitBlt");
@@ -55,6 +57,7 @@ void * CCALL CreateFontIndirectA_c(void */*lplf*/)
     exit(1);
 //    return CreateFontIndirectA((const LOGFONTA *)lplf);
 }
+#endif
 
 void * CCALL CreatePolygonRgn_c(void */*lppt*/, int32_t /*cPoints*/, int32_t /*fnPolyFillMode*/)
 {
@@ -73,6 +76,7 @@ void * CCALL CreateSolidBrush_c(uint32_t /*crColor*/)
 //    return CreateSolidBrush(crColor);
 }
 
+#if !GAME_WINAPI_GDI    /* else WinApi-gdi.c */
 /* The port's DCs and GDI objects are handles without Windows objects behind
  * them (a WinG game makes its own, game/WinApi-wing.c): deleting one, on the
  * way out, has nothing to free */
@@ -93,6 +97,7 @@ uint32_t CCALL DeleteObject_c(void *hObject)
 
     return (hObject != NULL) ? 1 : 0;
 }
+#endif
 
 uint32_t CCALL FillRgn_c(void */*hdc*/, void */*hrgn*/, void */*hbr*/)
 {
@@ -119,6 +124,7 @@ int32_t CCALL OffsetRgn_c(void */*hrgn*/, int32_t /*nXOffset*/, int32_t /*nYOffs
 //    return OffsetRgn((HRGN)hrgn, nXOffset, nYOffset);
 }
 
+#if !GAME_WINAPI_GDI    /* else WinApi-gdi.c */
 /* The objects a device context holds: the layer has no GDI, but a game that
  * draws through WinG selects a bitmap into its device context and expects the
  * selection to stick, so the object is remembered here. */
@@ -175,3 +181,4 @@ uint32_t CCALL TextOutA_c(void */*hdc*/, int32_t /*nXStart*/, int32_t /*nYStart*
 //    return TextOutA((HDC)hdc, nXStart, nYStart, lpString, cbString);
 }
 
+#endif

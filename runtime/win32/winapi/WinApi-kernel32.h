@@ -95,6 +95,11 @@ void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t dwDesiredAccess,
 uint32_t CCALL UnmapViewOfFile_c(const void *lpBaseAddress);
 void * CCALL _lopen_c(const char *lpPathName, uint32_t iReadWrite);
 uint32_t CCALL _lclose_c(void *hFile);
+uint32_t CCALL _lcreat_c(uint32_t lpPathName, uint32_t iAttribute);
+uint32_t CCALL _lwrite_c(uint32_t hFile, uint32_t lpBuffer, uint32_t uBytes);
+uint32_t CCALL _llseek_c(uint32_t hFile, uint32_t lOffset, uint32_t iOrigin);
+uint32_t CCALL GetTempPathA_c(uint32_t nBufferLength, uint32_t lpBuffer);
+uint32_t CCALL LoadModule_c(uint32_t lpModuleName, uint32_t lpParameterBlock);
 /* the start of Winapi_GetTicks (Linux) */
 void Winapi_InitTicks(void);
 

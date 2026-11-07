@@ -658,6 +658,15 @@ int32_t Game_CdTrackSectors(int track)
 {
     if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present) return 0;
     const cd_track *source = &tracks[track];
+    /* A copy that says where its tracks are on the disc (REM DISC of portable_cd.py)
+     * has them as long as on the disc: up to the next track's INDEX 01, its pregap
+     * included, where the file of a track ends at the pregap (a game may check the
+     * lengths, as MCI gives them, against those of its disc); the data track it
+     * left out goes up to the first audio track. */
+    if ((source->compressed || source->path[0] == 0) && track < GAME_CD_MAX_TRACKS && tracks[track + 1].present &&
+        (source->index1 > 0 || track == 1) && tracks[track + 1].index1 > source->index1) {
+        return tracks[track + 1].index1 - source->index1;
+    }
     if (source->compressed) {
         /* a file of its own: as long as the decoder says, from INDEX 01 */
         static int32_t frames[GAME_CD_MAX_TRACKS + 1];

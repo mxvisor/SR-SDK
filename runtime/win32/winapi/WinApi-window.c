@@ -536,6 +536,60 @@ uint8_t *Winapi_LoadResource(uint32_t type, uint32_t lpName, uint32_t *size)
     return copy;
 }
 
+/* RT_STRING: block (uID / 16) + 1 holds 16 strings, each a WORD of its length
+ * and its UTF-16 letters; they are given as the ANSI letters of Latin-1 */
+uint32_t CCALL LoadStringA_c(uint32_t hInstance, uint32_t uID, uint32_t lpBuffer, uint32_t cchBufferMax)
+{
+    uint32_t size = 0, offset = 0, length = 0, i;
+    uint8_t *data;
+    char *out;
+
+    (void)hInstance;                                /* the EXE's own resources */
+    if (lpBuffer == 0 || cchBufferMax == 0) return 0;
+    out = (char *)GUEST_MEM(lpBuffer);
+    out[0] = 0;
+    data = Winapi_LoadResource(6 /* RT_STRING */, (uID >> 4) + 1, &size);
+    if (data == NULL) return 0;
+    for (i = 0; i <= (uID & 15) && offset + 2 <= size; i++)
+    {
+        length = data[offset] | (data[offset + 1] << 8);
+        if (i < (uID & 15)) offset += 2 + length * 2;
+    }
+    if (i == (uID & 15) + 1 && offset + 2 + length * 2 <= size)
+    {
+        if (length > cchBufferMax - 1) length = cchBufferMax - 1;
+        for (i = 0; i < length; i++)
+        {
+            uint32_t c = data[offset + 2 + i * 2] | (data[offset + 3 + i * 2] << 8);
+            out[i] = (char)((c < 256) ? c : '?');
+        }
+        out[length] = 0;
+    }
+    else length = 0;
+    free(data);
+    return length;
+}
+
+/* comctl32: the controls are drawn by the port, the status bar of a window is not */
+uint32_t CCALL InitCommonControls_c(void)
+{
+    return 0;
+}
+
+#define STATUS_WINDOW_HANDLE 0x53540000u
+
+uint32_t CCALL CreateStatusWindowA_c(uint32_t style, uint32_t lpszText, uint32_t hwndParent, uint32_t wID)
+{
+    (void)style; (void)lpszText; (void)hwndParent; (void)wID;
+    return STATUS_WINDOW_HANDLE;
+}
+
+uint32_t CCALL DrawStatusTextA_c(uint32_t hDC, uint32_t lprc, uint32_t pszText, uint32_t uFlags)
+{
+    (void)hDC; (void)lprc; (void)pszText; (void)uFlags;
+    return 0;
+}
+
 uint32_t CCALL LoadMenuA_c(uint32_t hInstance, uint32_t lpMenuName)
 {
     uint32_t size = 0, hMenu = 0;

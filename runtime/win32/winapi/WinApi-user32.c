@@ -31,6 +31,7 @@
 #include "Game_ui.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <SDL.h>
 #include "WinApi-config.h"
 #include "WinApi-guest.h"
@@ -2471,6 +2472,105 @@ uint32_t CCALL GetWindowRect_c(uint32_t hwnd, uint32_t rect)
     return window_rect(rect);
 }
 #endif
+
+/* RECT is four LONGs */
+uint32_t CCALL CopyRect_c(uint32_t lprcDst, uint32_t lprcSrc)
+{
+    if (lprcDst == 0 || lprcSrc == 0) return 0;
+    memmove(GUEST_MEM(lprcDst), GUEST_MEM(lprcSrc), 16);
+    return 1;
+}
+
+/* the port's window keeps its place and size: the player's */
+uint32_t CCALL MoveWindow_c(uint32_t hWnd, uint32_t X, uint32_t Y, uint32_t nWidth, uint32_t nHeight, uint32_t bRepaint)
+{
+    (void)hWnd; (void)X; (void)Y; (void)nWidth; (void)nHeight; (void)bRepaint;
+    return 1;
+}
+
+/* the one window has the focus and the mouse */
+uint32_t CCALL GetFocus_c(void)
+{
+    return GAME_PTR_TO_GUEST32(PSEUDO_HANDLE_MAIN_WINDOW);
+}
+
+static uint32_t capture_window;
+
+uint32_t CCALL SetCapture_c(uint32_t hWnd)
+{
+    uint32_t old = capture_window;
+
+    capture_window = hWnd;
+    return old;
+}
+
+uint32_t CCALL ReleaseCapture_c(void)
+{
+    capture_window = 0;
+    return 1;
+}
+
+/* a window procedure of the game, called by the game (a subclassed control) */
+uint32_t CCALL CallWindowProcA_c(uint32_t lpPrevWndFunc, uint32_t hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
+{
+    uint32_t args[4];
+
+    if (lpPrevWndFunc == 0) return 0;
+    args[0] = hWnd;
+    args[1] = Msg;
+    args[2] = wParam;
+    args[3] = lParam;
+    return Winapi_CallGuest(lpPrevWndFunc, 4, args);
+}
+
+/* the names of the keys of an English Windows, by the scan code of lParam (bits
+ * 16-23) and its extended bit (24) */
+uint32_t CCALL GetKeyNameTextA_c(uint32_t lParam, uint32_t lpString, uint32_t cchSize)
+{
+    static const char *const names[0x59] = {
+        NULL, "Esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace", "Tab",
+        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "Enter", "Ctrl", "A", "S",
+        "D", "F", "G", "H", "J", "K", "L", ";", "'", "`", "Shift", "\\", "Z", "X", "C", "V",
+        "B", "N", "M", ",", ".", "/", "Right Shift", "Num *", "Alt", "Space", "Caps Lock", "F1", "F2", "F3",
+        "F4", "F5", "F6", "F7", "F8", "F9", "F10", "Pause", "Scroll Lock", "Num 7", "Num 8", "Num 9", "Num -", "Num 4", "Num 5", "Num 6",
+        "Num +", "Num 1", "Num 2", "Num 3", "Num 0", "Num Del", NULL, NULL, NULL, "F11", "F12"
+    };
+    unsigned int scan = (lParam >> 16) & 0xff;
+    const char *name = (scan < 0x59) ? names[scan] : NULL;
+    char *out;
+
+    if (lParam & (1u << 24))
+    {
+        switch (scan)
+        {
+            case 0x1c: name = "Num Enter"; break;
+            case 0x1d: name = "Right Ctrl"; break;
+            case 0x35: name = "Num /"; break;
+            case 0x38: name = "Right Alt"; break;
+            case 0x45: name = "Num Lock"; break;
+            case 0x47: name = "Home"; break;
+            case 0x48: name = "Up"; break;
+            case 0x49: name = "Page Up"; break;
+            case 0x4b: name = "Left"; break;
+            case 0x4d: name = "Right"; break;
+            case 0x4f: name = "End"; break;
+            case 0x50: name = "Down"; break;
+            case 0x51: name = "Page Down"; break;
+            case 0x52: name = "Insert"; break;
+            case 0x53: name = "Delete"; break;
+        }
+    }
+    if (lpString == 0 || cchSize == 0) return 0;
+    out = (char *)GUEST_MEM(lpString);
+    if (name == NULL)
+    {
+        out[0] = 0;
+        return 0;
+    }
+    strncpy(out, name, cchSize - 1);
+    out[cchSize - 1] = 0;
+    return (uint32_t)strlen(out);
+}
 
 uint32_t CCALL GetCursorPos_c(void *lpPoint)
 {

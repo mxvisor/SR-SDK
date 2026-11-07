@@ -38,7 +38,8 @@ else is SR-SDK's.
   controller, BIOS keyboard and INT 33h mouse; VGA mode 13h and its DAC; MSCDEX; an
   emulated Sound Blaster 2.0 with DMA and its interrupt.
 - **Win32** (`runtime/win32/winapi`): kernel32, user32, gdi32, the registry, threads,
-  the window menu and the game's dialogs, winmm and MCI (CD audio), DirectDraw,
+  the window menu and the game's dialogs, GDI with DIB sections and palettes,
+  winmm and MCI (CD audio), DirectDraw,
   DirectInput, DirectSound, Video for Windows (AVI).
 - **3D**: Direct3D 1 and 2 drawn with OpenGL or a software rasteriser; 3dfx Glide 2
   drawn with OpenGL; OpenGL ES 3 on Android. Mods such as a higher internal resolution
@@ -386,6 +387,7 @@ the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION
 | `GAME_WINAPI_ACTIVATE_APP_ON_IDLE` | 1: the port sends `WM_ACTIVATEAPP` with 0 and then with 1 when the program has no other message (the game makes its picture buffer on the first and draws on the second) |
 | `GAME_WINAPI_WINDOW_MESSAGES` | 1: the game's message loop looks at the window of a message: input messages carry the window's handle, `PostMessageA` delivers the `WM_USER` range |
 | `GAME_WINDOW_WIDTH`, `GAME_WINDOW_HEIGHT` | both defined: `GetClientRect` and `GetWindowRect` give the game's window that size at the origin (the display mode it asks for; undefined: the stub, or the game's own function) |
+| `GAME_WINAPI_GDI` | 1: the game draws into DIB sections and copies them to its window with `BitBlt`/`StretchBlt` (`WinApi-gdi.c`: device contexts, bitmaps with their pixels in the guest's memory, palettes; the window's picture, its client size, shown through OpenGL) |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |

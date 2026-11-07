@@ -133,6 +133,7 @@ typedef struct {
     char **items;               /* a list: its strings, data and selection */
     uint32_t *data;
     int count, sel;
+    uint32_t check;             /* a check box or radio button: BST_CHECKED 1 */
 } control;
 
 static struct {
@@ -345,6 +346,55 @@ static int focusable(const control *c)
     return c->type == CTL_BUTTON && (c->style & BS_TYPEMASK_c) != BS_GROUPBOX_c;
 }
 
+uint32_t CCALL SendDlgItemMessageA_c(uint32_t hDlg, uint32_t nIDDlgItem, uint32_t Msg, uint32_t wParam, uint32_t lParam);
+
+/* a modeless dialog (a "Loading" box over the window) is not shown: a game
+ * goes on without its window */
+uint32_t CCALL CreateDialogParamA_c(uint32_t hInstance, uint32_t lpTemplateName, uint32_t hWndParent, uint32_t lpDialogFunc, uint32_t dwInitParam)
+{
+    (void)hInstance; (void)lpTemplateName; (void)hWndParent; (void)lpDialogFunc; (void)dwInitParam;
+    return 0;
+}
+
+/* the property sheet of the game's settings is not shown: it is cancelled
+ * (the settings stay as they are) */
+uint32_t CCALL PropertySheetA_c(uint32_t lppsph)
+{
+    (void)lppsph;
+    eprintf("dialog: a property sheet is not shown\n");
+    return 0;
+}
+
+uint32_t CCALL GetDlgCtrlID_c(uint32_t hWnd)
+{
+    control *c = by_handle(hWnd);
+
+    return (c != NULL) ? (c->id & 0xffff) : 0;
+}
+
+uint32_t CCALL CheckDlgButton_c(uint32_t hDlg, uint32_t nIDButton, uint32_t uCheck)
+{
+    SendDlgItemMessageA_c(hDlg, nIDButton, BM_SETCHECK_c, uCheck, 0);
+    return 1;
+}
+
+uint32_t CCALL IsDlgButtonChecked_c(uint32_t hDlg, uint32_t nIDButton)
+{
+    return SendDlgItemMessageA_c(hDlg, nIDButton, BM_GETCHECK_c, 0, 0);
+}
+
+/* the buttons nIDFirstButton..nIDLastButton: only nIDCheckButton checked */
+uint32_t CCALL CheckRadioButton_c(uint32_t hDlg, uint32_t nIDFirstButton, uint32_t nIDLastButton, uint32_t nIDCheckButton)
+{
+    uint32_t id;
+
+    for (id = nIDFirstButton; id <= nIDLastButton; id++)
+    {
+        SendDlgItemMessageA_c(hDlg, id, BM_SETCHECK_c, (id == nIDCheckButton) ? 1 : 0, 0);
+    }
+    return 1;
+}
+
 uint32_t CCALL EndDialog_c(uint32_t hDlg, uint32_t nResult);
 
 static uint32_t call_proc(uint32_t msg, uint32_t wParam, uint32_t lParam)
@@ -434,7 +484,10 @@ static uint32_t control_message(control *c, uint32_t msg, uint32_t wParam, uint3
         case WM_GETTEXTLENGTH_c:
             return (uint32_t)strlen(c->text);
         case BM_GETCHECK_c:
+            return c->check;
         case BM_SETCHECK_c:
+            c->check = wParam;
+            Game_UiChanged();
             return 0;
     }
     if (c->type != CTL_COMBO) return 0;

@@ -29,6 +29,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
+#include <SDL_mixer.h>
+#include <string.h>
+#include "Game_sound.h"
+#include "Game_vfs.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -221,6 +225,19 @@ uint32_t CCALL joyConfigChanged_c(uint32_t flags)
     return 0;
 }
 
+/* no joystick to send messages of */
+uint32_t CCALL joySetCapture_c(uint32_t hwnd, uint32_t id, uint32_t period, uint32_t changed)
+{
+    (void)hwnd; (void)id; (void)period; (void)changed;
+    return JOYERR_UNPLUGGED_c;
+}
+
+uint32_t CCALL joyReleaseCapture_c(uint32_t id)
+{
+    (void)id;
+    return JOYERR_UNPLUGGED_c;
+}
+
 /* One MIDI and one wave output device: a game that counts them keeps its music
  * and sound on (it plays them through its own drivers or the layer's stubs) */
 uint32_t CCALL midiOutGetNumDevs_c(void)
@@ -230,5 +247,62 @@ uint32_t CCALL midiOutGetNumDevs_c(void)
 
 uint32_t CCALL waveOutGetNumDevs_c(void)
 {
+    return 1;
+}
+
+/* sndPlaySound: one sound at a time, a file of the game or a WAV image in
+ * memory (SND_MEMORY), on a channel of the port's SDL_mixer device */
+#define SND_ASYNC_c     0x0001
+#define SND_MEMORY_c    0x0004
+#define SND_LOOP_c      0x0008
+#define SND_NOSTOP_c    0x0010
+
+static Mix_Chunk *snd_chunk;
+static int snd_channel = -1;
+
+static void snd_stop(void)
+{
+    if (snd_channel >= 0 && Mix_GetChunk(snd_channel) == snd_chunk) Mix_HaltChannel(snd_channel);
+    snd_channel = -1;
+    if (snd_chunk != NULL) Mix_FreeChunk(snd_chunk);
+    snd_chunk = NULL;
+}
+
+uint32_t CCALL sndPlaySoundA_c(uint32_t lpszSound, uint32_t fuSound)
+{
+    SDL_RWops *rw = NULL;
+
+    if (!Game_AudioIsOpen()) return lpszSound == 0;
+    if (snd_channel >= 0 && Mix_Playing(snd_channel) && Mix_GetChunk(snd_channel) == snd_chunk)
+    {
+        if (fuSound & SND_NOSTOP_c) return 0;
+    }
+    snd_stop();
+    if (lpszSound == 0) return 1;
+
+    if (fuSound & SND_MEMORY_c)
+    {
+        const uint8_t *wav = (const uint8_t *)GUEST_MEM(lpszSound);
+        uint32_t size;
+
+        if (memcmp(wav, "RIFF", 4) != 0) return 0;
+        memcpy(&size, wav + 4, 4);
+        rw = SDL_RWFromConstMem(wav, (int)size + 8);
+    }
+    else
+    {
+        char path[1024];
+
+        if (Game_ResolveDataPath((const char *)GUEST_MEM(lpszSound), path, sizeof(path))) rw = SDL_RWFromFile(path, "rb");
+    }
+    if (rw == NULL) return 0;
+    snd_chunk = Mix_LoadWAV_RW(rw, 1);
+    if (snd_chunk == NULL) return 0;
+    snd_channel = Mix_PlayChannel(-1, snd_chunk, (fuSound & SND_LOOP_c) ? -1 : 0);
+    if (snd_channel < 0) { snd_stop(); return 0; }
+    if (!(fuSound & (SND_ASYNC_c | SND_LOOP_c)))
+    {
+        while (Mix_Playing(snd_channel) && Mix_GetChunk(snd_channel) == snd_chunk) SDL_Delay(5);
+    }
     return 1;
 }

@@ -48,6 +48,9 @@ uint32_t CCALL joyGetDevCapsA_c(uint32_t id, uint32_t pjc, uint32_t cbjc);
 uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji);
 uint32_t CCALL joyGetPos_c(uint32_t id, uint32_t pji);
 uint32_t CCALL joyConfigChanged_c(uint32_t flags);
+uint32_t CCALL joySetCapture_c(uint32_t hwnd, uint32_t id, uint32_t period, uint32_t changed);
+uint32_t CCALL joyReleaseCapture_c(uint32_t id);
+uint32_t CCALL sndPlaySoundA_c(uint32_t lpszSound, uint32_t fuSound);
 uint32_t CCALL midiOutGetNumDevs_c(void);
 uint32_t CCALL waveOutGetNumDevs_c(void);
 

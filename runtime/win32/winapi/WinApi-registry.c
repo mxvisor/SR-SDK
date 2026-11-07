@@ -337,6 +337,12 @@ uint32_t CCALL RegOpenKeyExA_c(uint32_t hKey, uint32_t lpSubKey, uint32_t ulOpti
     return new_handle(path, (uint32_t *)GUEST_MEM(phkResult));
 }
 
+/* the Windows 3.1 form: RegOpenKeyExA without options */
+uint32_t CCALL RegOpenKeyA_c(uint32_t hKey, uint32_t lpSubKey, uint32_t phkResult)
+{
+    return RegOpenKeyExA_c(hKey, lpSubKey, 0, 0, phkResult);
+}
+
 uint32_t CCALL RegCreateKeyA_c(uint32_t hKey, uint32_t lpSubKey, uint32_t phkResult)
 {
     char path[MAX_PATH_LENGTH];

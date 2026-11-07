@@ -282,6 +282,14 @@ uint32_t CCALL LoadLibraryA_c(uint32_t a0)
     return 0x00060000u;
 }
 
+/* a program of the system (a 16-bit DLL such as DISPDIB.DLL) the port has not:
+ * an HINSTANCE below 32 is an error, 2 the file was not found */
+uint32_t CCALL LoadModule_c(uint32_t lpModuleName, uint32_t lpParameterBlock)
+{
+    (void)lpModuleName; (void)lpParameterBlock;
+    return 2;
+}
+
 uint32_t CCALL FreeLibrary_c(uint32_t a0)
 {
     /* A module stays in memory with its data as it is (no DllMain with DLL_PROCESS_DETACH):

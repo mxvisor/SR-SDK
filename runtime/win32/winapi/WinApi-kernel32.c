@@ -884,6 +884,36 @@ uint32_t CCALL _lclose_c(void *hFile)
     return CloseHandle_c(hFile) ? 0 : 0xffffffffu;
 }
 
+/* _lcreat, _lwrite and _llseek have no bridge of the layer: a game's import shim
+ * gives them their arguments as numbers (the HFILE is a guest handle) */
+uint32_t CCALL _lcreat_c(uint32_t lpPathName, uint32_t iAttribute)
+{
+    (void)iAttribute;
+    return GAME_PTR_TO_GUEST32(CreateFileA_c((const char *)GUEST_MEM(lpPathName), GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+}
+
+uint32_t CCALL _lwrite_c(uint32_t hFile, uint32_t lpBuffer, uint32_t uBytes)
+{
+    uint32_t written = 0;
+
+    if (!WriteFile_c((void *)GAME_GUEST32_TO_PTR(hFile), GUEST_MEM(lpBuffer), uBytes, &written, NULL)) return 0xffffffffu;
+    return written;
+}
+
+uint32_t CCALL _llseek_c(uint32_t hFile, uint32_t lOffset, uint32_t iOrigin)
+{
+    return SetFilePointer_c((void *)GAME_GUEST32_TO_PTR(hFile), lOffset, NULL, iOrigin);
+}
+
+/* the game's own directory: what the game writes there goes to the write root */
+uint32_t CCALL GetTempPathA_c(uint32_t nBufferLength, uint32_t lpBuffer)
+{
+    static const char path[] = ".\\";
+
+    if (lpBuffer != 0 && nBufferLength >= sizeof(path)) memcpy(GUEST_MEM(lpBuffer), path, sizeof(path));
+    return (nBufferLength >= sizeof(path)) ? (uint32_t)(sizeof(path) - 1) : (uint32_t)sizeof(path);
+}
+
 uint32_t CCALL CloseHandle_c(void *hObject)
 {
 #ifdef DEBUG_KERNEL32
