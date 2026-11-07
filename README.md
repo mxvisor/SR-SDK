@@ -460,7 +460,7 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dospit.c`, `.h`: PIT channel 0 on the host clock: the reload value and the counter
   of ports 40h/43h, when IRQ 0 is due (`Game_DosPitRun`), the BIOS ticks;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
-- `Game_sound.h`: the interface of a game's Miles AIL replacement.
+- `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio and a game's digital sound.
 
 The `Game_dos*` files are in `runtime/dos/`; the others are in `runtime/core/`, and a game that
 has no use for them leaves them out with `runtime_skip`.
