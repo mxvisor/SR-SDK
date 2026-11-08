@@ -154,7 +154,12 @@ void Game_WindowFit(SDL_Window *window, int width, int height)
               (SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED));
     /* a smaller minimum first: the window may get smaller */
     SDL_SetWindowMinimumSize(window, width, height);
-    if (!resized && (w != width || h != height)) SDL_SetWindowSize(window, width, height);
+    /* centred again, as it was created: a larger mode would leave the screen */
+    if (!resized && (w != width || h != height))
+    {
+        SDL_SetWindowSize(window, width, height);
+        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    }
     port_window = window;
     if (!resized)
     {
