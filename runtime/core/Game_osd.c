@@ -45,6 +45,14 @@ extern "C"
 void Winapi_DirectDrawOsdItems(void);
 #endif
 
+#if defined(GAME_GLIDE_3D_RESOLUTION_ITEM) && GAME_GLIDE_3D_RESOLUTION_ITEM
+/* Glide2x.c: the item of Display_3D_Resolution */
+#ifdef __cplusplus
+extern "C"
+#endif
+void Glide_OsdItems(void);
+#endif
+
 #ifndef GAME_NAME
 #define GAME_NAME "game"
 #endif
@@ -148,6 +156,9 @@ void Game_OsdInit(void)
     Game_WindowOsdItems();
 #if defined(GAME_WINAPI_ADDITIONAL_RESOLUTIONS) && GAME_WINAPI_ADDITIONAL_RESOLUTIONS
     Winapi_DirectDrawOsdItems();
+#endif
+#if defined(GAME_GLIDE_3D_RESOLUTION_ITEM) && GAME_GLIDE_3D_RESOLUTION_ITEM
+    Glide_OsdItems();
 #endif
 #ifdef GAME_OSD_ITEMS
     GAME_OSD_ITEMS();

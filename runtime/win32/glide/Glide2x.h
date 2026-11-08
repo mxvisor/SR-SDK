@@ -137,6 +137,9 @@ uint32_t CCALL grSstStatus_c(void);
 uint32_t CCALL grTexLodBiasValue_c(uint32_t tmu, uint32_t bias);
 uint32_t CCALL grTexMipMapMode_c(uint32_t tmu, uint32_t mode, uint32_t lodBlend);
 
+/* the item "3D resolution" of the port's panel (GAME_GLIDE_3D_RESOLUTION_ITEM) */
+void Glide_OsdItems(void);
+
 #ifdef __cplusplus
 }
 #endif

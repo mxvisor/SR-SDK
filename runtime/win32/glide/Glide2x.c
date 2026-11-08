@@ -38,7 +38,8 @@
  * buffers are W x H, and the coordinates of the guest stay those of the
  * screen: a lock reads a copy scaled down to the screen, and of what the
  * guest wrote only the pixels it changed go back, so the 3D under its 2D
- * keeps the resolution. Display_Antialiasing=2|4|8|16 (or <GAME>_ANTIALIASING)
+ * keeps the resolution (with GAME_GLIDE_3D_RESOLUTION_ITEM the port's panel
+ * changes it, the buffers made again between two frames). Display_Antialiasing=2|4|8|16 (or <GAME>_ANTIALIASING)
  * draws into multisampled buffers, resolved into the colour buffers before a
  * lock reads or a swap shows them.
  * grAADrawPoint and grAADrawLine add the edges of glide2x's antialiasing
@@ -69,6 +70,11 @@
  * buffer memory, a depth buffer at 1024x768 for a program that sizes its modes by it */
 #ifndef GAME_GLIDE_SLI
 #define GAME_GLIDE_SLI 0
+#endif
+/* the item "3D resolution" of the port's panel (Game_hooks.h): Display_3D_Resolution
+ * switched while the game runs */
+#ifndef GAME_GLIDE_3D_RESOLUTION_ITEM
+#define GAME_GLIDE_3D_RESOLUTION_ITEM 0
 #endif
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -934,6 +940,53 @@ static void resolution_3d(uint32_t *width, uint32_t *height)
     *height = h;
 }
 
+/* the item of the port's panel: off and the 4:3 sizes, the next one at a press
+ * (from a size not in the list, the next bigger); grey while <GAME>_3D_RESOLUTION
+ * holds the size. The buffers change at the next grBufferSwap */
+static const uint16_t sizes_3d[][2] = { { 640, 480 }, { 960, 720 }, { 1280, 960 }, { 1600, 1200 }, { 1920, 1440 } };
+#define SIZES_3D (int)(sizeof(sizes_3d) / sizeof(sizes_3d[0]))
+
+static int resolution_item_active(void)
+{
+    return getenv(GAME_ENV("3D_RESOLUTION")) == NULL;
+}
+
+static void resolution_item_press(void)
+{
+    int i;
+
+    for (i = 0; i < SIZES_3D; i++)
+    {
+        if (sizes_3d[i][0] > Game_3DWidth) break;
+    }
+    if (Game_3DWidth <= 0 || Game_3DHeight <= 0) i = 0;
+    if (i < SIZES_3D)
+    {
+        Game_3DHeight = sizes_3d[i][1];
+        Game_3DWidth = sizes_3d[i][0];
+    }
+    else
+    {
+        Game_3DWidth = Game_3DHeight = 0;
+    }
+}
+
+static const char *resolution_item_state(void)
+{
+    static char name[24];
+
+    if (Game_3DWidth <= 0 || Game_3DHeight <= 0) return "off";
+    snprintf(name, sizeof(name), "%dx%d", Game_3DWidth, Game_3DHeight);
+    return name;
+}
+
+static const Game_OsdItem resolution_item = { "3D resolution", resolution_item_active, resolution_item_press, resolution_item_state, "Display_3D_Resolution" };
+
+void Glide_OsdItems(void)
+{
+    if (GAME_GLIDE_3D_RESOLUTION_ITEM) Game_OsdAddItem(&resolution_item);
+}
+
 static void set_scissor(void)
 {
     glEnable(GL_SCISSOR_TEST);
@@ -1021,17 +1074,111 @@ static void ms_delete(void)
     ms_samples = 0;
 }
 
-static int gl_start(uint32_t nbuf)
+/* the size of the colour buffers: Display_3D_Resolution, else the screen's;
+ * the screen's too if OpenGL makes no texture that big */
+static uint32_t gl_max_size;
+
+static void fb_target(uint32_t *width, uint32_t *height, int log)
+{
+    resolution_3d(width, height);
+    if (*width == 0 || *height == 0)
+    {
+        *width = scr_width;
+        *height = scr_height;
+    }
+    if (*width > gl_max_size || *height > gl_max_size)
+    {
+        if (log) eprintf("Glide: %ux%u is more than OpenGL can make (%u)\n", *width, *height, gl_max_size);
+        *width = scr_width;
+        *height = scr_height;
+    }
+}
+
+/* the colour buffers (and their multisampled ones), the depth buffer and, when
+ * they are bigger than the screen, the buffers of a lock: fb_width x fb_height */
+static int buffers_create(uint32_t nbuf)
 {
     uint32_t i;
+
+    hires = (fb_width != scr_width || fb_height != scr_height);
+    sx = (float)fb_width / (float)scr_width;
+    sy = (float)fb_height / (float)scr_height;
+    if (hires)
+    {
+        eprintf("Glide: the 3D at %ux%u\n", fb_width, fb_height);
+        if (!Game_GlFboCreate(&fbo_lo, &fbo_lo_tex, scr_width, scr_height, 0, NULL)) return 0;
+        glGenTextures(1, &lfb_tex);
+        glBindTexture(GL_TEXTURE_2D, lfb_tex);
+        Game_GlTexImageBgra(0, scr_width, scr_height, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    for (i = 0; i < nbuf; i++)
+    {
+        if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], fb_width, fb_height, 0, NULL)) return 0;
+        if (hires)
+        {
+            /* the colour buffers start black, as their shadows */
+            base_mem[i] = (uint16_t *)calloc(scr_width * scr_height, 2);
+            if (base_mem[i] == NULL) return 0;
+        }
+        shadow_valid[i] = 1;
+        shadow_dirty[i] = 0;
+    }
+    glGenRenderbuffers(1, &depth_rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, fb_width, fb_height);
+    for (i = 0; i < nbuf; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return 0;
+    }
+    ms_create(nbuf);
+    if (ms_samples == 0) ms_delete();
+    return 1;
+}
+
+/* the names of the buffers, once deleted (or lost with the context) */
+static void buffers_forget(void)
+{
+    uint32_t i;
+
+    memset(fbo, 0, sizeof(fbo));
+    memset(fbo_tex, 0, sizeof(fbo_tex));
+    fbo_lo = fbo_lo_tex = lfb_tex = 0;
+    depth_rb = ms_depth_rb = 0;
+    for (i = 0; i < 3; i++)
+    {
+        free(base_mem[i]);
+        base_mem[i] = NULL;
+    }
+    hires = 0;
+    sx = sy = 1.0f;
+}
+
+static void buffers_delete(void)
+{
+    uint32_t i;
+
+    ms_delete();
+    for (i = 0; i < 3; i++)
+    {
+        if (fbo[i] != 0) Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
+    }
+    if (fbo_lo != 0) Game_GlFboDelete(&fbo_lo, &fbo_lo_tex, 0, NULL);
+    if (depth_rb != 0) glDeleteRenderbuffers(1, &depth_rb);
+    if (ms_depth_rb != 0) glDeleteRenderbuffers(1, &ms_depth_rb);
+    if (lfb_tex != 0) glDeleteTextures(1, &lfb_tex);
+    buffers_forget();
+}
+
+static int gl_start(uint32_t nbuf)
+{
     GLint max_size = 0;
 
-    resolution_3d(&fb_width, &fb_height);
-    if (fb_width == 0 || fb_height == 0)
-    {
-        fb_width = scr_width;
-        fb_height = scr_height;
-    }
     /* the window 4:3 */
     gl_window = Winapi_ScreenOpenGL(scr_width, scr_width * 3 / 4);
     if (gl_window == NULL) return 0;
@@ -1073,50 +1220,9 @@ static int gl_start(uint32_t nbuf)
     a_box = glGetAttribLocation(prog_draw, "a_box");
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
-    if (fb_width > (uint32_t)max_size || fb_height > (uint32_t)max_size)
-    {
-        eprintf("Glide: %ux%u is more than OpenGL can make (%d)\n", fb_width, fb_height, max_size);
-        fb_width = scr_width;
-        fb_height = scr_height;
-    }
-    hires = (fb_width != scr_width || fb_height != scr_height);
-    sx = (float)fb_width / (float)scr_width;
-    sy = (float)fb_height / (float)scr_height;
-    if (hires)
-    {
-        eprintf("Glide: the 3D at %ux%u\n", fb_width, fb_height);
-        if (!Game_GlFboCreate(&fbo_lo, &fbo_lo_tex, scr_width, scr_height, 0, NULL)) goto fail;
-        glGenTextures(1, &lfb_tex);
-        glBindTexture(GL_TEXTURE_2D, lfb_tex);
-        Game_GlTexImageBgra(0, scr_width, scr_height, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
-    for (i = 0; i < nbuf; i++)
-    {
-        if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], fb_width, fb_height, 0, NULL)) goto fail;
-        if (hires)
-        {
-            /* the colour buffers start black, as their shadows */
-            base_mem[i] = (uint16_t *)calloc(scr_width * scr_height, 2);
-            if (base_mem[i] == NULL) goto fail;
-        }
-        shadow_valid[i] = 1;
-        shadow_dirty[i] = 0;
-    }
-    glGenRenderbuffers(1, &depth_rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, fb_width, fb_height);
-    for (i = 0; i < nbuf; i++)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) goto fail;
-    }
-    ms_create(nbuf);
-    if (ms_samples == 0) ms_delete();
+    gl_max_size = (uint32_t)max_size;
+    fb_target(&fb_width, &fb_height, 1);
+    if (!buffers_create(nbuf)) goto fail;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 #if !defined(GAME_GLES)
@@ -1135,15 +1241,7 @@ static void gl_stop(void)
 
     if (gl_context != NULL)
     {
-        ms_delete();
-        for (i = 0; i < 3; i++)
-        {
-            Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
-        }
-        if (fbo_lo != 0) Game_GlFboDelete(&fbo_lo, &fbo_lo_tex, 0, NULL);
-        if (depth_rb != 0) glDeleteRenderbuffers(1, &depth_rb);
-        if (ms_depth_rb != 0) glDeleteRenderbuffers(1, &ms_depth_rb);
-        if (lfb_tex != 0) glDeleteTextures(1, &lfb_tex);
+        buffers_delete();
         for (i = 0; i < num_textures; i++)
         {
             if (textures[i].gltex != 0) glDeleteTextures(1, &textures[i].gltex);
@@ -1152,17 +1250,7 @@ static void gl_stop(void)
         if (prog_draw != 0) glDeleteProgram(prog_draw);
         SDL_GL_DeleteContext(gl_context);
     }
-    memset(fbo, 0, sizeof(fbo));
-    memset(fbo_tex, 0, sizeof(fbo_tex));
-    fbo_lo = fbo_lo_tex = lfb_tex = 0;
-    depth_rb = ms_depth_rb = 0;
-    for (i = 0; i < 3; i++)
-    {
-        free(base_mem[i]);
-        base_mem[i] = NULL;
-    }
-    hires = 0;
-    sx = sy = 1.0f;
+    buffers_forget();
     prog_draw = 0;
     gl_context = NULL;
     gl_ok = 0;
@@ -1687,6 +1775,53 @@ static void shadow_to_gl(int pi)
     shadow_dirty[pi] = 0;
 }
 
+/* the colour buffers at width x height, between two frames (the item "3D
+ * resolution" of the port's panel): their images scaled into the new ones, the
+ * shadows read again at the next lock; the screen's size if the new ones fail */
+static void buffers_resize(uint32_t width, uint32_t height)
+{
+    GLuint old_fbo[3], old_tex[3];
+    uint32_t old_width = fb_width, old_height = fb_height, i;
+
+    gl_flush();
+    for (i = 0; i < num_color_buffers; i++)
+    {
+        if (shadow_dirty[i]) shadow_to_gl((int)i);
+        ms_resolve((int)i);
+    }
+    memcpy(old_fbo, fbo, sizeof(old_fbo));
+    memcpy(old_tex, fbo_tex, sizeof(old_tex));
+    memset(fbo, 0, sizeof(fbo));
+    memset(fbo_tex, 0, sizeof(fbo_tex));
+    buffers_delete();
+    fb_width = width;
+    fb_height = height;
+    if (!buffers_create(num_color_buffers))
+    {
+        eprintf("Glide: no buffers of %ux%u\n", width, height);
+        buffers_delete();
+        fb_width = scr_width;
+        fb_height = scr_height;
+        if (!buffers_create(num_color_buffers)) gl_ok = 0;
+    }
+    if (!hires) eprintf("Glide: the 3D at the screen's %ux%u\n", fb_width, fb_height);
+    for (i = 0; i < 3; i++)
+    {
+        if (gl_ok && fbo[i] != 0 && old_fbo[i] != 0)
+        {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, old_fbo[i]);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[i]);
+            glDisable(GL_SCISSOR_TEST);
+            glBlitFramebuffer(0, 0, old_width, old_height, 0, 0, fb_width, fb_height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            if (ms_samples != 0) put_texture(ms_fbo[i], fbo_tex[i], 0);
+            ms_dirty[i] = 0;
+            shadow_valid[i] = 0;
+        }
+        if (old_fbo[i] != 0) Game_GlFboDelete(&old_fbo[i], &old_tex[i], 0, NULL);
+    }
+}
+
 /* the front buffer, scaled to the window with the aspect of the screen */
 static void present_front(void)
 {
@@ -1979,6 +2114,18 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
     if (!win_open) return 0;
 
     gl_flush();
+    if (gl_ok)
+    {
+        uint32_t width, height;
+
+        /* Display_3D_Resolution changed from the port's panel */
+        fb_target(&width, &height, 0);
+        if (width != fb_width || height != fb_height)
+        {
+            gl_acquire();
+            buffers_resize(width, height);
+        }
+    }
     if (swap_interval > 0) vr_wait_retrace();
 
     if (num_color_buffers > 1)
