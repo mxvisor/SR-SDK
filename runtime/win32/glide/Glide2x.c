@@ -941,8 +941,8 @@ static void resolution_3d(uint32_t *width, uint32_t *height)
 }
 
 /* the item of the port's panel: off and the 4:3 sizes, the next one at a press
- * (from a size not in the list, the next bigger); grey while <GAME>_3D_RESOLUTION
- * holds the size. The buffers change at the next grBufferSwap */
+ * (from a size not in the list, the next bigger); grey, with its value, while
+ * <GAME>_3D_RESOLUTION holds the size. The buffers change at the next grBufferSwap */
 static const uint16_t sizes_3d[][2] = { { 640, 480 }, { 960, 720 }, { 1280, 960 }, { 1600, 1200 }, { 1920, 1440 } };
 #define SIZES_3D (int)(sizeof(sizes_3d) / sizeof(sizes_3d[0]))
 
@@ -974,7 +974,9 @@ static void resolution_item_press(void)
 static const char *resolution_item_state(void)
 {
     static char name[24];
+    const char *e = getenv(GAME_ENV("3D_RESOLUTION"));
 
+    if (e != NULL) return e;
     if (Game_3DWidth <= 0 || Game_3DHeight <= 0) return "off";
     snprintf(name, sizeof(name), "%dx%d", Game_3DWidth, Game_3DHeight);
     return name;
