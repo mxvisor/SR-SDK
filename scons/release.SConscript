@@ -23,7 +23,7 @@
 # The named targets of a game, over the graph of game.py (the game's Makefile
 # has them as `make <name>`, through scons/game.mk):
 #
-#     linux          the native binary
+#     linux          the native binary and libSDL2_mixer beside it
 #     windows        the MinGW cross build and the SDL DLLs beside the exe
 #     disc           build/disc: the disc image with game/portable.cfg over it
 #     distrib-data   build/distrib/data: the game directory of the fullest install, with the music
@@ -33,8 +33,10 @@
 # `distrib` packs binaries of two devices, so it does not build them: it is
 # run after `linux` and `windows`, as game.mk does.  There is one archive for
 # both systems, holding both programs: the native binary and the exe with its
-# DLLs, every file of game/release/{linux,windows}/ and their x64/ (configs,
-# readmes), and build/distrib/data.  There is no launcher script: the program
+# DLLs, the native binary with its libSDL2_mixer (the binary's RPATH is $ORIGIN:
+# SteamOS has SDL2, not SDL2_mixer), every file of game/release/{linux,windows}/
+# and their x64/ (configs, readmes; @GLIBC_MAX@ in a .txt is the binary's
+# glibc_max, scons/glibc_max.py), and build/distrib/data.  There is no launcher script: the program
 # is started as it is, and finds the game beside itself
 # (runtime/core/Game_gamedir.c).
 #
@@ -66,13 +68,24 @@ RELEASE_DIR = os.path.join(ROOT, 'game', 'release')
 SDL_DLLS = ('SDL2.dll', 'SDL3.dll', 'SDL2_mixer.dll')    # SDL2.dll is sdl2-compat and loads SDL3.dll
 LINUX_DEVICE = 'arm64-linux' if platform.machine().lower() in ('aarch64', 'arm64') else 'pc64-linux'
 WINDOWS_BIN_DIR = os.path.join(BUILD, 'bin', 'pc64-windows')
+LINUX_BIN_DIR = os.path.join(BUILD, 'bin', LINUX_DEVICE)
+LINUX_SOS = ('libSDL2_mixer-2.0.so.0', )
 
 
 # -------------------------------------------------------- linux, windows --
 
 if program_nodes is not None:
     if device == LINUX_DEVICE:
-        env.Alias('linux', program_nodes)
+        # the library the linker found, under its soname
+        sos = []
+        for so in LINUX_SOS:
+            found = subprocess.run([env.subst('$CC'), '-print-file-name=' + so], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+            if not os.path.isabs(found) or not os.path.isfile(found):
+                raise Exception('linux: no %s (the SDL2_mixer package)' % so)
+            sos += env.Command(os.path.join(LINUX_BIN_DIR, so), os.path.realpath(found),
+                               Copy('$TARGET', '$SOURCE'))
+        env.Alias('linux', program_nodes + sos)
     elif device == 'pc64-windows':
         # the MinGW runtime beside the exe, so build/bin/pc64-windows/ is self-contained
         mingw_bin = os.environ.get('MINGW_BIN') or '/usr/%s/sys-root/mingw/bin' % env['toolprefix'].rstrip('-')
@@ -184,6 +197,12 @@ def stage_directory(name, binaries, dlls, release_oses):
     for release_os in release_oses:
         for source in release_files(release_os):
             shutil.copy2(source, directory)
+            if source.endswith('.txt'):
+                path = os.path.join(directory, os.path.basename(source))
+                with open(path, 'rb') as stream:
+                    text = stream.read()
+                with open(path, 'wb') as stream:
+                    stream.write(text.replace(b'@GLIBC_MAX@', env['GLIBC_MAX'].encode()))
     for dll in dlls:
         shutil.copy2(dll, directory)
     for binary in binaries:
@@ -205,7 +224,8 @@ def pack_archive(target, source, env):
     name = '%s-x64' % DIST_NAME
     programs = 1 + len(TARGET_PROGRAMS)
     binaries = [str(node) for node in source[:2 * programs]]
-    dlls = sorted(glob.glob(os.path.join(WINDOWS_BIN_DIR, '*.dll')))
+    dlls = sorted(glob.glob(os.path.join(WINDOWS_BIN_DIR, '*.dll'))) \
+        + [os.path.join(LINUX_BIN_DIR, so) for so in LINUX_SOS]
     directory = stage_directory(name, binaries, dlls, ('linux', 'windows'))
     with zipfile.ZipFile(str(target[0]), 'w', zipfile.ZIP_DEFLATED) as archive:
         for base, dirs, files in os.walk(directory):
@@ -221,12 +241,14 @@ windows_binary = File(os.path.join(WINDOWS_BIN_DIR, PROGRAM + '.exe'))
 # the programs of the other targets: built by their own scons (game.mk), not here
 target_binaries = [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, program)) for program in TARGET_PROGRAMS] \
     + [File(os.path.join(WINDOWS_BIN_DIR, program + '.exe')) for program in TARGET_PROGRAMS]
-dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS]
+dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS] \
+    + [File(os.path.join(LINUX_BIN_DIR, so)) for so in LINUX_SOS]
 data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
 release = release_files('linux') + release_files('windows')
 # scons compares the sources by their contents: the names are a source too, or a
 # renamed release file leaves the archive with the old name
-names = env.Value(' '.join(os.path.relpath(path, RELEASE_DIR) for path in release))
+names = env.Value(' '.join(os.path.relpath(path, RELEASE_DIR) for path in release)
+                  + ' glibc_max=' + env['GLIBC_MAX'])
 archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
                       linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
                       + target_binaries[len(TARGET_PROGRAMS):] + dlls + data + release + [names],

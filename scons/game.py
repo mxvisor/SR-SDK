@@ -48,6 +48,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(Dir('.').srcnode().abspath), 'scons'))
+import glibc_max     # noqa: E402
+
 # ------------------------------------------------------------- game/game.cfg --
 
 def read_cfg(path):
@@ -361,6 +364,16 @@ LLC_PIC = '--relocation-model=pic'
 # of llc (up to 2.9 GB against 1.6 GB), which a small board does not have.
 LLC_AARCH64 = ' -enable-machine-outliner=never'
 env.Append(LLASMFLAGS=LLASM_PIC)
+# a Linux binary asks for no glibc newer than glibc_max (scons/glibc_max.py), and
+# finds the libSDL2_mixer beside itself first (the release has it: SteamOS has
+# SDL2, not SDL2_mixer)
+GLIBC_MAX = ARGUMENTS.get('glibc_max', CFG.get('glibc_max', glibc_max.DEFAULT))
+glibc_max.version(GLIBC_MAX)
+env['GLIBC_MAX'] = GLIBC_MAX
+env['GLIBC_MAX_ARCH'] = 'aarch64' if device == 'arm64-linux' else 'x86_64'
+GLIBC_MAX_RSP = os.path.join(STAGE_BUILD, 'obj', device, 'glibc_max.rsp')
+if device in ('pc64-linux', 'arm64-linux'):
+    env.Append(LINKFLAGS='@' + GLIBC_MAX_RSP, RPATH=[env.Literal('\\$$ORIGIN')])
 if device == 'pc64-linux':
     env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
                CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
@@ -898,6 +911,15 @@ if want('bin'):
     else:
         program_nodes = env.Program(os.path.join(BUILD, 'bin', device, PROGRAM), game_objs)
         defaults += program_nodes
+        if device in ('pc64-linux', 'arm64-linux'):
+            # glibc_max (scons/glibc_max.py): calls bound to old versions, then checked
+            glibc_dir = os.path.join(STAGE_BUILD, 'obj', device)
+            env.AddPreAction(program_nodes, Action(glibc_max.prepare(env, GLIBC_MAX_RSP,
+                                                                     os.path.join(glibc_dir, 'glibc_max.S'),
+                                                                     os.path.join(glibc_dir, 'glibc_max.o')),
+                                                   'glibc_max $GLIBC_MAX: the calls of $TARGET'))
+            env.AddPostAction(program_nodes, Action(glibc_max.check, 'glibc_max $GLIBC_MAX: check $TARGET'))
+            env.Depends(program_nodes, env.Value('glibc_max=' + GLIBC_MAX))
 
 # the programs of the other targets (targets= of game/game.cfg), for the archive
 TARGET_PROGRAMS = []

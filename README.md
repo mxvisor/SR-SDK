@@ -153,6 +153,7 @@ d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl
 runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not build
 guest_data_in_memory=no # win32 only: the guest's data at the addresses of the original (llasm -guest-data-in-memory, runtime/win32/winapi/Game_guestdata.c)
 llasm_flags=            # more flags of llasm
+glibc_max=2.38          # Linux: the newest glibc the binary may ask for (also `scons glibc_max=`)
 program=game                       # the port's name: build/bin/<device>/<program>, and
                                    # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)
@@ -184,13 +185,24 @@ scons input_exe=/path/to/GAME.EXE
 
 The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets are scons's
 (`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.
-`make linux`, `make windows` (the MinGW build with the SDL DLLs beside the exe),
+`make linux` (the binary and the `libSDL2_mixer-2.0.so.0` the linker found, beside it: the
+binary's RPATH is `$ORIGIN`, so a release runs where the system has SDL2 and no SDL2_mixer,
+as SteamOS), `make windows` (the MinGW build with the SDL DLLs beside the exe),
 `make distrib-data` (`build/distrib/data`: the game directory of the fullest install with the music, from `game/portable.cfg`),
 `make distrib` (both builds, the data, and `build/distrib/<name>-x64.zip`:
-both programs with the Windows DLLs, `game/release/{linux,windows}/` and their `x64/`, and the data), `make apk`, `make disc`
+both programs with the Windows DLLs and the Linux `.so`, `game/release/{linux,windows}/` and their `x64/`,
+where `@GLIBC_MAX@` of a `.txt` is the build's `glibc_max`, and the data), `make apk`, `make disc`
 (`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean` (everything built; the disc's unpacked files, `build/disc`, `build/cd` and
 `build/distrib/data`, stay, so the tree builds on a machine without the disc image), `make distclean` (those too), `make test`.
 The same names work as `scons <name>`; `MINGW_BIN=` points at the DLLs.
+
+A Linux binary asks for no glibc newer than `glibc_max` (default 2.38), so it runs on systems
+older than the one it is built on.  glibc keeps the old versions of a function it changes
+(`sqrtf` and `log10f` got `GLIBC_2.43`, and still have `GLIBC_2.2.5`), and the linker takes the
+newest: before the link, `scons/glibc_max.py` sends the calls of every object to the newest
+version not above `glibc_max` (a trampoline with `.symver`, and `-Wl,--wrap=`); after it,
+the build fails, naming them, when a function has no such version (the `__isoc23_*` of
+glibc 2.38).
 
 For Android, `tools/android_apk.py` makes the whole APK, from the game
 repository's root:
@@ -451,6 +463,7 @@ the default hold with `GAME_AUTO_KEY_HOLD_MS`.
 SR/                     submodule: the recompiler, llasm, llasm-support
 llasm/                  llasm.py, the Python port of SR's llasm, and its tests
 scons/game.py           the whole build of one game, as one SCons graph
+scons/glibc_max.py      the glibc versions of a Linux binary (glibc_max)
 tools/compact_source.py compacts the data segments of SR's output
 tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
