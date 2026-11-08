@@ -691,6 +691,9 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(struct IDirectDraw_c) *lpl
     return DD_OK;
 }
 
+/* of Game_vars.h, which cannot be included next to WinApi-config.h */
+extern uint32_t Game_AdditionalResolutions;
+
 /* Display modes reported to the game: 8 bpp first, then 16 bpp; the ones from
  * ADDITIONAL_MODES on only with Display_Additional_Resolutions=on (a mod: 4:3
  * and 5:4, the window shows them at their aspect as the others) */
@@ -1055,6 +1058,7 @@ uint32_t CCALL IDirectDraw_EnumDisplayModes_c(struct IDirectDraw_c *lpThis, uint
     }
 
     x86_free(desc);
+    fprintf(stderr, "DirectDraw: %u display modes listed\n", (unsigned int)i);
     return DD_OK;
 }
 
@@ -1211,6 +1215,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
 
     /* a new mode resizes the window of the last one; the picture is shown through
      * WinApi-d3dgl.c, and Direct3D draws there */
+    fprintf(stderr, "DirectDraw: display mode %ux%ux%u\n", dwWidth, dwHeight, dwBPP);
     lpThis->Window = Winapi_ScreenOpenGL(dwWidth, dwHeight);
     if (lpThis->Window == NULL) return DDERR_UNSUPPORTEDMODE;
     Game_ShowWindow(lpThis->Window);
