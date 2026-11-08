@@ -78,6 +78,7 @@ EXTERNAL_VARIABLE int Game_3DWidth;             /* Display_3D_Resolution=WxH: th
 EXTERNAL_VARIABLE int Game_3DHeight;            /* resolution (Glide); 0 = the screen's */
 EXTERNAL_VARIABLE char Game_Shader[16];         /* Display_Shader=none|smooth|pixelart|scanlines|crt: the 2D filter (Game_gl.h) */
 EXTERNAL_VARIABLE uint32_t Game_Fullscreen;     /* Display_Fullscreen=on|off: the window on the whole screen (Game_thread.h) */
+EXTERNAL_VARIABLE uint32_t Game_AdditionalResolutions; /* Display_Additional_Resolutions=on|off: DirectDraw lists modes above 800x600 */
 
 EXTERNAL_VARIABLE volatile uint32_t Game_TimerRunning;	/* is timer interrupt running ? */
 EXTERNAL_CVAR_BGN volatile uint32_t Game_TimerTick;	/* Timer tick counter */ EXTERNAL_CVAR_END

@@ -37,6 +37,14 @@
 #endif
 #include "Game_hooks.h"
 
+#if defined(GAME_WINAPI_ADDITIONAL_RESOLUTIONS) && GAME_WINAPI_ADDITIONAL_RESOLUTIONS
+/* WinApi-ddraw.c: the item of Display_Additional_Resolutions */
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_DirectDrawOsdItems(void);
+#endif
+
 #ifndef GAME_NAME
 #define GAME_NAME "game"
 #endif
@@ -138,6 +146,9 @@ void Game_OsdInit(void)
     Game_GlOsdItems();
 #endif
     Game_WindowOsdItems();
+#if defined(GAME_WINAPI_ADDITIONAL_RESOLUTIONS) && GAME_WINAPI_ADDITIONAL_RESOLUTIONS
+    Winapi_DirectDrawOsdItems();
+#endif
 #ifdef GAME_OSD_ITEMS
     GAME_OSD_ITEMS();
 #endif

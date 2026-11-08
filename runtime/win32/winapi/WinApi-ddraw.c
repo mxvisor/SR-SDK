@@ -691,10 +691,35 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(struct IDirectDraw_c) *lpl
     return DD_OK;
 }
 
-/* Display modes reported to the game: 8 bpp first, then 16 bpp */
+/* Display modes reported to the game: 8 bpp first, then 16 bpp; the ones from
+ * ADDITIONAL_MODES on only with Display_Additional_Resolutions=on (a mod: 4:3
+ * and 5:4, the window shows them at their aspect as the others) */
 static const uint16_t display_modes[][3] = {
-    { 640, 480, 8 }, { 640, 480, 16 }, { 800, 600, 8 }, { 800, 600, 16 }
+    { 640, 480, 8 }, { 640, 480, 16 }, { 800, 600, 8 }, { 800, 600, 16 },
+    { 1024, 768, 8 }, { 1024, 768, 16 }, { 1152, 864, 8 }, { 1152, 864, 16 },
+    { 1280, 960, 8 }, { 1280, 960, 16 }, { 1280, 1024, 8 }, { 1280, 1024, 16 },
+    { 1600, 1200, 8 }, { 1600, 1200, 16 }
 };
+#define ADDITIONAL_MODES 4
+
+/* the item of the port's panel, saved as Display_Additional_Resolutions; the game
+ * reads the list when it builds its menu, so it is seen at the next start */
+static void additional_item_press(void)
+{
+    Game_AdditionalResolutions = !Game_AdditionalResolutions;
+}
+
+static const char *additional_item_state(void)
+{
+    return Game_AdditionalResolutions ? "on" : "off";
+}
+
+static const Game_OsdItem additional_item = { "More resolutions (next start)", NULL, additional_item_press, additional_item_state, "Display_Additional_Resolutions" };
+
+void Winapi_DirectDrawOsdItems(void)
+{
+    Game_OsdAddItem(&additional_item);
+}
 
 /* Calls the guest callback `BOOL FAR PASCAL cb(LPGUID, LPSTR, LPSTR, LPVOID)` once, for the primary display */
 uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context)
@@ -1003,6 +1028,7 @@ uint32_t CCALL IDirectDraw_EnumDisplayModes_c(struct IDirectDraw_c *lpThis, uint
 
     for (i = 0; i < sizeof(display_modes) / sizeof(display_modes[0]); i++)
     {
+        if ((i >= ADDITIONAL_MODES) && !Game_AdditionalResolutions) break;
         memset(desc, 0, sizeof(*desc));
         desc->dwSize = sizeof(*desc);
         desc->dwFlags = DDSD_HEIGHT | DDSD_WIDTH | DDSD_PITCH | DDSD_PIXELFORMAT;

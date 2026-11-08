@@ -368,7 +368,8 @@ a console and the report of a crash. A game with its own window has its own `gam
 
 A Win32 game (`runtime/win32/winapi/`) has its `main` in `Game_winmain.c` and its settings file in
 `runtime/core/Game_config.c` (`--config-file=`, else `<program>.cfg` in the game directory; `Sound`,
-`Music` and the keys of the display, audio and input; with Direct3D also `3D=direct3d|software|off` and
+`Music` and the keys of the display, audio and input; `Display_Additional_Resolutions=off|on`, a mod, DirectDraw's list of
+display modes with 1024x768, 1152x864, 1280x960, 1280x1024 and 1600x1200 after the original's 640x480 and 800x600; with Direct3D also `3D=direct3d|software|off` and
 `Display_Antialiasing=off|on|2|4|8`, the multisampling of the scene on OpenGL, `on` 4 samples, the
 game's own `D3DRENDERSTATE_ANTIALIAS` 4 when the key is off; with Glide `Display_3D_Resolution=WxH|off`,
 the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION` over it, and
@@ -394,6 +395,7 @@ the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION
 | `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
 | `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: the host pointer is hidden and held in the window from the first click in it until the focus is lost |
+| `GAME_WINAPI_ADDITIONAL_RESOLUTIONS` | 1: the game picks its mode from DirectDraw's list in its menu: the port's panel has the item of `Display_Additional_Resolutions` (seen at the next start) |
 | `GAME_DIRECT3D` | 1: the game uses Direct3D, so `IDirectDraw::QueryInterface` gives `IDirect3D`; the log says which renderer runs |
 | `GAME_D3D_FOG_HIDDEN` | optional: an expression, non-zero while a toggle of the port hides the fog the program turns on (read at every draw; Direct3D on OpenGL) |
 | `GAME_D3D_FOG_TABLE_W` | optional: an expression, the 64 bytes of a fog table as Glide's `grFogTable` (by W, 0 no fog, 255 all) or `NULL`: with a table the fog of a vertex comes from its W, not from its specular alpha, and is drawn whatever `RS_FOGENABLE` says (a driver that has such a table but looks it up by z) |

@@ -217,6 +217,11 @@ static void read_config(void)
             // the window on the whole screen (Game_eventloop.c), off: a window
             read_on_off(param, &Game_Fullscreen);
         }
+        else if ( strcasecmp(str, "Display_Additional_Resolutions") == 0 ) // str equals "Display_Additional_Resolutions"
+        {
+            // the display modes of DirectDraw above 800x600 (WinApi-ddraw.c), off: the original's
+            read_on_off(param, &Game_AdditionalResolutions);
+        }
 #ifdef GAME_WINAPI
         else if ( strcasecmp(str, "3D") == 0 ) // str equals "3D"
         {
