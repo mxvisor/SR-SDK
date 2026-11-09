@@ -272,7 +272,8 @@ static void note_key(const SDL_Event *event)
 {
     SDL_Scancode sc = event->key.keysym.scancode;
 
-    if ((unsigned)sc >= SDL_NUM_SCANCODES) return;
+    /* no scancode: the pad's key (Game_pad.c), which is never held */
+    if (sc == SDL_SCANCODE_UNKNOWN || (unsigned)sc >= SDL_NUM_SCANCODES) return;
     if (event->type == SDL_KEYUP) osd_keys[sc] = 0;
     else if (osd_shown || panel_key(sc)) osd_keys[sc] = 1;
 }
@@ -313,8 +314,10 @@ int Game_OsdEvent(const SDL_Event *event)
         if (event->type == SDL_KEYDOWN && !event->key.repeat) Game_OsdToggle();
         return 1;
     }
-    /* the repeats of a key that closed the panel, still held */
-    if (!osd_shown) return event->type == SDL_KEYDOWN && Game_OsdKeyHidden(event->key.keysym.scancode);
+    /* the repeats of a key that closed the panel, still held; a key of the pad
+     * that came after the panel closed */
+    if (!osd_shown) return event->type == SDL_KEYDOWN && (Game_OsdKeyHidden(event->key.keysym.scancode)
+                                                          || event->key.keysym.scancode == SDL_SCANCODE_UNKNOWN);
 
     switch (event->type)
     {
@@ -390,30 +393,9 @@ int Game_OsdEvent(const SDL_Event *event)
             else if (row == -2) set_shown(0);
             return 1;
 
+        /* the pad moves the panel with keys (Game_pad.c, a key without a
+         * scancode); where SDL still sends its events, they are not for the game */
         case SDL_CONTROLLERBUTTONDOWN:
-            switch (event->cbutton.button)
-            {
-                case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                    move_selection(-1);
-                    break;
-                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                    move_selection(1);
-                    break;
-                case SDL_CONTROLLER_BUTTON_A:
-                    activate(osd_sel, 0);
-                    break;
-                case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                    activate(osd_sel, -1);
-                    break;
-                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                    activate(osd_sel, 1);
-                    break;
-                case SDL_CONTROLLER_BUTTON_B:
-                case SDL_CONTROLLER_BUTTON_BACK:
-                    set_shown(0);
-                    break;
-            }
-            return 1;
         case SDL_CONTROLLERBUTTONUP:
         case SDL_CONTROLLERAXISMOTION:
         case SDL_JOYBUTTONDOWN:
