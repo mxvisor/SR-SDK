@@ -32,8 +32,11 @@
 #   WINE_NAME      Wine only, optional: the name of the prefix under ~/.cache; the
 #                  default, dos-recomp-wine, is one prefix for all ports
 #   CONFIG_NAME, CONFIG_TEMPLATE
-#                  optional: the port's config file, copied from the template into
-#                  the write root when missing, and passed as --config-file
+#                  optional: the name of the port's config file (default $PROG.cfg)
+#                  and a file to start it from (default an empty one).  The
+#                  launchers always pass --config-file=<write root>/CONFIG_NAME,
+#                  made when missing: what the panel saves goes into build/run,
+#                  never into the game directory (the data of make distrib)
 #   game_prepare   optional function, run after the options and before the build:
 #                  it may change DATA_DIR, CD_IMAGE and WRITE_ROOT ($RUN_KIND is
 #                  native or wine)
@@ -51,7 +54,7 @@
 #                      (SR-SDK/runtime/core/Game_keys.c)
 #   --target=NAME      a repository of several targets (scons/game.py): the program
 #                      of game-NAME/game.cfg, built with scons target=NAME
-#   -- ARG...          (native) everything after is given to the port
+#   -- ARG...          everything after is given to the port
 #   --help
 # Environment: <ENVP>_DEVICE, _DATA_DIR (default <repo>/build/distrib/data),
 # _WRITE_ROOT (default <repo>/build/run), _CD_IMAGE (a cue sheet; by default none:
@@ -108,10 +111,9 @@ _build() { # device
   [ -e "$BIN" ] || { echo "Not built: $BIN (run with --build)" >&2; exit 1; }
 }
 
-# --config-file for a port that has a config file
+# --config-file=<write root>/<config> unless one is given: the port reads and saves there
 _config_arg() {
-  [ -n "${CONFIG_NAME:-}" ] || return 0
-  local i given=0
+  local i given=0 name="${CONFIG_NAME:-$PROG.cfg}"
   for i in "${!PORT_ARGS[@]}"; do
     case "${PORT_ARGS[$i]}" in
       --config-file=/*) given=1 ;;
@@ -119,12 +121,17 @@ _config_arg() {
     esac
   done
   [ "$given" -eq 0 ] || return 0
-  local cfg="$WRITE_ROOT/$CONFIG_NAME"
+  local cfg="$WRITE_ROOT/$name"
   if [ ! -f "$cfg" ]; then
     mkdir -p "$WRITE_ROOT"
-    cp "$GAME_REPO/$CONFIG_TEMPLATE" "$cfg"
-    echo "Created $cfg (a copy of $CONFIG_TEMPLATE)"
+    if [ -n "${CONFIG_TEMPLATE:-}" ]; then
+      cp "$GAME_REPO/$CONFIG_TEMPLATE" "$cfg"
+      echo "Created $cfg (a copy of $CONFIG_TEMPLATE)"
+    else
+      : > "$cfg"
+    fi
   fi
+  [ "$RUN_KIND" != wine ] || cfg="Z:${cfg//\//\\}"    # the path as Wine sees it
   PORT_ARGS=("--config-file=$cfg" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}")
 }
 
@@ -253,6 +260,7 @@ run_wine() {
   local wwr="$WRITE_ROOT"
   case "$wwr" in /*) wwr="Z:${wwr//\//\\}" ;; esac    # the path as Wine sees it
   _port_env "$wwr"
+  _config_arg
   mkdir -p "$WRITE_ROOT"
   # Mono/Gecko are not needed; without this a new prefix asks to install them
   local overrides="mscoree=d;mshtml=d"
@@ -261,7 +269,7 @@ run_wine() {
     [ -n "${DISPLAY:-}" ] || { echo "X11 (DISPLAY) is needed: Wine works through X11/XWayland here" >&2; exit 1; }
     echo "Run under Wine: $BIN (${ENVP}_DATA_DIR=$DATA_DIR, WINEPREFIX=$WINEPREFIX)"
     cd "$WRITE_ROOT"
-    exec env -u WAYLAND_DISPLAY WINEDLLOVERRIDES="$overrides" "${PORT_ENV[@]}" wine "$BIN"
+    exec env -u WAYLAND_DISPLAY WINEDLLOVERRIDES="$overrides" "${PORT_ENV[@]}" wine "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}"
   fi
 
   _need_headless_tools
@@ -279,7 +287,7 @@ run_wine() {
   cd "$WRITE_ROOT"
   env -u WAYLAND_DISPLAY DISPLAY="$XDISPLAY" SDL_AUDIODRIVER=dummy \
     WINEDLLOVERRIDES="$overrides;winepulse.drv=d;winealsa.drv=d;wineoss.drv=d" \
-    "${PORT_ENV[@]}" wine "$BIN" > "$LOGF" 2>&1 &
+    "${PORT_ENV[@]}" wine "$BIN" "${PORT_ARGS[@]+"${PORT_ARGS[@]}"}" > "$LOGF" 2>&1 &
   PID=$!
   echo "$PROG-x64.exe (pid $PID) under Wine on Xvfb $XDISPLAY, screenshots in $SHOTS"
   [ -z "$AUTO_KEYS" ] || echo "  ${ENVP}_AUTO_KEYS=$AUTO_KEYS"
