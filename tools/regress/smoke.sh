@@ -27,7 +27,7 @@
 #
 #   smoke.sh GAME linux|wine [RUN_SECS=15] [CLOSE_WAIT=10]
 #
-# linux runs build/bin/pc64-linux/<program>, wine runs build/bin/pc64-windows/<program>.exe
+# linux runs build/bin/x64-linux/<program>-x64, wine runs build/bin/x64-windows/<program>-x64.exe
 # in a Wine prefix of its own (~/.cache/<wine-prefix of games.tsv>, never ~/.wine).
 # The game's data, write root and disc image are given through its env prefix
 # ($<PREFIX>_DATA_DIR, _WRITE_ROOT, _CD_IMAGE); the write root is a scratch directory.
@@ -56,8 +56,8 @@ report() {   # STATUS DETAIL
     printf '%s\t%s\t%s\t%s\n' "${SMOKE_KIND:-smoke}" "$SUBJ" "$1" "$2"
 }
 case $MODE in
-    linux) BIN=$REPO/build/bin/pc64-linux/$PROG ;;
-    wine)  BIN=$REPO/build/bin/pc64-windows/$PROG.exe ;;
+    linux) BIN=$REPO/build/bin/x64-linux/$PROG-x64 ;;
+    wine)  BIN=$REPO/build/bin/x64-windows/$PROG-x64.exe ;;
     *) echo "mode is linux or wine" >&2; exit 2 ;;
 esac
 [ -f "$BIN" ] || { report fail "no binary: $BIN"; exit 0; }

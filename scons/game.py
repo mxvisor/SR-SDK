@@ -248,19 +248,19 @@ vars.Add(EnumVariable('device', 'Set target device', '',
                       ignorecase=2))
 vars.Add('llasm', 'The llasm of stage 4: "py" for the SDK\'s llasm/llasm.py, '
                   'or the path of an llasm executable (the D one of SR/llasm/)', 'py')
-vars.Add('toolprefix', 'Prefix of the MinGW-w64 tools for pc64-windows (cross builds)',
+vars.Add('toolprefix', 'Prefix of the MinGW-w64 tools for x64-windows (cross builds)',
          'x86_64-w64-mingw32-')
 env = Environment(variables=vars)
 
 device = env['device']
 if device == '' and 'windows' in COMMAND_LINE_TARGETS:
-    device = 'pc64-windows'
+    device = 'x64-windows'
 if device == '':
     if env['PLATFORM'] == 'win32':
-        device = 'pc64-windows'
+        device = 'x64-windows'
     else:
         machine = platform.machine().lower()
-        device = 'arm64-linux' if machine in ('aarch64', 'arm64') else 'pc64-linux'
+        device = 'arm64-linux' if machine in ('aarch64', 'arm64') else 'x64-linux'
     if device not in DEVICES:
         device = DEVICES[0]
     env['device'] = device
@@ -280,7 +280,7 @@ target=<name> builds game-<name>/ (another program of the game, targets= of
 game/game.cfg) instead of game/; its stages up to obj go to build/target-<name>/.
 
 Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`):
-  linux          the native binary: build/bin/pc64-linux|arm64-linux/<program>
+  linux          the native binary: build/bin/x64-linux/<program>-x64 (arm64-linux/<program>-arm64)
   windows        the MinGW cross build with the SDL DLLs beside the exe
   disc           build/disc, the disc image with game/portable.cfg over it
   distrib-data  build/distrib/data, the disc's files and music (game/portable.cfg)
@@ -291,11 +291,20 @@ Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`
   distclean      remove build/ and run/ whole
 """)
 
-if device not in ('pc64-linux', 'pc64-windows', 'arm64-linux', 'arm64-android'):
-    raise NotImplementedError('device %r: this build module knows pc64-linux, '
-                              'pc64-windows, arm64-linux and arm64-android' % device)
+if device not in ('x64-linux', 'x64-windows', 'arm64-linux', 'arm64-android'):
+    raise NotImplementedError('device %r: this build module knows x64-linux, '
+                              'x64-windows, arm64-linux and arm64-android' % device)
 
-if device == 'pc64-windows':
+
+def binary_name(program, dev):
+    """The file of a program on a device: <program>-<arch>, the arch being the device's
+    first word (x64, arm64), so builds of two architectures sit side by side in a
+    game's directory, and the name is never one of the game's (Windows adds .exe).  The
+    settings, the log and the registry keep the program's name (GAME_PROGRAM_NAME):
+    <program>.cfg is one for all of them."""
+    return '%s-%s' % (program, dev.split('-')[0])
+
+if device == 'x64-windows':
     if env['PLATFORM'] == 'win32':
         env = Environment(variables=vars, tools=['mingw'])
         env['device'] = device
@@ -372,16 +381,16 @@ glibc_max.version(GLIBC_MAX)
 env['GLIBC_MAX'] = GLIBC_MAX
 env['GLIBC_MAX_ARCH'] = 'aarch64' if device == 'arm64-linux' else 'x86_64'
 GLIBC_MAX_RSP = os.path.join(STAGE_BUILD, 'obj', device, 'glibc_max.rsp')
-if device in ('pc64-linux', 'arm64-linux'):
+if device in ('x64-linux', 'arm64-linux'):
     env.Append(LINKFLAGS='@' + GLIBC_MAX_RSP, RPATH=[env.Literal('\\$$ORIGIN')])
-if device == 'pc64-linux':
+if device == 'x64-linux':
     env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
                CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
                LINKFLAGS='-pie -Wl,-z,noexecstack',
                LIBS=['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
                LLVMFLAGS='-mtriple=x86_64-unknown-linux-gnu ' + LLC_PIC)
 elif device == 'arm64-linux':
-    # native aarch64 Linux: a PIE, as pc64-linux.  The llasm -m64 is llasm's
+    # native aarch64 Linux: a PIE, as x64-linux.  The llasm -m64 is llasm's
     # own flag (64-bit pointers); llc gets the width from its triple.
     env.Append(CCFLAGS='-DPTROFS_64BIT -fpie',
                CPPPATH=['/usr/include/SDL2', '/usr/local/include/SDL2'],
@@ -468,7 +477,7 @@ if want('bin') and not tool_exists(env['LINK']):
 if missing:
     hint = '  install LLVM (dnf install llvm / apt install llvm) and the C toolchain; ' \
            'a versioned opt-NN/llc-NN must also be on PATH as opt and llc'
-    if device == 'pc64-windows':
+    if device == 'x64-windows':
         hint = '  the Windows build is a cross build: install MinGW-w64 (dnf install mingw64-gcc / ' \
                'apt install gcc-mingw-w64-x86-64), or toolprefix= for another prefix; `make` alone ' \
                'skips it when there is none'
@@ -909,9 +918,10 @@ if want('bin'):
         defaults += env.SharedLibrary(os.path.join(STAGE_BUILD, 'bin', device, 'main'),
                                       game_objs)
     else:
-        program_nodes = env.Program(os.path.join(BUILD, 'bin', device, PROGRAM), game_objs)
+        program_nodes = env.Program(os.path.join(BUILD, 'bin', device, binary_name(PROGRAM, device)),
+                                    game_objs)
         defaults += program_nodes
-        if device in ('pc64-linux', 'arm64-linux'):
+        if device in ('x64-linux', 'arm64-linux'):
             # glibc_max (scons/glibc_max.py): calls bound to old versions, then checked
             glibc_dir = os.path.join(STAGE_BUILD, 'obj', device)
             env.AddPreAction(program_nodes, Action(glibc_max.prepare(env, GLIBC_MAX_RSP,
@@ -929,5 +939,6 @@ if TARGET == 'default':
         TARGET_PROGRAMS.append(target_cfg.get('program', '-'.join(_keys(target_cfg, 'modules')).lower()))
 
 SConscript(os.path.join(SDK_ROOT, 'scons', 'release.SConscript'),
-           exports='env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS')
+           exports='env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS '
+                   'binary_name')
 Default(defaults)

@@ -15,7 +15,7 @@ not the SDK's (see [Regression data](#regression-data)):
 | `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
 | `prefixes` | no tracked file of a game (name or text) carries another game's name or prefix (`markers.tsv`), and no tracked file of the SDK, `*.md` included, names any game | `check_prefixes.py` |
 | `layout` | a game's repository holds no `research/`, no `tools/` and no `*.md` at its root, tracked or only on the disk: the notes of a port live in `<GAME>/` | `check_layout.py` |
-| `stubs` | the Win32 stubs (`WinApi-stubs.c`) of each win32 game's pc64-linux build: how many the program links, and that the `func <name>_c` of the llasm sources predict them all; row `sdk`: no stub that every game defines itself (it would never be linked) | `check_stubs.py` |
+| `stubs` | the Win32 stubs (`WinApi-stubs.c`) of each win32 game's x64-linux build: how many the program links, and that the `func <name>_c` of the llasm sources predict them all; row `sdk`: no stub that every game defines itself (it would never be linked) | `check_stubs.py` |
 | `llasm-gen`, `llasm-llvm` | hashes of `build/gen/**` and of the LLVM IR that `llasm.py` makes of it | `llasm_hashes.py` |
 
 ```sh

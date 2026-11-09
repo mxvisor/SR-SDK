@@ -198,7 +198,7 @@ if want layout; then
     done
 fi
 
-# after build: the objects and the program of each win32 game (pc64-linux)
+# after build: the objects and the program of each win32 game (x64-linux)
 if want stubs; then
     echo "## stubs: ${GAMES[*]} sdk" >&2
     "$REGRESS_DIR/check_stubs.py" "${GAMES[@]}" | while IFS=$'\t' read -r kind subject status detail; do

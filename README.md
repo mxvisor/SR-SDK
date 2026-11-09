@@ -146,7 +146,7 @@ modules=Game-main       # the modules of the original, game/recomp/<module>/
 variants=default        # recognized versions of the original, by sha256
 input_exe=../path/to/GAME.EXE
 link=separate
-devices=pc64-linux,pc64-windows
+devices=x64-linux,x64-windows
 winapi=yes              # win32 only: the Win32 API layer, runtime/win32/winapi (default yes)
 glide=no                # win32 only: Glide 2.x on OpenGL, runtime/win32/glide
 d3d_gl=no               # win32 only: Direct3D on OpenGL, runtime/win32/gl
@@ -154,7 +154,7 @@ runtime_skip=Game_cdrom.c,Game_file.c   # runtime .c files the game does not bui
 guest_data_in_memory=no # win32 only: the guest's data at the addresses of the original (llasm -guest-data-in-memory, runtime/win32/winapi/Game_guestdata.c)
 llasm_flags=            # more flags of llasm
 glibc_max=2.38          # Linux: the newest glibc the binary may ask for (also `scons glibc_max=`)
-program=game                       # the port's name: build/bin/<device>/<program>, and
+program=game                       # the port's name: build/bin/<device>/<program>-<arch>, and
                                    # the namespace of its files in the game's directory
 dist_name=game                     # the name of the release archives (default program)
 targets=                           # game/ only: the other programs, game-<name>/ (see "targets" below)
@@ -163,22 +163,24 @@ android_name=Game                 # and the launcher's label
 ```
 
 The port puts its files into the game's directory, all named after `program`:
-`<program>` and `<program>.exe` (the programs), `<program>.cfg` (the port's settings,
+`<program>-x64`, `<program>-x64.exe` and `<program>-arm64` (the programs: the name and the
+architecture, the first word of the device, so the builds of several sit side by side;
+`binary_name` of `scons/game.py`), `<program>.cfg` (the port's settings, one for all of them,
 `Game_config.c`; `GAME_CONFIG_FILENAME` names another), `<program>.log` (the log of a
 Windows program without a console, `Game_log.c`; `GAME_LOG_FILE` names another) and, in the
 write root, `<program>.reg` (what a Win32 game wrote into its registry, `WinApi-registry.c`).  Windows
 has one file for names that differ only in case, and the game's own files are there too, so
-`program` must not be a name of the game's: a portable release compares them
-(`stage_directory` of `scons/release.SConscript`) and fails with the pair of names.  A game
-whose original is called like the port's program renames the port (`program=<game>-recomp`
-when the install has `<game>.exe`).
+none of these names may be one of the game's: a portable release compares them
+(`stage_directory` of `scons/release.SConscript`) and fails with the pair of names.  The
+architecture keeps the programs off the original's `<game>.exe`; a game with its own
+`<program>.cfg` or `.log` renames the port.
 
 `game/recomp/<module>/<variant>/` holds SR's inputs for the original: its
 `sha256`, `SR.cfg` and the `*.sci` files. Then:
 
 ```sh
-scons                            # build/bin/<device>/<program>
-scons device=pc64-windows        # Windows, cross-built with MinGW-w64
+scons                            # build/bin/<device>/<program>-<arch>
+scons device=x64-windows         # Windows, cross-built with MinGW-w64
 scons stage=gen                  # stop after SR's output
 scons input_exe=/path/to/GAME.EXE
 ```

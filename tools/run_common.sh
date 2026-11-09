@@ -26,7 +26,7 @@
 # which only say what is game-specific:
 #
 #   GAME_REPO      the game repository (the directory of the script)
-#   PROG           the program name (game.cfg: program=)
+#   PROG           the program name (game.cfg: program=); its file is $PROG-x64 (-arm64)
 #   ENVP           the env prefix of the port: GAME_ENV("X") is $<ENVP>_X
 #   DATA_MARKER    a file that the data directory must hold
 #   WINE_NAME      Wine only, optional: the name of the prefix under ~/.cache; the
@@ -171,9 +171,9 @@ _start_xvfb() {
 run_native() {
   RUN_KIND=native
   _common_init; _parse_args "$@"
-  case "$(uname -m)" in aarch64|arm64) local dev=arm64-linux ;; *) local dev=pc64-linux ;; esac
+  case "$(uname -m)" in aarch64|arm64) local dev=arm64-linux ;; *) local dev=x64-linux ;; esac
   local device="$(_envp DEVICE)"; : "${device:=$dev}"
-  BIN="$GAME_REPO/build/bin/$device/$PROG"
+  BIN="$GAME_REPO/build/bin/$device/$PROG-${device%%-*}"     # scons/game.py binary_name
   SHOTS="$GAME_REPO/build/shots/sdl"
   ! declare -F game_prepare >/dev/null || game_prepare
   _check_data
@@ -226,8 +226,8 @@ _prefix_busy() {
 run_wine() {
   RUN_KIND=wine
   _common_init; _parse_args "$@"
-  local build_dir="$GAME_REPO/build/bin/pc64-windows"
-  BIN="$build_dir/$PROG.exe"
+  local build_dir="$GAME_REPO/build/bin/x64-windows"
+  BIN="$build_dir/$PROG-x64.exe"
   SHOTS="$GAME_REPO/build/shots/wine"
   local mingw="$(_envp MINGW_BIN)"; : "${mingw:=/usr/x86_64-w64-mingw32/sys-root/mingw/bin}"
   export WINEPREFIX="$(_envp WINEPREFIX)"; : "${WINEPREFIX:=$HOME/.cache/${WINE_NAME:-dos-recomp-wine}}"; export WINEPREFIX
@@ -236,7 +236,7 @@ run_wine() {
   command -v wine >/dev/null 2>&1 || { echo "wine is not installed" >&2; exit 1; }
   ! declare -F game_prepare >/dev/null || game_prepare
   _check_data
-  _build pc64-windows
+  _build x64-windows
 
   # the DLLs beside the exe, refreshed when the sysroot's copy is newer
   # (SDL2.dll is sdl2-compat and loads SDL3.dll)
@@ -281,10 +281,10 @@ run_wine() {
     WINEDLLOVERRIDES="$overrides;winepulse.drv=d;winealsa.drv=d;wineoss.drv=d" \
     "${PORT_ENV[@]}" wine "$BIN" > "$LOGF" 2>&1 &
   PID=$!
-  echo "$PROG.exe (pid $PID) under Wine on Xvfb $XDISPLAY, screenshots in $SHOTS"
+  echo "$PROG-x64.exe (pid $PID) under Wine on Xvfb $XDISPLAY, screenshots in $SHOTS"
   [ -z "$AUTO_KEYS" ] || echo "  ${ENVP}_AUTO_KEYS=$AUTO_KEYS"
   _shots "$XDISPLAY"
   _stop "$PID"
-  echo "== output of $PROG.exe:"
+  echo "== output of $PROG-x64.exe:"
   cat "$LOGF"
 }

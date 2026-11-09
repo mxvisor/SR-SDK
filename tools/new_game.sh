@@ -26,7 +26,7 @@
 #   new_game.sh DIR NAME dos|win32 [--exe PATH|disc:NAME] [--image IMAGE] [--sdk URL_OR_PATH] [--env PREFIX]
 #
 #   DIR     the new repository (created; must be empty or missing)
-#   NAME    the program name, lowercase with dashes: build/bin/<device>/NAME (game.cfg program=)
+#   NAME    the program name, lowercase with dashes: build/bin/<device>/NAME-x64 (game.cfg program=)
 #   --exe   the original executable: its sha256 goes to game/recomp/, input_exe= to game.cfg
 #           (path relative to DIR, or absolute); without it the sha256 is a placeholder.
 #           disc:NAME is a file of the game's disc (needs --image): it is taken from
@@ -151,7 +151,7 @@ modules=$MODULE
 variants=default
 input_exe=$INPUT_EXE
 link=separate
-devices=pc64-linux,pc64-windows
+devices=x64-linux,x64-windows
 program=$NAME
 EOF
   [ "$PLATFORM" = win32 ] && printf '# key winapi (no = leave out the Win32 API layer) and runtime_skip (File.c,... = single runtime files): see README\n'

@@ -25,7 +25,7 @@
 
 Each stub is an object of its own in libwinapistubs.a, and the linker takes it only
 when nothing else of the port defines the function. For each win32 game of games.tsv
-(or the ones named), from its pc64-linux build (nm of the objects and of the program):
+(or the ones named), from its x64-linux build (nm of the objects and of the program):
   - linked:    the stubs the program takes from the library;
   - predicted: the stubs the llasm sources of the build call (`func <name>_c` in the
                game's llasm/ and the runtime's llasm directories), less those the game
@@ -39,7 +39,7 @@ DOS games, and a win32 game with winapi=no, have no row. Exit status 1 on a fail
 import glob, os, re, subprocess, sys
 
 from regress_conf import SDK, ROOT, rows
-DEVICE = 'pc64-linux'
+DEVICE = 'x64-linux'
 
 
 def games():
@@ -85,7 +85,7 @@ def check(repo, program, target):
     build = os.path.join(repo, 'build' if target == 'default' else 'build/target-' + target)
     objdir = os.path.join(build, 'obj', DEVICE)
     lib = os.path.join(objdir, 'runtime/win32/winapi/libwinapistubs.a')
-    binary = os.path.join(repo, 'build/bin', DEVICE, program)
+    binary = os.path.join(repo, 'build/bin', DEVICE, program + '-x64')    # scons/game.py binary_name
     if not os.path.exists(lib) or not os.path.exists(binary):
         return 'fail', 'not built (%s)' % DEVICE, None
 

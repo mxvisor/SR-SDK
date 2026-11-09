@@ -41,7 +41,7 @@ For a built game repository (its build/gen must exist: `scons stage=gen`):
 Options: --llasm PATH  the llasm.py to run (default: REPO/SR-SDK/llasm/llasm.py).
          --target NAME the target of a repository of several (scons/game.py): its
                        build/target-NAME/gen, and scons target=NAME.
-Devices default to pc64-linux and pc64-windows. Exit status 1 on a difference.
+Devices default to x64-linux and x64-windows. Exit status 1 on a difference.
 """
 import hashlib
 import os
@@ -128,7 +128,7 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     llasm = llasm or os.path.join(repo, 'SR-SDK', 'llasm', 'llasm.py')
-    now = collect(repo, devices or ['pc64-linux', 'pc64-windows'], llasm, target)
+    now = collect(repo, devices or ['x64-linux', 'x64-windows'], llasm, target)
     if ref is None:
         for h, k in now:
             print('%s  %s' % (h, k))

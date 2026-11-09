@@ -42,8 +42,8 @@ REPO=$(game_repo "$GAME"); PROG=$(game_field "$GAME" 3); P=$(game_field "$GAME" 
 DATA="$ROOT/$(game_field "$GAME" 5)"; CUE=$(game_glob "$(game_field "$GAME" 6)"); PFX=$(game_field "$GAME" 7)
 report() { printf 'aslr\t%s:%s\t%s\t%s\n' "$GAME" "$MODE" "$1" "$2"; }
 case $MODE in
-    linux) BIN=$REPO/build/bin/pc64-linux/$PROG; NAME=$PROG ;;
-    wine)  BIN=$REPO/build/bin/pc64-windows/$PROG.exe; NAME=$PROG.exe ;;
+    linux) BIN=$REPO/build/bin/x64-linux/$PROG-x64; NAME=$PROG-x64 ;;
+    wine)  BIN=$REPO/build/bin/x64-windows/$PROG-x64.exe; NAME=$PROG-x64.exe ;;
     *) echo "mode is linux or wine" >&2; exit 2 ;;
 esac
 [ -f "$BIN" ] || { report fail "no binary: $BIN"; exit 0; }

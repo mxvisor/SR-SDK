@@ -40,7 +40,7 @@
 # is started as it is, and finds the game beside itself
 # (runtime/core/Game_gamedir.c).
 #
-# game.cfg keys: program (the binary), dist_name (the archives' name, default
+# game.cfg keys: program (the binary is <program>-x64, scons/game.py binary_name), dist_name (the archives' name, default
 # program).  The data: game/portable.cfg (SR-SDK/tools/portable_cd.py).
 #
 # A repository with several targets (targets= of game/game.cfg, game-<name>/):
@@ -57,7 +57,7 @@ import subprocess
 import sys
 import zipfile
 
-Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS')
+Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_PROGRAMS binary_name')
 
 DIST = os.path.join(BUILD, 'distrib')
 DIST_NAME = CFG.get('dist_name', PROGRAM)
@@ -66,8 +66,8 @@ PORTABLE_DIR = os.path.join(DIST, 'data')
 PORTABLE_STAMP = os.path.join(DIST, 'data.stamp')
 RELEASE_DIR = os.path.join(ROOT, 'game', 'release')
 SDL_DLLS = ('SDL2.dll', 'SDL3.dll', 'SDL2_mixer.dll')    # SDL2.dll is sdl2-compat and loads SDL3.dll
-LINUX_DEVICE = 'arm64-linux' if platform.machine().lower() in ('aarch64', 'arm64') else 'pc64-linux'
-WINDOWS_BIN_DIR = os.path.join(BUILD, 'bin', 'pc64-windows')
+LINUX_DEVICE = 'arm64-linux' if platform.machine().lower() in ('aarch64', 'arm64') else 'x64-linux'
+WINDOWS_BIN_DIR = os.path.join(BUILD, 'bin', 'x64-windows')
 LINUX_BIN_DIR = os.path.join(BUILD, 'bin', LINUX_DEVICE)
 LINUX_SOS = ('libSDL2_mixer-2.0.so.0', )
 
@@ -86,8 +86,8 @@ if program_nodes is not None:
             sos += env.Command(os.path.join(LINUX_BIN_DIR, so), os.path.realpath(found),
                                Copy('$TARGET', '$SOURCE'))
         env.Alias('linux', program_nodes + sos)
-    elif device == 'pc64-windows':
-        # the MinGW runtime beside the exe, so build/bin/pc64-windows/ is self-contained
+    elif device == 'x64-windows':
+        # the MinGW runtime beside the exe, so build/bin/x64-windows/ is self-contained
         mingw_bin = os.environ.get('MINGW_BIN') or '/usr/%s/sys-root/mingw/bin' % env['toolprefix'].rstrip('-')
         dlls = []
         for dll in SDL_DLLS:
@@ -235,12 +235,20 @@ def pack_archive(target, source, env):
                 archive.write(path, os.path.join(name, os.path.relpath(path, directory)))
 
 
+def linux_file(program):
+    return File(os.path.join(LINUX_BIN_DIR, binary_name(program, LINUX_DEVICE)))
+
+
+def windows_file(program):
+    return File(os.path.join(WINDOWS_BIN_DIR, binary_name(program, 'x64-windows') + '.exe'))
+
+
 linux_binary = program_nodes if (program_nodes is not None and device == LINUX_DEVICE) \
-    else [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, PROGRAM))]
-windows_binary = File(os.path.join(WINDOWS_BIN_DIR, PROGRAM + '.exe'))
+    else [linux_file(PROGRAM)]
+windows_binary = windows_file(PROGRAM)
 # the programs of the other targets: built by their own scons (game.mk), not here
-target_binaries = [File(os.path.join(BUILD, 'bin', LINUX_DEVICE, program)) for program in TARGET_PROGRAMS] \
-    + [File(os.path.join(WINDOWS_BIN_DIR, program + '.exe')) for program in TARGET_PROGRAMS]
+target_binaries = [linux_file(program) for program in TARGET_PROGRAMS] \
+    + [windows_file(program) for program in TARGET_PROGRAMS]
 dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS] \
     + [File(os.path.join(LINUX_BIN_DIR, so)) for so in LINUX_SOS]
 data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
