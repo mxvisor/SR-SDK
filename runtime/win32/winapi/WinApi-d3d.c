@@ -2470,7 +2470,20 @@ uint32_t CCALL IDirect3DViewport2_Clear_c(void *lpThis, uint32_t a1, void *a2, u
         {
             x1 = (int)vp->vp[1]; y1 = (int)vp->vp[2]; x2 = x1 + (int)vp->vp[3]; y2 = y1 + (int)vp->vp[4];
         }
+#ifdef GAME_D3D_GL
+        /* outside a scene the memory is written: a picture the GPU keeps for
+         * it goes there first, unless all of it is cleared */
+        int whole = (x1 <= 0) && (y1 <= 0) && (x2 >= (int)target->width) && (y2 >= (int)target->height);
+        if ((a3 & D3DCLEAR_TARGET) && !vp->device->gl_scene && Winapi_Direct3DGL())
+        {
+            if (whole) Winapi_D3dGLWillFill(target);
+            else Winapi_D3dGLSync(target);
+        }
+#endif
         if (a3 & D3DCLEAR_TARGET) fill_rect(target, x1, y1, x2, y2, background_value(vp, target));
+#ifdef GAME_D3D_GL
+        if ((a3 & D3DCLEAR_TARGET) && whole && !vp->device->gl_scene && Winapi_Direct3DGL()) Winapi_D3dGLFilled(target);
+#endif
         if ((a3 & D3DCLEAR_ZBUFFER) && (target->zsurf != NULL)) fill_rect(target->zsurf, x1, y1, x2, y2, 0xffffffffu);
 #ifdef GAME_D3D_GL
         if (vp->device->gl_scene)

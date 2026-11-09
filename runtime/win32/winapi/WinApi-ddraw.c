@@ -717,7 +717,7 @@ static const char *additional_item_state(void)
     return Game_AdditionalResolutions ? "on" : "off";
 }
 
-static const Game_OsdItem additional_item = { "More resolutions (next start)", NULL, additional_item_press, additional_item_state, "Display_Additional_Resolutions" };
+static const Game_OsdItem additional_item = { "More resolutions (next start)", NULL, additional_item_press, additional_item_state, "Display_Additional_Resolutions", NULL };
 
 void Winapi_DirectDrawOsdItems(void)
 {
@@ -1327,6 +1327,9 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
 {
     struct _rect d, s;
     uint32_t result;
+#ifdef GAME_D3D_GL
+    int whole_fill, shown = 0;
+#endif
 
 #if DEBUG_DDRAW
     eprintf("IDirectDrawSurface_Blt: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x, 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)lpDestRect, (uintptr_t)lpDDSrcSurface, (uintptr_t)lpSrcRect, dwFlags, (uintptr_t)lpDDBltFX);
@@ -1337,12 +1340,37 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
     ClipRect(lpDestRect, lpThis->width, lpThis->height, &d);
 
 #ifdef GAME_D3D_GL
+    whole_fill = (dwFlags & DDBLT_COLORFILL) && (d.left <= 0) && (d.top <= 0) &&
+                 (d.right >= (int32_t)lpThis->width) && (d.bottom >= (int32_t)lpThis->height);
     /* mid-scene the FBO has the 3D: the guest reads it before the blit and
      * writes under it after (the calls no-op outside a scene of the target) */
     if (Winapi_Direct3DGL())
     {
-        Winapi_D3dGLSync(lpThis);
-        if (lpDDSrcSurface != NULL) Winapi_D3dGLSync(lpDDSrcSurface);
+        /* all of a surface onto the primary as it is: a copy on the GPU when
+         * the picture is there */
+        if (lpThis->primary && (lpDDSrcSurface != NULL) &&
+            !(dwFlags & (DDBLT_COLORFILL | DDBLT_KEYSRC | DDBLT_KEYSRCOVERRIDE)) &&
+            (lpDDSrcSurface->width == lpThis->width) && (lpDDSrcSurface->height == lpThis->height) &&
+            (d.left == 0) && (d.top == 0) && (d.right == (int32_t)lpThis->width) && (d.bottom == (int32_t)lpThis->height))
+        {
+            ClipRect(lpSrcRect, lpDDSrcSurface->width, lpDDSrcSurface->height, &s);
+            if ((s.left == 0) && (s.top == 0) && (s.right == (int32_t)lpThis->width) && (s.bottom == (int32_t)lpThis->height))
+            {
+                shown = Winapi_D3dGLShow(lpThis, lpDDSrcSurface);
+            }
+        }
+        if (!shown)
+        {
+            /* a fill of all of it needs no readback of the picture under it */
+            if (whole_fill) Winapi_D3dGLWillFill(lpThis);
+            else Winapi_D3dGLSync(lpThis);
+            if (lpDDSrcSurface != NULL) Winapi_D3dGLSync(lpDDSrcSurface);
+        }
+    }
+    if (shown)
+    {
+        Present(lpThis->dd);
+        return DD_OK;
     }
 #endif
 
@@ -1389,7 +1417,11 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
     }
 
 #ifdef GAME_D3D_GL
-    if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
+    if (Winapi_Direct3DGL())
+    {
+        Winapi_D3dGLUpload(lpThis);
+        if (whole_fill && (result == DD_OK)) Winapi_D3dGLFilled(lpThis);
+    }
 #endif
 
     if ((result == DD_OK) && lpThis->primary) Present(lpThis->dd);
@@ -1410,15 +1442,27 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
 
     if ((lpThis == NULL) || (lpDDSrcSurface == NULL)) return DDERR_INVALIDPARAMS;
 
+    ClipRect((const struct _rect *)lpSrcRect, lpDDSrcSurface->width, lpDDSrcSurface->height, &s);
+
 #ifdef GAME_D3D_GL
     if (Winapi_Direct3DGL())
     {
+        /* all of a surface onto the primary as it is: a copy on the GPU when
+         * the picture is there */
+        if (lpThis->primary && (dwX == 0) && (dwY == 0) &&
+            !((dwTrans & DDBLTFAST_SRCCOLORKEY) && lpDDSrcSurface->has_colorkey) &&
+            (lpDDSrcSurface->width == lpThis->width) && (lpDDSrcSurface->height == lpThis->height) &&
+            (s.left == 0) && (s.top == 0) && (s.right == (int32_t)lpThis->width) && (s.bottom == (int32_t)lpThis->height) &&
+            Winapi_D3dGLShow(lpThis, lpDDSrcSurface))
+        {
+            Present(lpThis->dd);
+            return DD_OK;
+        }
         Winapi_D3dGLSync(lpThis);
         Winapi_D3dGLSync(lpDDSrcSurface);
     }
 #endif
 
-    ClipRect((const struct _rect *)lpSrcRect, lpDDSrcSurface->width, lpDDSrcSurface->height, &s);
     d.left = dwX;
     d.top = dwY;
     d.right = dwX + (s.right - s.left);
@@ -1462,7 +1506,11 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, st
     src = (lpDDSurfaceTargetOverride != NULL) ? lpDDSurfaceTargetOverride : lpThis->lpBackbuffer;
     if (src == NULL) return DDERR_INVALIDPARAMS;
 
-    /* the back buffer keeps its contents, the front buffer is a copy of it */
+    /* the back buffer keeps its contents, the front buffer is a copy of it
+     * (with Direct3D on OpenGL a copy on the GPU when the picture is there) */
+#ifdef GAME_D3D_GL
+    if (!Winapi_Direct3DGL() || !Winapi_D3dGLShow(lpThis, src))
+#endif
     memcpy(lpThis->pixels, src->pixels, lpThis->height * lpThis->pitch);
     lpThis->flipped = 1;
     Present(lpThis->dd);
@@ -1687,7 +1735,7 @@ uint32_t CCALL IDirectDrawSurface_Lock_c(struct IDirectDrawSurface_c *lpThis, vo
     lpThis->locked = 1;
 
 #ifdef GAME_D3D_GL
-    /* the guest reads the pixels mid-scene: the memory wants the 3D so far */
+    /* the guest reads the pixels: the memory wants the 3D so far */
     if (Winapi_Direct3DGL()) Winapi_D3dGLSync(lpThis);
 #endif
 

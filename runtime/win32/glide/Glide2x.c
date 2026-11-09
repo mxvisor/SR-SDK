@@ -750,7 +750,7 @@ static int hires;
 static float sx = 1.0f, sy = 1.0f;
 static uint32_t fb_width, fb_height;
 static GLuint fbo_lo, fbo_lo_tex;   /* hires: a buffer at the size of the screen, for a lock */
-static GLuint lfb_tex;              /* hires: the pixels the guest changed */
+static GLuint lfb_tex;              /* the pixels the guest changed (hires, or a sparse shadow) */
 static uint16_t *base_mem[3];       /* hires: the shadow as GL has it (stride scr_width) */
 static int ms_samples;              /* antialiasing: the samples per pixel, 0 without */
 static int ms_asked;                /* the samples asked for when the buffers were made */
@@ -763,6 +763,14 @@ static GLint a_box = -1;
 /* the 565 shadow of a colour buffer is what the guest sees; the GL buffer is what is drawn */
 static int shadow_valid[3];
 static int shadow_dirty[3];         /* the guest wrote the shadow: the GL image is stale */
+/* A lock for writing only does not read the shadow: a program locks the back buffer for its
+ * sprites after the 3D of every frame, and the readback (the GPU's frame waited for, then
+ * copied) took a good part of the frame.  The shadow is filled with LFB_HOLE instead, and
+ * only what the guest writes over it goes onto the GL image (shadow_sparse).  A pixel the
+ * guest writes in exactly that colour (pure magenta, the usual transparent colour of a
+ * sprite, so not drawn) is lost: the picture under it stays. */
+#define LFB_HOLE 0xF81Fu
+static int shadow_sparse[3];
 static int bidx[3];                 /* logical buffer -> colour_mem index */
 static uint32_t *xfer;              /* scr_width * scr_height ARGB, for LFB transfers */
 
@@ -1131,14 +1139,14 @@ static int buffers_create(uint32_t nbuf)
     {
         eprintf("Glide: the 3D at %ux%u\n", fb_width, fb_height);
         if (!Game_GlFboCreate(&fbo_lo, &fbo_lo_tex, scr_width, scr_height, 0, NULL)) return 0;
-        glGenTextures(1, &lfb_tex);
-        glBindTexture(GL_TEXTURE_2D, lfb_tex);
-        Game_GlTexImageBgra(0, scr_width, scr_height, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
+    glGenTextures(1, &lfb_tex);
+    glBindTexture(GL_TEXTURE_2D, lfb_tex);
+    Game_GlTexImageBgra(0, scr_width, scr_height, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     for (i = 0; i < nbuf; i++)
     {
         if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], fb_width, fb_height, 0, NULL)) return 0;
@@ -1150,6 +1158,7 @@ static int buffers_create(uint32_t nbuf)
         }
         shadow_valid[i] = 1;
         shadow_dirty[i] = 0;
+        shadow_sparse[i] = 0;
     }
     glGenRenderbuffers(1, &depth_rb);
     glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
@@ -1646,6 +1655,8 @@ static void shadow_from_gl(int pi)
     uint32_t x, y;
 
     if (shadow_valid[pi]) return;
+    /* the guest's writes go onto the GL image first, then all of it is read */
+    if (shadow_sparse[pi]) shadow_to_gl(pi);
     ms_resolve(pi);
     if (hires)
     {
@@ -1773,11 +1784,63 @@ static void put_texture(GLuint target, GLuint tex, int blend)
     glUseProgram(0);
 }
 
+/* a sparse shadow: the pixels the guest wrote over the holes, onto the GL image */
+static void shadow_holes_to_gl(int pi)
+{
+    uint32_t x, y, changed = 0;
+
+    for (y = 0; y < scr_height; y++)
+    {
+        const uint16_t *s = color_mem[pi] + y * scr_stride;
+        uint32_t *d = xfer + y * scr_width;
+        for (x = 0; x < scr_width; x++)
+        {
+            if (s[x] != LFB_HOLE)
+            {
+                d[x] = rgb565_to_argb(s[x]);
+                changed++;
+            }
+            else
+            {
+                d[x] = 0;
+            }
+        }
+    }
+    shadow_sparse[pi] = 0;
+    shadow_valid[pi] = 0;
+    shadow_dirty[pi] = 0;
+    if (changed == 0) return;
+
+    glBindTexture(GL_TEXTURE_2D, lfb_tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    Game_GlTexSubImageBgra(scr_width, scr_height, xfer);
+    put_texture(draw_fbo(pi), lfb_tex, 1);
+}
+
+/* the guest is to write the shadow, not read it: a copy of the GL image is not needed */
+static void shadow_for_write(int pi)
+{
+    uint32_t x, y;
+
+    if (pi < 0 || shadow_valid[pi] || shadow_sparse[pi]) return;
+    for (y = 0; y < scr_height; y++)
+    {
+        uint16_t *row = color_mem[pi] + y * scr_stride;
+        for (x = 0; x < scr_width; x++) row[x] = LFB_HOLE;
+    }
+    shadow_sparse[pi] = 1;
+}
+
 /* the 565 shadow -> the GL image */
 static void shadow_to_gl(int pi)
 {
     uint32_t x, y;
 
+    if (shadow_sparse[pi])
+    {
+        shadow_holes_to_gl(pi);
+        return;
+    }
     if (hires)
     {
         shadow_changes_to_gl(pi);
@@ -2112,6 +2175,7 @@ uint32_t CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
 
     gl_flush();
     if (shadow_dirty[pi]) shadow_to_gl(pi);
+    shadow_sparse[pi] = 0;
     glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(pi));
     set_scissor();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -2341,9 +2405,11 @@ uint32_t CCALL grLfbLock_c(uint32_t type, uint32_t buf, uint32_t writeMode, uint
     if (mem == NULL) return FXFALSE;
     if (buf != GR_BUFFER_AUXBUFFER)
     {
-        /* what was drawn since the last lock is in the shadow */
+        /* what was drawn since the last lock is in the shadow (not for a write
+         * of 565 pixels as they are: see shadow_sparse) */
         gl_flush();
-        shadow_from_gl(phys_of(buf));
+        if (write && (writeMode == GR_LFBWRITEMODE_565 || writeMode == GR_LFBWRITEMODE_ANY)) shadow_for_write(phys_of(buf));
+        else shadow_from_gl(phys_of(buf));
     }
     if (origin != buffer_origin)
     {
@@ -2395,7 +2461,7 @@ uint32_t CCALL grLfbUnlock_c(uint32_t type, uint32_t buf)
     {
         /* put into the GL image when it is next used: a program locks for every sprite */
         shadow_dirty[phys_of(buf)] = 1;
-        shadow_valid[phys_of(buf)] = 1;
+        shadow_valid[phys_of(buf)] = !shadow_sparse[phys_of(buf)];
         /* what is written into the front buffer is on the screen at once */
         if (buf == GR_BUFFER_FRONTBUFFER) present_front();
     }
@@ -2927,7 +2993,7 @@ uint32_t CCALL grLfbWriteRegion_c(uint32_t dst_buffer, uint32_t dst_x, uint32_t 
     if (dst_buffer != GR_BUFFER_AUXBUFFER)
     {
         gl_flush();
-        shadow_from_gl(phys_of(dst_buffer));
+        shadow_for_write(phys_of(dst_buffer));
     }
     for (y = 0; y < src_height && dst_y + y < scr_height; y++)
     {
@@ -2947,7 +3013,7 @@ uint32_t CCALL grLfbWriteRegion_c(uint32_t dst_buffer, uint32_t dst_x, uint32_t 
     if (dst_buffer != GR_BUFFER_AUXBUFFER && phys_of(dst_buffer) >= 0)
     {
         shadow_dirty[phys_of(dst_buffer)] = 1;
-        shadow_valid[phys_of(dst_buffer)] = 1;
+        shadow_valid[phys_of(dst_buffer)] = !shadow_sparse[phys_of(dst_buffer)];
         if (dst_buffer == GR_BUFFER_FRONTBUFFER) present_front();
     }
     return FXTRUE;

@@ -31,6 +31,18 @@
  * fragment, u_mode is the blend mode, u_afunc the alpha test, u_fog the vertex
  * fog (its factor rides in a_pos.w), glBlendFunc the alpha blend.
  *
+ * Between scenes the picture stays in the FBO, not in the guest's memory: a
+ * readback stalls the GPU and, with the uploads around it, cost half of a
+ * frame.  gpu_back is the surface whose memory lacks the FBO's picture; it is
+ * read back only when the guest touches that memory (Winapi_D3dGLSync: Lock,
+ * a blit to or from it, a partial clear), and the next scene of it draws on
+ * the FBO as it is.  A Flip of it, or a blit of all of it to the primary,
+ * copies the FBO into front_fbo, rounded to the target's 16-bit colours as the
+ * memory has them, and the window shows that (gpu_front, the primary).  A
+ * fill of a whole surface (a colour-fill blit, a clear outside a scene) needs
+ * no readback, and the next scene starts with a glClear of that colour
+ * instead of an upload.
+ *
  * Antialiasing (the game's RS_ANTIALIAS, or Display_Antialiasing of the
  * config file): the scene is drawn into a multisampled FBO of the same size
  * instead, the guest's picture goes into it as a quad of scene_tex, and every
@@ -125,6 +137,13 @@ static int scene_has_z = 0;             /* the target has a Z-buffer attached */
  * wrote it after the readback; a Lock that predates the scene may not) */
 static struct IDirectDrawSurface_c *scene_synced = NULL;
 
+/* the pictures kept on the GPU between scenes (see above) */
+static struct IDirectDrawSurface_c *gpu_back = NULL, *gpu_front = NULL;
+static GLuint front_fbo = 0, front_tex = 0;
+static int front_w = 0, front_h = 0;
+/* the surface the guest filled whole with one colour since its last scene */
+static struct IDirectDrawSurface_c *filled = NULL;
+
 static GLuint present_tex = 0;
 static uint32_t *present_buf = NULL;
 static int present_w = 0, present_h = 0;
@@ -132,7 +151,7 @@ static int present_w = 0, present_h = 0;
 static uint32_t gl_state[MAX_GL_STATES];
 
 static GLuint draw_prog = 0;
-static GLint u_scale, u_mode, u_alphatest, u_afunc, u_aref, u_fog, u_fogcolor, u_clampuv;
+static GLint u_scale, u_mode, u_alphatest, u_afunc, u_aref, u_fog, u_fogcolor, u_clampuv, u_quant;
 static GLint a_box = -1;
 
 /* what a primitive call gives is one glDrawArrays; f is the vertex fog, 1 no fog;
@@ -170,7 +189,10 @@ static const char draw_vs[] =
  * colour goes to u_fogcolor as v_fog goes to 0; u_clampuv: the texture
  * coordinates are kept in the box of the triangle's (a multisampled pixel on
  * an edge is shaded at its centre, which may lie outside the triangle: the
- * coordinates there would reach the neighbouring picture of a texture page) */
+ * coordinates there would reach the neighbouring picture of a texture page);
+ * u_quant (a copy of a picture): 1 the colour as a 16-bit surface keeps it
+ * and WinApi-ddraw.c shows it (5:6:5, the top bits repeated), 2 only an
+ * opaque alpha */
 static const char draw_fs[] =
     "uniform sampler2D u_tex;\n"
     "uniform int u_mode;\n"
@@ -180,6 +202,7 @@ static const char draw_fs[] =
     "uniform int u_fog;\n"
     "uniform vec3 u_fogcolor;\n"
     "uniform int u_clampuv;\n"
+    "uniform int u_quant;\n"
     "varying vec3 v_stq;\n"
     "varying vec4 v_col;\n"
     "varying float v_fog;\n"
@@ -203,6 +226,13 @@ static const char draw_fs[] =
     "            (u_afunc == 6 && a == u_aref) || (u_afunc == 7 && a < u_aref)) discard;\n"
     "    }\n"
     "    if (u_fog != 0) c.rgb = mix(u_fogcolor, c.rgb, clamp(v_fog, 0.0, 1.0));\n"
+    "    if (u_quant != 0) {\n"
+    "        if (u_quant == 1) {\n"
+    "            vec3 q = floor(floor(c.rgb * 255.0 + 0.5) / vec3(8.0, 4.0, 8.0));\n"
+    "            c.rgb = (q * vec3(8.0, 4.0, 8.0) + floor(q / vec3(4.0, 16.0, 4.0))) / 255.0;\n"
+    "        }\n"
+    "        c.a = 1.0;\n"
+    "    }\n"
     "    gl_FragColor = c;\n"
     "}\n";
 
@@ -233,6 +263,7 @@ int Winapi_D3dGLContext(struct SDL_Window *window)
         u_fog = glGetUniformLocation(draw_prog, "u_fog");
         u_fogcolor = glGetUniformLocation(draw_prog, "u_fogcolor");
         u_clampuv = glGetUniformLocation(draw_prog, "u_clampuv");
+        u_quant = glGetUniformLocation(draw_prog, "u_quant");
         a_box = glGetAttribLocation(draw_prog, "a_box");
     }
     if (draw_prog == 0) return 0;
@@ -309,6 +340,18 @@ static void surface_to_bgra(const struct IDirectDrawSurface_c *s, uint32_t *dst,
             }
         }
     }
+}
+
+/* the first pixel as surface_to_bgra makes it (a fill of the whole surface) */
+static uint32_t surface_first_bgra(const struct IDirectDrawSurface_c *s)
+{
+    struct IDirectDrawSurface_c one = *s;
+    uint32_t c = 0;
+
+    one.width = 1;
+    one.height = 1;
+    surface_to_bgra(&one, &c, 0);
+    return c;
 }
 
 static void bgra_to_surface(const uint32_t *src, struct IDirectDrawSurface_c *s)
@@ -394,9 +437,9 @@ static void scene_bind(void)
     glBindFramebuffer(GL_FRAMEBUFFER, scene_ms ? ms_fbo : scene_fbo);
 }
 
-/* scene_tex as a quad over the multisampled FBO: rows and texels as they are
- * (row 0 of both is the screen's top), no depth, no blend */
-static void ms_put_scene_tex(void)
+/* tex as a quad over all of fbo (the scene's size): rows and texels as they
+ * are (row 0 of both is the screen's top), no depth, no blend; quant: u_quant */
+static void put_texture(GLuint fbo, GLuint tex, int quant)
 {
     static const gl_vertex quad_template[4] = {
         { 0, 0, 0, 1, 0, 0, 1, 255, 255, 255, 255, 0, 0, 1, 1 },
@@ -413,7 +456,7 @@ static void ms_put_scene_tex(void)
         quad[i].x *= (float)scene_w;
         quad[i].y *= (float)scene_h;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, scene_w, scene_h);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
@@ -426,7 +469,8 @@ static void ms_put_scene_tex(void)
     glUniform1i(u_afunc, 0);
     glUniform1i(u_fog, 0);
     glUniform1i(u_clampuv, 0);
-    glBindTexture(GL_TEXTURE_2D, scene_tex);
+    glUniform1i(u_quant, quant);
+    glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glEnableVertexAttribArray(0);
@@ -445,7 +489,21 @@ static void ms_put_scene_tex(void)
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
     if (a_box >= 0) glDisableVertexAttribArray((GLuint)a_box);
+    glUniform1i(u_quant, 0);
     glUseProgram(0);
+}
+
+static void ms_put_scene_tex(void)
+{
+    put_texture(ms_fbo, scene_tex, 0);
+}
+
+/* the samples of the multisampled FBO into scene_fbo */
+static void ms_resolve(void)
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, ms_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_fbo);
+    glBlitFramebuffer(0, 0, scene_w, scene_h, 0, 0, scene_w, scene_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
 static void scene_upload(struct IDirectDrawSurface_c *target)
@@ -468,14 +526,77 @@ static int scene_samples(void)
     return n;
 }
 
+/* the colour of fbo (w x h, row 0 the screen's top) into the memory of target */
+static void fbo_to_surface(GLuint fbo, int w, int h, struct IDirectDrawSurface_c *target)
+{
+    uint8_t *buf;
+    uint32_t i, n;
+
+    if (((int)target->width != w) || ((int)target->height != h)) return;
+    buf = (uint8_t *)malloc((size_t)w * h * 4);
+    if (buf == NULL) return;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    /* GL_RGBA + GL_UNSIGNED_BYTE is the one readback every driver has;
+     * GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV may silently fail on some */
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    {
+        static int logged = 0;
+        GLenum err = glGetError();
+        if (!logged && (err != GL_NO_ERROR))
+        {
+            fprintf(stderr, "Game_D3dGL: glReadPixels: error 0x%x\n", (unsigned)err);
+            logged = 1;
+        }
+    }
+    n = (uint32_t)w * (uint32_t)h;
+    for (i = 0; i < n; i++)
+    {
+        uint8_t r = buf[i * 4], b = buf[i * 4 + 2];
+        buf[i * 4] = b;
+        buf[i * 4 + 2] = r;
+    }
+    bgra_to_surface((const uint32_t *)buf, target);
+    free(buf);
+}
+
+/* the memory of s gets the picture the GPU keeps for it (the context is
+ * current; the frame buffer bound after it is 0) */
+static void gpu_to_memory(struct IDirectDrawSurface_c *s)
+{
+    if (s == NULL) return;
+    if (s == filled) filled = NULL;
+    if (s == gpu_back)
+    {
+        gpu_back = NULL;
+        fbo_to_surface(scene_fbo, scene_w, scene_h, s);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    if (s == gpu_front)
+    {
+        gpu_front = NULL;
+        fbo_to_surface(front_fbo, front_w, front_h, s);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+}
+
 int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
 {
+    int kept, ms_made = 0;
+
     if ((target == NULL) || (target->pixels == NULL) || (target->dd == NULL)) return 0;
     if ((target->bpp != 16) && (target->bpp != 32)) return 0;
     if (!Winapi_D3dGLContext(target->dd->Window)) return 0;
 
+    /* the FBO is the target's now: a picture kept in it for another surface
+     * goes into that one's memory */
+    if ((gpu_back != NULL) && (gpu_back != target)) gpu_to_memory(gpu_back);
+    kept = (gpu_back == target);
+    gpu_back = NULL;
+
     if ((scene_fbo == 0) || (scene_w != (int)target->width) || (scene_h != (int)target->height))
     {
+        kept = 0;
         scene_fbo_delete();
         if (!Game_GlFboCreate(&scene_fbo, &scene_tex, (int)target->width, (int)target->height, 1, &scene_depth)) return 0;
         scene_w = (int)target->width;
@@ -491,7 +612,7 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
         if ((want < 2) || (want != ms_asked)) ms_fbo_delete();
         if ((want >= 2) && (ms_fbo == 0) && (failed_for != want))
         {
-            if (ms_fbo_create(want)) ms_asked = want;
+            if (ms_fbo_create(want)) { ms_asked = want; ms_made = 1; }
             else failed_for = want;
         }
         scene_ms = (ms_fbo != 0);
@@ -505,8 +626,26 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
     glDepthMask(GL_FALSE);
 
     /* the guest's picture (its clears and 2D blits) under whatever comes;
-     * the scene's frame buffer is bound after it */
-    scene_upload(target);
+     * the scene's frame buffer is bound after it.  The last scene's picture,
+     * if the guest did not touch the memory since, is in the FBO already; a
+     * fill of the whole surface is a clear */
+    if (kept)
+    {
+        /* a multisampled FBO made just now has none of it */
+        if (scene_ms && ms_made) ms_put_scene_tex();
+        scene_bind();
+    }
+    else if (filled == target)
+    {
+        uint32_t c = surface_first_bgra(target);
+
+        scene_bind();
+        glClearColor((float)((c >> 16) & 255) / 255.0f, (float)((c >> 8) & 255) / 255.0f,
+                     (float)(c & 255) / 255.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    else scene_upload(target);
+    filled = NULL;
 
     /* screen row 0 of the D3D target is the first row of the FBO's memory */
     glViewport(0, 0, scene_w, scene_h);
@@ -527,39 +666,8 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
 /* the FBO's colour into the target's memory (the scene stays active) */
 static void scene_readback(struct IDirectDrawSurface_c *target)
 {
-    uint8_t *buf = (uint8_t *)malloc((size_t)scene_w * scene_h * 4);
-    uint32_t i, n;
-    if (buf == NULL) return;
-    if (scene_ms)
-    {
-        /* the samples resolved into scene_fbo, whose colour is read */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, ms_fbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_fbo);
-        glBlitFramebuffer(0, 0, scene_w, scene_h, 0, 0, scene_w, scene_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    /* GL_RGBA + GL_UNSIGNED_BYTE is the one readback every driver has;
-     * GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV may silently fail on some */
-    glReadPixels(0, 0, scene_w, scene_h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-    {
-        static int logged = 0;
-        GLenum err = glGetError();
-        if (!logged && (err != GL_NO_ERROR))
-        {
-            fprintf(stderr, "Game_D3dGL: glReadPixels: error 0x%x\n", (unsigned)err);
-            logged = 1;
-        }
-    }
-    n = (uint32_t)scene_w * (uint32_t)scene_h;
-    for (i = 0; i < n; i++)
-    {
-        uint8_t r = buf[i * 4], b = buf[i * 4 + 2];
-        buf[i * 4] = b;
-        buf[i * 4 + 2] = r;
-    }
-    bgra_to_surface((const uint32_t *)buf, target);
-    free(buf);
+    if (scene_ms) ms_resolve();
+    fbo_to_surface(scene_fbo, scene_w, scene_h, target);
     scene_bind();
 }
 
@@ -568,7 +676,11 @@ void Winapi_D3dGLEndScene(struct IDirectDrawSurface_c *target)
     if (!scene_active || (target == NULL) || (target != scene_target)) { scene_active = 0; return; }
     scene_active = 0;
     scene_synced = NULL;
-    scene_readback(target);
+    /* the picture stays in scene_fbo; the primary's memory is what the window
+     * shows, so it gets it now */
+    if (scene_ms) ms_resolve();
+    if (target->primary) fbo_to_surface(scene_fbo, scene_w, scene_h, target);
+    else gpu_back = target;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     scene_target = NULL;
     gl_release();
@@ -576,18 +688,81 @@ void Winapi_D3dGLEndScene(struct IDirectDrawSurface_c *target)
 
 void Winapi_D3dGLSync(struct IDirectDrawSurface_c *target)
 {
+    if (target == NULL) return;
     /* the guest touches the target's pixels mid-scene (Lock, a blit from it):
      * its memory wants the 3D drawn so far; the scene goes on */
-    if (!scene_active || (target == NULL) || (target != scene_target)) return;
-    scene_readback(target);
-    scene_synced = target;
+    if (scene_active && (target == scene_target))
+    {
+        scene_readback(target);
+        scene_synced = target;
+        return;
+    }
+    /* or a picture the GPU keeps for it, between scenes */
+    if (target == filled) filled = NULL;
+    if ((target != gpu_back) && (target != gpu_front)) return;
+    if (!Winapi_D3dGLContext(NULL)) { gpu_back = gpu_front = NULL; return; }
+    gpu_to_memory(target);
+    if (scene_active) scene_bind();
+    gl_release();
+}
+
+void Winapi_D3dGLWillFill(struct IDirectDrawSurface_c *target)
+{
+    if (target == NULL) return;
+    if (scene_active && (target == scene_target)) { Winapi_D3dGLSync(target); return; }
+    if (target == gpu_back) gpu_back = NULL;
+    if (target == gpu_front) gpu_front = NULL;
+}
+
+void Winapi_D3dGLFilled(struct IDirectDrawSurface_c *target)
+{
+    if ((target == NULL) || (scene_active && (target == scene_target))) return;
+    filled = target;
+}
+
+int Winapi_D3dGLShow(struct IDirectDrawSurface_c *primary, struct IDirectDrawSurface_c *src)
+{
+    /* the primary gets another picture: the one kept for it is gone */
+    if (primary == gpu_front) gpu_front = NULL;
+    if ((primary == NULL) || (src == NULL) || (src != gpu_back)) return 0;
+    if (scene_active || (primary->width != src->width) || (primary->height != src->height) ||
+        (primary->bpp != src->bpp) || !Winapi_D3dGLContext(NULL))
+    {
+        /* the copy in memory wants the picture */
+        Winapi_D3dGLSync(src);
+        return 0;
+    }
+    if ((front_fbo == 0) || (front_w != scene_w) || (front_h != scene_h))
+    {
+        if (front_fbo != 0) Game_GlFboDelete(&front_fbo, &front_tex, 0, NULL);
+        front_w = front_h = 0;
+        if (!Game_GlFboCreate(&front_fbo, &front_tex, scene_w, scene_h, 0, NULL))
+        {
+            if (front_fbo != 0) Game_GlFboDelete(&front_fbo, &front_tex, 0, NULL);
+            gl_release();
+            Winapi_D3dGLSync(src);
+            return 0;
+        }
+        front_w = scene_w;
+        front_h = scene_h;
+    }
+    put_texture(front_fbo, scene_tex, (src->bpp == 16) ? 1 : 2);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_release();
+    gpu_front = primary;
+    return 1;
 }
 
 void Winapi_D3dGLUpload(struct IDirectDrawSurface_c *target)
 {
     /* the guest wrote the target mid-scene (Unlock or Blt): under the 3D;
      * only after a readback of this scene, else the write predates it */
-    if (!scene_active || (target == NULL) || (target != scene_target)) return;
+    if (target == NULL) return;
+    if (!scene_active || (target != scene_target))
+    {
+        if (target == filled) filled = NULL;
+        return;
+    }
     if (scene_synced != target) return;
     scene_synced = NULL;
     scene_upload(target);
@@ -762,6 +937,10 @@ void Winapi_D3dGLPaletteChanged(const struct IDirectDrawPalette_c *palette)
 void Winapi_D3dGLTextureFree(const struct IDirectDrawSurface_c *s)
 {
     uint32_t i;
+
+    if (s == gpu_back) gpu_back = NULL;
+    if (s == gpu_front) gpu_front = NULL;
+    if (s == filled) filled = NULL;
 
     for (i = 0; i < MAX_GL_TEXTURES; i++)
     {
@@ -1048,6 +1227,15 @@ void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window 
     if ((target == NULL) || (window == NULL)) return;
     if (!Winapi_D3dGLContext(window)) return;
 
+    /* the picture a Flip left on the GPU */
+    if ((target == gpu_front) && (front_fbo != 0))
+    {
+        Game_OsdFrame(front_w, front_h, "Direct3D, OpenGL");
+        Game_GlPresentFiltered(window, front_tex, front_w, front_h, 1, 0, Game_GlFilter());
+        gl_release();
+        return;
+    }
+
     if ((present_tex == 0) || (present_w != (int)target->width) || (present_h != (int)target->height))
     {
         if (present_tex != 0) glDeleteTextures(1, &present_tex);
@@ -1094,6 +1282,10 @@ void Winapi_D3dGLShutdown(void)
     free(present_buf);
     present_buf = NULL;
     present_w = present_h = 0;
+    if ((front_fbo != 0) && (gl_context != NULL)) Game_GlFboDelete(&front_fbo, &front_tex, 0, NULL);
+    front_fbo = front_tex = 0;
+    front_w = front_h = 0;
+    gpu_back = gpu_front = filled = NULL;
     scene_fbo_delete();
     scene_active = 0;
     scene_ms = 0;

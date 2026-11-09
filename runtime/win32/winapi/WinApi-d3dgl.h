@@ -49,16 +49,27 @@ typedef struct {
 /* the context on the DirectDraw window; 0 and a message if it cannot be made */
 int Winapi_D3dGLContext(struct SDL_Window *window);
 
-/* BeginScene: the FBO of the target, its colour the target's memory */
+/* BeginScene: the FBO of the target, its colour the target's memory (or the
+ * picture the FBO kept since the last scene, or the colour of a fill) */
 int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target);
-/* EndScene: the FBO's colour back into the target's memory */
+/* EndScene: the picture stays in the FBO (the primary's goes into its memory) */
 void Winapi_D3dGLEndScene(struct IDirectDrawSurface_c *target);
-/* the guest touches the target's pixels mid-scene: read the FBO back first */
+/* the guest touches the surface's pixels (Lock, a blit to or from it, a clear
+ * of a part): the picture the FBO has for it goes into its memory first */
 void Winapi_D3dGLSync(struct IDirectDrawSurface_c *target);
+/* the guest fills all of the surface with one value: before it (no readback
+ * needed), and after it, so that the next scene clears to that colour */
+void Winapi_D3dGLWillFill(struct IDirectDrawSurface_c *target);
+void Winapi_D3dGLFilled(struct IDirectDrawSurface_c *target);
+/* all of src becomes the primary's picture (a Flip, a blit of the whole
+ * surface, same size, no colour key): 1 if it went from FBO to FBO and the
+ * primary's memory is not written; 0 and WinApi-ddraw.c copies the memory */
+int Winapi_D3dGLShow(struct IDirectDrawSurface_c *primary, struct IDirectDrawSurface_c *src);
 /* the guest wrote the target mid-scene (Unlock, Blt): the new pixels under
  * the 3D drawn so far */
 void Winapi_D3dGLUpload(struct IDirectDrawSurface_c *target);
-/* a texture surface goes away: drop both of its cached GL textures */
+/* a surface goes away: drop both of its cached GL textures (and the pictures
+ * kept for it) */
 void Winapi_D3dGLTextureFree(const struct IDirectDrawSurface_c *surface);
 /* the entries of a palette changed: the cached textures that use it want
  * their pixels read again (the software rasteriser reads the palette live) */
@@ -80,7 +91,8 @@ void Winapi_D3dGLDraw(uint32_t type, const d3dgl_vert *verts, uint32_t nverts,
                       const struct IDirectDrawSurface_c *texture,
                       int clip_x, int clip_y, int clip_w, int clip_h);
 
-/* the scaled image of the target's memory on the window (WinApi-d3d.c) */
+/* the scaled image of the target's memory on the window (WinApi-d3d.c), or of
+ * the picture a Flip left on the GPU */
 void Winapi_D3dGLPresent(struct IDirectDrawSurface_c *target, struct SDL_Window *window);
 
 /* the context and every object go away (the window is going away) */
