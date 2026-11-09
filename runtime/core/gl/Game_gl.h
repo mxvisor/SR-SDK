@@ -82,9 +82,10 @@ void Game_GlPresentTexture(SDL_Window *window, GLuint tex,
                            int linear_filter);
 
 /* The 2D filters (Display_Shader of a game's settings file, a mod): 0 none, 1 smooth
- * (sharp bilinear), 2 pixelart (Scale2x), 3 scanlines, 4 crt. For a picture of a
- * few hundred texels on a bigger window. */
-#define GAME_GL_SHADERS 5
+ * (sharp bilinear), 2 pixelart (Scale2x), 3 scanlines, 4 crt, 5 xbr (xBR-lv2: rounded
+ * edges, sharp areas), 6 super-xbr (Super-xBR at twice the size, then bilinear: soft).
+ * For a picture of a few hundred texels on a bigger window. */
+#define GAME_GL_SHADERS 7
 /* the number of a name ("off" is none), -1 for an unknown one */
 int Game_GlShaderParse(const char *name);
 const char *Game_GlShaderName(int shader);

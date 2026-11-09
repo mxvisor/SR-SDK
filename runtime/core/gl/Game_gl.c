@@ -347,10 +347,16 @@ static const char filter_crt_fs[] =
     "    gl_FragColor = vec4(c * (0.25 + 0.95 * beam) * mask * 1.2 * vig, 1.0);\n"
     "}\n";
 
-static const char *const filter_names[GAME_GL_SHADERS] = { "none", "smooth", "pixelart", "scanlines", "crt" };
-static const char *const filter_body[GAME_GL_SHADERS] = { NULL, filter_smooth_fs, filter_pixelart_fs, filter_scanlines_fs, filter_crt_fs };
-/* the filters sample by themselves; EPX needs the nearest texel */
-static const int filter_linear[GAME_GL_SHADERS] = { 0, 1, 0, 0, 0 };
+#include "Game_gl_xbr.h"
+
+/* super-xbr is three passes into frame buffers (super_xbr_picture), then the
+ * plain present, bilinear */
+#define FILTER_SUPER_XBR 6
+
+static const char *const filter_names[GAME_GL_SHADERS] = { "none", "smooth", "pixelart", "scanlines", "crt", "xbr", "super-xbr" };
+static const char *const filter_body[GAME_GL_SHADERS] = { NULL, filter_smooth_fs, filter_pixelart_fs, filter_scanlines_fs, filter_crt_fs, filter_xbr_fs, NULL };
+/* the filters sample by themselves; EPX and xBR need the nearest texel */
+static const int filter_linear[GAME_GL_SHADERS] = { 0, 1, 0, 0, 0, 0, 1 };
 
 int Game_GlShaderParse(const char *name)
 {
@@ -524,6 +530,121 @@ static void present_overlay(int ww, int wh, const float *pos, SDL_GLContext cont
     glDisable(GL_BLEND);
 }
 
+/* a pass of super-xbr: the whole of a frame buffer of width x height */
+static void pass_draw(GLuint prog, GLuint fbo, int width, int height)
+{
+    static const float pos[8] = { -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f, 1.0f,  1.0f, 1.0f };
+    static const float uv[8] = { 0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f };
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, width, height);
+    glUseProgram(prog);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glUseProgram(0);
+}
+
+/* Super-xBR of the picture (width x height texels): the texture of the picture
+ * at twice the size, rows as in the picture; 0 if it cannot be made */
+static GLuint super_xbr_picture(GLuint tex, int width, int height)
+{
+    static const char *const body[3] = { filter_super_xbr0_fs, filter_super_xbr1_fs, filter_super_xbr2_fs };
+    static GLuint progs[3], fbo[3], fbo_tex[3];
+    static GLint u_tex[3], u_size[3], u_orig;
+    static SDL_GLContext context;
+    static int fbo_w, fbo_h, failed;
+    int i;
+
+    if (context != SDL_GL_GetCurrentContext())
+    {
+        /* the names of another context are gone with it */
+        memset(progs, 0, sizeof(progs));
+        memset(fbo, 0, sizeof(fbo));
+        memset(fbo_tex, 0, sizeof(fbo_tex));
+        fbo_w = fbo_h = failed = 0;
+        context = SDL_GL_GetCurrentContext();
+    }
+    if (failed) return 0;
+    if (progs[0] == 0)
+    {
+        for (i = 0; i < 3; i++)
+        {
+            char *fs = (char *)malloc(strlen(filter_head) + strlen(body[i]) + 1);
+            if (fs == NULL) return 0;
+            strcpy(fs, filter_head);
+            strcat(fs, body[i]);
+            progs[i] = Game_GlProgram(present_vs, fs, "a_pos", "a_uv", NULL, "super-xbr");
+            free(fs);
+            if (progs[i] == 0)
+            {
+                failed = 1;
+                return 0;
+            }
+            u_tex[i] = glGetUniformLocation(progs[i], "u_tex");
+            u_size[i] = glGetUniformLocation(progs[i], "u_size");
+        }
+        u_orig = glGetUniformLocation(progs[1], "u_orig");
+    }
+    if (fbo[0] == 0 || fbo_w != width || fbo_h != height)
+    {
+        for (i = 0; i < 3; i++)
+        {
+            if (fbo[i] != 0) Game_GlFboDelete(&fbo[i], &fbo_tex[i], 0, NULL);
+        }
+        for (i = 0; i < 3; i++)
+        {
+            int scale = (i == 0) ? 1 : 2;
+            if (!Game_GlFboCreate(&fbo[i], &fbo_tex[i], width * scale, height * scale, 0, NULL))
+            {
+                failed = 1;
+                return 0;
+            }
+        }
+        fbo_w = width;
+        fbo_h = height;
+    }
+
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glUseProgram(progs[0]);
+    glUniform1i(u_tex[0], 0);
+    glUniform2f(u_size[0], (float)width, (float)height);
+    pass_draw(progs[0], fbo[0], width, height);
+
+    glUseProgram(progs[1]);
+    glUniform1i(u_tex[1], 0);
+    glUniform1i(u_orig, 1);
+    glUniform2f(u_size[1], (float)width, (float)height);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fbo_tex[0]);
+    pass_draw(progs[1], fbo[1], width * 2, height * 2);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    glUseProgram(progs[2]);
+    glUniform1i(u_tex[2], 0);
+    glUniform2f(u_size[2], (float)(width * 2), (float)(height * 2));
+    glBindTexture(GL_TEXTURE_2D, fbo_tex[1]);
+    pass_draw(progs[2], fbo[2], width * 2, height * 2);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return fbo_tex[2];
+}
+
 static void present_texture(SDL_Window *window, GLuint tex,
                             int width, int height, int aspect_w, int aspect_h,
                             int origin_upper_left, int linear_filter, int shader)
@@ -539,6 +660,21 @@ static void present_texture(SDL_Window *window, GLuint tex,
 
     if (window == NULL || tex == 0) return;
     if (shader < 0 || shader >= GAME_GL_SHADERS) shader = 0;
+    if (shader == FILTER_SUPER_XBR)
+    {
+        GLuint big = super_xbr_picture(tex, width, height);
+
+        /* the picture at twice the size, shown as it is, bilinear; without
+         * it the plain picture */
+        if (big != 0)
+        {
+            tex = big;
+            width *= 2;
+            height *= 2;
+            linear_filter = 1;
+        }
+        shader = 0;
+    }
 
     if (prog_context != SDL_GL_GetCurrentContext())
     {

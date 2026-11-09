@@ -30,6 +30,14 @@ fixes that can be offered back to it. SR-SDK does not change it. The build uses
 `SR/SR/llasm-support/` (the `llasm_*.c` support code) from there directly,
 without copies.
 
+## xBR-lv2 and Super-xBR
+
+`runtime/core/gl/Game_gl_xbr.h` holds Hyllian's xBR-lv2 and Super-xBR shaders
+from libretro's [glsl-shaders](https://github.com/libretro/glsl-shaders)
+(`xbr/shaders/xbr-lv2.glsl`, `xbr/shaders/super-xbr/super-xbr-pass0..2.glsl`),
+rewritten as fragment shaders of `Game_gl.c`, under the MIT license; the file
+keeps their header: Copyright (C) 2011-2016 Hyllian - sergiogdb@gmail.com.
+
 ## TinySoundFont and TinyMidiLoader
 
 `extern/tsf/` is a git submodule of

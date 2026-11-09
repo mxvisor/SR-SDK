@@ -367,7 +367,7 @@ functions the file's head names.
 
 `runtime/core/display/pc.c` is the window of every port (mode-13h palette, 4:3, shown through
 OpenGL by the nearest pixel, the original's look, or with the 2D filter of
-`Display_Shader=none|smooth|pixelart|scanlines|crt` (a mod, also an item of the port's panel); OpenGL 2.0 (GLES 3.0 on Android) is needed, without it
+`Display_Shader=none|smooth|pixelart|scanlines|crt|xbr|super-xbr` (a mod, also an item of the port's panel); OpenGL 2.0 (GLES 3.0 on Android) is needed, without it
 `Game_GlUnavailable` says so in a message box and the program ends; on Win32 the window
 stays hidden, the game draws in its own, and DirectDraw shows its picture through OpenGL too,
 with the same filter). Every window of a picture comes from `Game_WindowCreate` (`Game_eventloop.c`,
