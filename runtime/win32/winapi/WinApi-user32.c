@@ -177,6 +177,7 @@ static int paint_pending = 0;
 #define WM_QUIT 0x0012
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
+#define WM_CHAR 0x0102
 #define WM_SYSCOMMAND 0x0112
 #define WM_TIMER 0x0113
 #define WM_MOUSEMOVE 0x0200
@@ -213,6 +214,7 @@ static int paint_pending = 0;
 #define VK_CONTROL 0x11
 #define VK_MENU 0x12
 #define VK_CAPITAL 0x14
+#define VK_SPACE 0x20
 #define VK_PRIOR 0x21
 #define VK_NEXT 0x22
 #define VK_END 0x23
@@ -316,6 +318,7 @@ extern uint32_t SoundEngine_Counter;
 
 int sdl_versionnum = 0;
 static void *lpfnWndProc = NULL;
+static uint32_t class_menu_name = 0;
 static SDL_Cursor *wait_cursor = NULL;
 static int cursor_visibility = 0;
 static unsigned int mouse_buttons = 0;
@@ -2318,7 +2321,7 @@ uint32_t CCALL ClipCursor_c(const void */*lpRect*/)
 //    return ClipCursor((const RECT *)lpRect);
 }
 
-void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName*/, const char */*lpWindowName*/, uint32_t /*dwStyle*/, int32_t /*x*/, int32_t /*y*/, int32_t /*nWidth*/, int32_t /*nHeight*/, void */*hWndParent*/, void */*hMenu*/, void */*hInstance*/, void */*lpParam*/)
+void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName*/, const char */*lpWindowName*/, uint32_t /*dwStyle*/, int32_t /*x*/, int32_t /*y*/, int32_t /*nWidth*/, int32_t /*nHeight*/, void */*hWndParent*/, void *hMenu_arg, void */*hInstance*/, void */*lpParam*/)
 {
 #ifdef DEBUG_USER32
     eprintf("CreateWindowExA: 0x%x, %s, %s, 0x%x, %i, %i, %i, %i\n", dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight);
@@ -2347,6 +2350,14 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
 #endif
 
         open_controller_or_joystick(-1);
+    }
+
+    /* a window without its own menu gets the one of its class (WNDCLASS.lpszMenuName),
+     * so the game finds it at once with GetMenu */
+    if ((hMenu_arg == NULL) && (class_menu_name != 0) && (GetMenu_c(1) == 0))
+    {
+        uint32_t menu = LoadMenuA_c(0, class_menu_name);
+        if (menu != 0) SetMenu_c(1, menu);
     }
 
     return PSEUDO_HANDLE_MAIN_WINDOW;
@@ -3229,6 +3240,7 @@ uint32_t CCALL RegisterClassA_c(void *lpWndClass)
     if (lpWndClass != NULL)
     {
         lpfnWndProc = ((wndclassa *)lpWndClass)->lpfnWndProc;
+        class_menu_name = ((wndclassa *)lpWndClass)->lpszMenuName.get_value();
     }
 
     return 1;
@@ -3303,11 +3315,38 @@ uint32_t CCALL ShowWindow_c(void */*hWnd*/, int32_t /*nCmdShow*/)
     return 0;
 }
 
-uint32_t CCALL TranslateMessage_c(void */*pMsg*/)
+uint32_t CCALL TranslateMessage_c(void *pMsg)
 {
 #ifdef DEBUG_USER32
     eprintf("TranslateMessage\n");
 #endif
+
+    // As in Windows, WM_KEYDOWN of a character key posts WM_CHAR to the same window
+    // (letters by Shift/Caps Lock, digits without Shift, Space).  Keys with Ctrl or Alt
+    // give no character.
+    lpmsg m = (lpmsg)pMsg;
+    if ((m != NULL) && (m->message == WM_KEYDOWN))
+    {
+        uint32_t vkey = m->wParam;
+        SDL_Keymod mod = SDL_GetModState();
+        uint32_t ch = 0;
+
+        if (mod & (KMOD_CTRL | KMOD_ALT))
+        {
+            // no character
+        }
+        else if ((vkey >= 'A') && (vkey <= 'Z'))
+        {
+            int upper = ((mod & KMOD_SHIFT) != 0) != ((mod & KMOD_CAPS) != 0);
+            ch = upper ? vkey : (vkey + ('a' - 'A'));
+        }
+        else if (!(mod & KMOD_SHIFT) && (((vkey >= '0') && (vkey <= '9')) || (vkey == VK_SPACE)))
+        {
+            ch = vkey;
+        }
+
+        if (ch != 0) PostMessageA_c(m->hwnd.get_value() ? (void *)GAME_GUEST32_TO_PTR(m->hwnd.get_value()) : NULL, WM_CHAR, ch, m->lParam);
+    }
 
     // A game's PeekMessage loop may exit if TranslateMessage returns 0.
     // Real Windows TranslateMessage returns nonzero for keyboard messages (WM_KEYDOWN -> WM_CHAR).
