@@ -70,6 +70,9 @@ static int osd_stamp;
 static volatile int osd_sel;
 /* the host's pointer before the panel showed its own */
 static int osd_cursor = -1;
+/* the keys pressed for the panel (its own key, every key pressed while it is
+ * open, Esc that closes it): the game sees them only once they are released */
+static volatile uint8_t osd_keys[SDL_NUM_SCANCODES];
 
 /* written by the threads of the events, read by the presenter's */
 static SDL_SpinLock message_lock;
@@ -251,13 +254,29 @@ static void finger_point(const SDL_Event *event, int *x, int *y)
     *y = (int)(event->tfinger.y * H);
 }
 
+static void note_key(const SDL_Event *event)
+{
+    SDL_Scancode sc = event->key.keysym.scancode;
+
+    if ((unsigned)sc >= SDL_NUM_SCANCODES) return;
+    if (event->type == SDL_KEYUP) osd_keys[sc] = 0;
+    else if (osd_shown || panel_key(sc)) osd_keys[sc] = 1;
+}
+
+int Game_OsdKeyHidden(SDL_Scancode scancode)
+{
+    return osd_shown || ((unsigned)scancode < SDL_NUM_SCANCODES && osd_keys[scancode]);
+}
+
 int Game_OsdHides(const SDL_Event *event)
 {
     switch (event->type)
     {
         case SDL_KEYDOWN:
-            return osd_shown || panel_key(event->key.keysym.scancode);
+            note_key(event);
+            return Game_OsdKeyHidden(event->key.keysym.scancode);
         case SDL_KEYUP:
+            note_key(event);
             return panel_key(event->key.keysym.scancode);
         case SDL_MOUSEMOTION:
         case SDL_MOUSEBUTTONDOWN:
@@ -274,12 +293,14 @@ int Game_OsdEvent(const SDL_Event *event)
 {
     int x, y, row;
 
+    if (event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) note_key(event);
     if ((event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) && panel_key(event->key.keysym.scancode))
     {
         if (event->type == SDL_KEYDOWN && !event->key.repeat) Game_OsdToggle();
         return 1;
     }
-    if (!osd_shown) return 0;
+    /* the repeats of a key that closed the panel, still held */
+    if (!osd_shown) return event->type == SDL_KEYDOWN && Game_OsdKeyHidden(event->key.keysym.scancode);
 
     switch (event->type)
     {

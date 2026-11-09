@@ -76,6 +76,9 @@ int Game_OsdEvent(const SDL_Event *event);
 /* for the input that reads the events by itself (DirectInput's event watches):
  * non-zero for the panel's key and, while it is open, for every press and move */
 int Game_OsdHides(const SDL_Event *event);
+/* for the input that reads the state of the keys: non-zero while the panel is
+ * open and for a key pressed for the panel until it is released */
+int Game_OsdKeyHidden(SDL_Scancode scancode);
 
 /* the presenters, once per frame: the game's picture and how it is shown
  * ("SDL", "OpenGL") */

@@ -496,7 +496,7 @@ uint32_t CCALL IDirectInputDevice_GetDeviceState_c(uint32_t a0, uint32_t a1, uin
         /* the keys are the port's panel's while it is open */
         if (Game_OsdOpen()) return DI_OK;
         for (sc = 0; sc < n; sc++)
-            if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) { uint8_t dik = Game_PcScancode((SDL_Scancode)sc); if (dik) out[dik] = 0x80; }
+            if ((keys[sc] && !Game_OsdKeyHidden((SDL_Scancode)sc)) || Game_AutoKeyDown((SDL_Scancode)sc)) { uint8_t dik = Game_PcScancode((SDL_Scancode)sc); if (dik) out[dik] = 0x80; }
         for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)
         {
             uint8_t dik = Game_PcScancode(SDL_GetScancodeFromKey(held));

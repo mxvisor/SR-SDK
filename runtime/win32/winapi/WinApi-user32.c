@@ -2437,6 +2437,7 @@ int16_t CCALL GetAsyncKeyState_c(int32_t vKey)
 #endif
     if (vKey == VK_SHIFT)
     {
+        if (Game_OsdOpen()) return 0;
         return (keyboard_mods & KMOD_SHIFT)?0x8000:0;
     }
 
@@ -2638,10 +2639,12 @@ uint32_t CCALL GetKeyboardState_c(void *lpKeyState)
     if (state == NULL) return 0;
     Game_AutoKeysStart();
     memset(state, 0, 256);
+    /* the keys are the port's panel's while it is open */
+    if (Game_OsdOpen()) return 1;
     keys = SDL_GetKeyboardState(&count);
     for (sc = 0; sc < count; sc++)
     {
-        if (keys[sc] || Game_AutoKeyDown((SDL_Scancode)sc)) key_state_set(state, SDL_GetKeyFromScancode((SDL_Scancode)sc));
+        if ((keys[sc] && !Game_OsdKeyHidden((SDL_Scancode)sc)) || Game_AutoKeyDown((SDL_Scancode)sc)) key_state_set(state, SDL_GetKeyFromScancode((SDL_Scancode)sc));
     }
     for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)
     {
