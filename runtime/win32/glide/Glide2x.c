@@ -2203,7 +2203,7 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
             ms_remake();
         }
     }
-    if (swap_interval > 0) Winapi_RetraceWait();
+    if (swap_interval > 0) Winapi_RetraceFlip();
 
     if (num_color_buffers > 1)
     {

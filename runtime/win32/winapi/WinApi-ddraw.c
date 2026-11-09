@@ -451,11 +451,13 @@ static void CountFrame(void)
 
 static double retrace_hz = 60.0;
 static uint64_t retrace_base;
+static double retrace_flipped = -1.0;   /* the retrace of the last flip */
 
 void Winapi_RetraceStart(double hz)
 {
     retrace_hz = (hz >= 1.0) ? hz : 60.0;
     retrace_base = SDL_GetPerformanceCounter();
+    retrace_flipped = -1.0;
 }
 
 static double retrace_position(void)
@@ -480,6 +482,22 @@ void Winapi_RetraceWait(void)
     if ((pos - floor(pos)) < RETRACE_PART) return;
     if (left > 0.0) SDL_Delay((uint32_t)(left * 1000.0));
     while (!Winapi_RetraceIn()) SDL_Delay(0);
+}
+
+void Winapi_RetraceFlip(void)
+{
+    double pos;
+
+    Winapi_RetraceWait();
+    pos = retrace_position();
+    /* one flip in a retrace: a second one waits for the next */
+    while (floor(pos) == retrace_flipped)
+    {
+        SDL_Delay((uint32_t)((ceil(pos) - pos) / retrace_hz * 1000.0));
+        Winapi_RetraceWait();
+        pos = retrace_position();
+    }
+    retrace_flipped = floor(pos);
 }
 
 static void Present(struct IDirectDraw_c *dd)
@@ -1572,7 +1590,7 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, st
     memcpy(lpThis->pixels, src->pixels, lpThis->height * lpThis->pitch);
     lpThis->flipped = 1;
     /* the new front buffer is shown at the next retrace */
-    if (!(dwFlags & DDFLIP_NOVSYNC)) Winapi_RetraceWait();
+    if (!(dwFlags & DDFLIP_NOVSYNC)) Winapi_RetraceFlip();
     Present(lpThis->dd);
 
     SDL_Delay(Display_DelayAfterFlip);

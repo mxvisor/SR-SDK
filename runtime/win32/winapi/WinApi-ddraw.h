@@ -153,10 +153,12 @@ void Winapi_ScreenCloseGL(void);
 
 /* The vertical retrace, from a clock of the display mode's refresh rate (60 Hz until
  * a mode names one): Start sets the rate, In says whether the clock is in the retrace,
- * Wait sleeps until the next one begins (at once when it is in one) */
+ * Wait sleeps until the next one begins (at once when it is in one), Flip is Wait for a
+ * flip: one flip in a retrace, a second one waits for the next retrace */
 void Winapi_RetraceStart(double hz);
 int Winapi_RetraceIn(void);
 void Winapi_RetraceWait(void);
+void Winapi_RetraceFlip(void);
 
 #ifdef __cplusplus
 }
