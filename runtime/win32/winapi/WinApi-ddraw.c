@@ -425,7 +425,7 @@ void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int 
 static uint32_t fps_flips;
 static uint64_t fps_waited;   /* in performance counter ticks */
 
-static void CountFrame(void)
+void Winapi_CountFrame(void)
 {
     static int enabled = -1;
     static uint32_t t0, frames;
@@ -532,7 +532,7 @@ void Winapi_RetraceFlip(void)
 
 static void Present(struct IDirectDraw_c *dd)
 {
-    CountFrame();
+    Winapi_CountFrame();
     /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
     if ((dd->Primary != NULL) && (dd->Window != NULL)) Winapi_D3dGLPresent(dd->Primary, dd->Window);
 }

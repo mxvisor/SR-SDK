@@ -756,6 +756,14 @@ static void release_mapping(mapping_handle m)
     x86_free(m);
 }
 
+/* the reads of a file by this thread (ReadFile, CreateFileMapping), for Winapi_RetraceFlip */
+static thread_local uint32_t file_reads;
+
+uint32_t Winapi_FileReadsOfThread(void)
+{
+    return file_reads;
+}
+
 void * CCALL CreateFileMappingA_c(void *hFile, void */*lpFileMappingAttributes*/, uint32_t /*flProtect*/, uint32_t dwMaximumSizeHigh, uint32_t dwMaximumSizeLow, const char */*lpName*/)
 {
     FILE *f;
@@ -802,6 +810,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void */*lpFileMappingAttributes*/
         off_t pos = ftello(f);
 
         fseeko(f, 0, SEEK_SET);
+        file_reads++;
         if (fread(data, 1, ((int64_t)size < length) ? size : (size_t)length, f) == 0 && ferror(f))
         {
             clearerr(f);
@@ -2746,14 +2755,6 @@ uint32_t CCALL QueryPerformanceFrequency_c(void *lpFrequency)
 
     return 1;
 #endif
-}
-
-/* the reads of a file by this thread (ReadFile), for Winapi_RetraceFlip */
-static thread_local uint32_t file_reads;
-
-uint32_t Winapi_FileReadsOfThread(void)
-{
-    return file_reads;
 }
 
 uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, uint32_t *lpNumberOfBytesRead, void *lpOverlapped)

@@ -2204,6 +2204,7 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
         }
     }
     if (swap_interval > 0) Winapi_RetraceFlip();
+    Winapi_CountFrame();
 
     if (num_color_buffers > 1)
     {

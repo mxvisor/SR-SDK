@@ -159,6 +159,8 @@ void Winapi_RetraceStart(double hz);
 int Winapi_RetraceIn(void);
 void Winapi_RetraceWait(void);
 void Winapi_RetraceFlip(void);
+/* <GAME>_FPS=1: one more frame shown (DirectDraw's present, Glide's swap) */
+void Winapi_CountFrame(void);
 
 #ifdef __cplusplus
 }

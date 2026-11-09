@@ -33,7 +33,7 @@
 extern "C" {
 #endif
 
-/* how many times this thread read a file with ReadFile */
+/* how many times this thread read a file (ReadFile, CreateFileMapping) */
 uint32_t Winapi_FileReadsOfThread(void);
 
 uint32_t CCALL GetCurrentDirectoryA_c(uint32_t nBufferLength, char *lpBuffer);
