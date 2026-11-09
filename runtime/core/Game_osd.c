@@ -185,7 +185,8 @@ static int item_active(int i)
 }
 
 /* a row of the panel chosen: the item to its next value, saved; "Close" closes */
-static void activate(int row)
+/* dir: 0 press (Enter, a click, a touch), -1/+1 Left/Right */
+static void activate(int row, int dir)
 {
     const Game_OsdItem *entry;
 
@@ -196,7 +197,8 @@ static void activate(int row)
     }
     if (row < 0 || !item_active(row)) return;
     entry = items[row];
-    entry->press();
+    if (dir != 0 && entry->step != NULL) entry->step(dir);
+    else entry->press();
     if (entry->config != NULL && entry->state != NULL && !Game_ConfigSave(entry->config, entry->state()))
     {
         Game_OsdMessage("Settings: not saved");
@@ -315,11 +317,15 @@ int Game_OsdEvent(const SDL_Event *event)
                     move_selection(1);
                     break;
                 case SDLK_LEFT:
+                    activate(osd_sel, -1);
+                    break;
                 case SDLK_RIGHT:
+                    activate(osd_sel, 1);
+                    break;
                 case SDLK_RETURN:
                 case SDLK_KP_ENTER:
                 case SDLK_SPACE:
-                    activate(osd_sel);
+                    activate(osd_sel, 0);
                     break;
                 case SDLK_ESCAPE:
                     set_shown(0);
@@ -348,7 +354,7 @@ int Game_OsdEvent(const SDL_Event *event)
             if (row >= 0)
             {
                 select_row(row);
-                activate(row);
+                activate(row, 0);
             }
             else if (row == -2) set_shown(0);
             return 1;
@@ -367,7 +373,7 @@ int Game_OsdEvent(const SDL_Event *event)
             if (row >= 0)
             {
                 select_row(row);
-                activate(row);
+                activate(row, 0);
             }
             else if (row == -2) set_shown(0);
             return 1;
@@ -382,9 +388,13 @@ int Game_OsdEvent(const SDL_Event *event)
                     move_selection(1);
                     break;
                 case SDL_CONTROLLER_BUTTON_A:
+                    activate(osd_sel, 0);
+                    break;
                 case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                    activate(osd_sel, -1);
+                    break;
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                    activate(osd_sel);
+                    activate(osd_sel, 1);
                     break;
                 case SDL_CONTROLLER_BUTTON_B:
                 case SDL_CONTROLLER_BUTTON_BACK:

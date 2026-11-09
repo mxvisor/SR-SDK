@@ -58,6 +58,10 @@ typedef struct {
     const char *(*state)(void);
     /* the key of the settings file it is saved as (NULL: not saved) */
     const char *config;
+    /* of an item of many values in an order (sizes): to the previous (-1) or the
+     * next (+1) value, stopping at the ends; Left and Right, while press goes
+     * round (NULL: Left and Right press) */
+    void (*step)(int dir);
 } Game_OsdItem;
 
 /* registers an item; the entry must stay */

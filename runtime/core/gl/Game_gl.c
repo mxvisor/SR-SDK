@@ -416,12 +416,18 @@ static void filter_item_press(void)
     Game_GlSetFilter((Game_GlFilter() + 1) % GAME_GL_SHADERS);
 }
 
+static void filter_item_step(int dir)
+{
+    int shader = Game_GlFilter() + dir;
+    if (shader >= 0 && shader < GAME_GL_SHADERS) Game_GlSetFilter(shader);
+}
+
 static const char *filter_item_state(void)
 {
     return Game_GlShaderName(Game_GlFilter());
 }
 
-static const Game_OsdItem filter_item = { "Filter", filter_item_active, filter_item_press, filter_item_state, "Display_Shader" };
+static const Game_OsdItem filter_item = { "Filter", filter_item_active, filter_item_press, filter_item_state, "Display_Shader", filter_item_step };
 
 void Game_GlOsdItems(void)
 {
