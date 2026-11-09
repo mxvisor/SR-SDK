@@ -104,7 +104,7 @@ repository: `SConstruct`, `Makefile`, `.gitignore`, `game/game.cfg`,
 launchers (`run-sdl.sh`, `run-sdl-wine.sh`, `run-orig-dosbox.sh` or
 `run-orig-wine.sh`), a git repository and SR-SDK (with SR) as a submodule. With
 `--exe` the original's sha256 is written, and `scons stage=input` then passes. With
-`--image` the disc is described in `game/portable.cfg`, and `--exe disc:NAME` takes the
+`--image` the disc is described in `game/distrib.cfg`, and `--exe disc:NAME` takes the
 executable from the disc (`build/disc/`, unpacked by `tools/disc_tree.py`) instead of a
 file unpacked by hand. The disc image is the one path outside the repository: the
 launchers run the game on `build/distrib/data` (`make distrib-data`, made on the first
@@ -122,7 +122,7 @@ Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 
 `run-orig-dosbox.sh` (DOS games) and `run-orig-wine.sh` (Windows games) of a game
 repository run the original as the reference for the port, on the game directory of
-the portable copy (`build/distrib/data`): DOSBox mounts it as `C:` with an overlay and
+the distrib copy (`build/distrib/data`): DOSBox mounts it as `C:` with an overlay and
 the disc's cue sheet (`build/cd/`) as `D:`; Wine runs on a `fuse-overlayfs` mount of it
 (a copy when it is missing), and `D:` is the unpacked disc (`build/disc`). What the
 original writes lands in `build/run/orig-*`. `--headless[=N]` takes screenshots under
@@ -170,7 +170,7 @@ architecture, the first word of the device, so the builds of several sit side by
 Windows program without a console, `Game_log.c`; `GAME_LOG_FILE` names another) and, in the
 write root, `<program>.reg` (what a Win32 game wrote into its registry, `WinApi-registry.c`).  Windows
 has one file for names that differ only in case, and the game's own files are there too, so
-none of these names may be one of the game's: a portable release compares them
+none of these names may be one of the game's: a distrib release compares them
 (`stage_directory` of `scons/release.SConscript`) and fails with the pair of names.  The
 architecture keeps the programs off the original's `<game>.exe`; a game with its own
 `<program>.cfg` or `.log` renames the port.
@@ -190,7 +190,7 @@ The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets 
 `make linux` (the binary and the `libSDL2_mixer-2.0.so.0` the linker found, beside it: the
 binary's RPATH is `$ORIGIN`, so a release runs where the system has SDL2 and no SDL2_mixer,
 as SteamOS), `make windows` (the MinGW build with the SDL DLLs beside the exe),
-`make distrib-data` (`build/distrib/data`: the game directory of the fullest install with the music, from `game/portable.cfg`),
+`make distrib-data` (`build/distrib/data`: the game directory of the fullest install with the music, from `game/distrib.cfg`),
 `make distrib` (both builds, the data, and `build/distrib/<name>-x64.zip`:
 both programs with the Windows DLLs and the Linux `.so`, `game/release/{linux,windows}/` and their `x64/`,
 where `@GLIBC_MAX@` of a `.txt` is the build's `glibc_max`, and the data), `make apk`, `make disc`
@@ -223,16 +223,16 @@ game's `game/android/res/` (its icons) over that. On the first launch, and
 after each update of the APK, `GameActivity` unpacks the data from the APK's
 assets: the port reads its files with `fopen`.
 
-`tools/portable_cd.py OUT_DIR`, from the game repository's root, makes the
+`tools/distrib_cd.py OUT_DIR`, from the game repository's root, makes the
 game's data directory the port runs from, the directory the game's fullest
 install makes: the files of the disc's data track that installer copies, where
 it puts them, with what that install leaves on the disc and the game still reads
 there at their disc paths (the game directory is the disc as well), the files
 the installer would have written (with `unpack=`, a setup program of the disc
 that keeps its files inside itself), and the audio tracks as flac, wav or ogg
-files with a cue sheet. What to skip, move and add is in `game/portable.cfg`; the
+files with a cue sheet. What to skip, move and add is in `game/distrib.cfg`; the
 script's header lists its keys. Its `image=`, the disc image, is the one path outside the repository; its
-cue sheet is made in `build/cd/`. A portable copy has no launcher script: the
+cue sheet is made in `build/cd/`. A distrib copy has no launcher script: the
 program finds the game in its own directory.
 
 `tools/image/image.py` turns a disc image into what the rest of the SDK takes as
@@ -245,7 +245,7 @@ its files. It writes only the files it names, and deletes nothing.
 `image.py installer FILE OUT_DIR` unpacks an InstallShield 3 `.z` installer or
 a Wise setup program (the game directory, `%MAINDIR%`). The format modules
 (`nrg.py`, `mds.py`, `ccd.py`, `rawbin.py`, `installshield.py`, `wise.py`) share
-`cdimage.py` with `portable_cd.py`.
+`cdimage.py` with `distrib_cd.py`.
 
 ### Several programs of one game: targets
 
@@ -255,7 +255,7 @@ the same disc (say, a 3dfx, a DirectDraw and a DOS exe).
 a `game.cfg`, recomp inputs and code of its own (another `platform` too), and
 `game/game.cfg` lists them: `targets=win,dos`. `scons target=<name>` builds one
 (`target=default`, or none, the main one); its stages up to obj go to
-`build/target-<name>/`. One game directory serves them all: `game/portable.cfg`,
+`build/target-<name>/`. One game directory serves them all: `game/distrib.cfg`,
 `game/release/`, `build/disc`, `build/distrib`, `build/bin` (each target has its own
 `program`). `make linux`, `make windows` and the stages build every target
 (`TARGETS=<name ...>` some of them), `make distrib` puts all programs into the
@@ -332,7 +332,7 @@ headers first, so a header the game overrides affects only the game's code.
 | `GAME_MAIN_FILENAME` | the original's file name, as `argv[0]` of its `main` |
 | `GAME_NAME` | the game's name in the port's messages |
 | `GAME_ENV(name)` | the port's environment variables: `"XX_" name` |
-| `GAME_CD_MARKER` | a file or directory the game reads from the CD: a game directory holding it is also the disc (a portable copy); without it, only a disc image is found |
+| `GAME_CD_MARKER` | a file or directory the game reads from the CD: a game directory holding it is also the disc (a distrib copy); without it, only a disc image is found |
 | `GAME_CD_OPTIONAL` | the game works without its disc: "no CD" is printed only when the CD trace is on |
 | `GAME_DATA_MARKERS` | file names, one of which the game directory holds (`"A.DAT", "B.BAT"`); default: `GAME_MAIN_FILENAME` |
 | `GAME_FLIP_HOOK()` | optional: run before each frame is shown |
@@ -471,7 +471,7 @@ tools/compact_source.py compacts the data segments of SR's output
 tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
-tools/portable_cd.py    a portable copy of a game's disc (game/portable.cfg)
+tools/distrib_cd.py    a distrib copy of a game's disc (game/distrib.cfg)
 tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
 tools/run_common.sh     the common part of a game's run-sdl.sh / run-sdl-wine.sh
 tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)

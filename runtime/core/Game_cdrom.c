@@ -30,7 +30,7 @@
  *     IMGMOUNT takes it, in the directory CD inside the game directory, or
  *     $<GAME>_CD_IMAGE (GAME_ENV in Game_hooks.h);
  *  2. without an image, the game directory itself, when it holds the disc's
- *     files (a portable copy: the game's install with what the install
+ *     files (a distrib copy: the game's install with what the install
  *     leaves on the disc): the file or directory GAME_CD_MARKER
  *     (Game_hooks.h), one of those the game reads from the disc, tells it.
  *     The audio tracks are then files of their own, listed by a cue sheet in
@@ -214,7 +214,7 @@ static int load_cue(const char *path)
             track->index1 = -1;
             track->disc = -1;
         } else if (strncasecmp(p, "REM", 3) == 0) {
-            /* the table of contents of a disc whose tracks are files of their own (portable_cd.py) */
+            /* the table of contents of a disc whose tracks are files of their own (distrib_cd.py) */
             char what[16] = "", msf[32] = "";
             int32_t frames;
             if (sscanf(p + 3, "%15s %31s", what, msf) == 2 && parse_msf(msf, &frames)) {
@@ -268,7 +268,7 @@ static int load_cue(const char *path)
     if (rem_leadout >= 0) toc_leadout = rem_leadout;
 
     /* A disc's tracks start at 1.  A copy that lists only its audio tracks
-     * (portable_cd.py) left the data track out: it is put back, with no
+     * (distrib_cd.py) left the data track out: it is put back, with no
      * file, so that a game that numbers the tracks from the first one of
      * the table of contents sees them as on the disc. */
     if (!tracks[1].present && Game_CdLastTrack() > 1) {
@@ -658,7 +658,7 @@ int32_t Game_CdTrackSectors(int track)
 {
     if (track < 1 || track > GAME_CD_MAX_TRACKS || !tracks[track].present) return 0;
     const cd_track *source = &tracks[track];
-    /* A copy that says where its tracks are on the disc (REM DISC of portable_cd.py)
+    /* A copy that says where its tracks are on the disc (REM DISC of distrib_cd.py)
      * has them as long as on the disc: up to the next track's INDEX 01, its pregap
      * included, where the file of a track ends at the pregap (a game may check the
      * lengths, as MCI gives them, against those of its disc); the data track it

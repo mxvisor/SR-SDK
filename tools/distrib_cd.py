@@ -21,19 +21,19 @@
 #  SOFTWARE.
 #
 
-# A portable copy of a game's disc, run from the game repository's root:
+# A distrib copy of a game's disc, run from the game repository's root:
 #
-#     portable_cd.py OUT_DIR [--cfg game/portable.cfg] [--cue CUE]
+#     distrib_cd.py OUT_DIR [--cfg game/distrib.cfg] [--cue CUE]
 #                    [--audio flac|wav|ogg] [--quality Q]
 #
-# The game directory of a portable copy, OUT_DIR, which must not exist yet: the
+# The game directory of a distrib copy, OUT_DIR, which must not exist yet: the
 # directory the game's own installer makes in its fullest install, with the
 # files that install still leaves on the disc copied in too, so the port needs
 # no disc (a game directory with the disc's files is taken as the disc). It is
 # made of:
 #
 # 1. the files of the disc's data track (ISO9660), at their disc paths, except
-#    those game/portable.cfg names (what the installer does not copy, and
+#    those game/distrib.cfg names (what the installer does not copy, and
 #    what it copies elsewhere: place=) and except a directory called like
 #    audio_dir: on a disc it holds entries whose extents are the audio tracks
 #    themselves, not files. What the install leaves on the disc and the game
@@ -53,7 +53,7 @@
 #    them. flac decodes to the disc's samples bit for bit; wav is the same
 #    uncompressed; ogg is lossy, only smaller.
 #
-# game/portable.cfg (paths relative to the game repository's root):
+# game/distrib.cfg (paths relative to the game repository's root):
 #     image=<the disc image>           .nrg, .mds, .bin, .img or .iso (a .bin or
 #                                      .img with its cue sheet beside it), the
 #                                      one path outside the repository
@@ -99,7 +99,7 @@ from cdimage import RAW, Image, parse_cue, records, track_span  # noqa: E402
 
 
 def fail(message) -> NoReturn:
-    sys.exit('portable_cd: ' + message)
+    sys.exit('distrib_cd: ' + message)
 
 
 def read_cfg(path):
@@ -248,9 +248,9 @@ class Copy:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Makes a portable copy of a game's disc.")
+    parser = argparse.ArgumentParser(description="Makes a distrib copy of a game's disc.")
     parser.add_argument('out', help='the new game directory; it must not exist yet')
-    parser.add_argument('--cfg', default=os.path.join('game', 'portable.cfg'))
+    parser.add_argument('--cfg', default=os.path.join('game', 'distrib.cfg'))
     parser.add_argument('--cue', help="the disc's cue sheet (default: the one of image= of the cfg, build/cd/)")
     parser.add_argument('--audio', choices=('flac', 'wav', 'ogg'))
     parser.add_argument('--quality', help='ogg only: quality -1..10')

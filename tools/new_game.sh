@@ -32,7 +32,7 @@
 #           disc:NAME is a file of the game's disc (needs --image): it is taken from
 #           build/disc/, made by tools/disc_tree.py, so the exe need not be unpacked by hand
 #   --image the disc image (.iso/.nrg/.mds/.bin/.cue; path relative to DIR, or absolute):
-#           game/portable.cfg gets image= (its cue sheet is made in build/cd/); the
+#           game/distrib.cfg gets image= (its cue sheet is made in build/cd/); the
 #           launchers take the game directory from build/distrib/data (make distrib-data)
 #   --sdk   where SR-SDK comes from (default: the repository this script is in)
 #   --sr    where SR comes from (default: SR of the --sdk repository when that is a directory,
@@ -85,8 +85,8 @@ if [ -n "$IMAGE" ]; then
   CUE_BASE="$(basename "${SRC%.*}")"
 fi
 mkdir -p "$DIR/game"
-cat > "$DIR/game/portable.cfg" <<EOF
-# The game directory of the portable copy (SR-SDK/tools/portable_cd.py) and the disc
+cat > "$DIR/game/distrib.cfg" <<EOF
+# The game directory of the distrib copy (SR-SDK/tools/distrib_cd.py) and the disc
 # (SR-SDK/tools/disc_tree.py): what the game's fullest install makes of the disc, with
 # what that install leaves on the disc. Paths are relative to the repository's root.
 
@@ -94,7 +94,7 @@ cat > "$DIR/game/portable.cfg" <<EOF
 image=$REL_IMAGE
 
 # the disc's files the game's installer does not copy (the installer itself; what
-# it copies elsewhere is moved with place=, see portable_cd.py): add them here
+# it copies elsewhere is moved with place=, see distrib_cd.py): add them here
 skip_files=AUTORUN.* SETUP.* INSTALL.*
 
 # music: the audio tracks of the disc
@@ -235,5 +235,5 @@ echo "A new $PLATFORM port is in $DIR (SR-SDK at ${SDK_HEAD:0:7})."
 if [ -n "${DISC_NAME:-}" ]; then
   echo "Next: scons stage=input (takes $DISC_NAME from the disc, build/disc)"
 else
-  echo "Next: $([ -n "$IMAGE" ] || echo 'image= of game/portable.cfg, ')input_exe= of game/game.cfg ($INPUT_EXE)$([ -n "$EXE" ] || echo ' and its sha256 in game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
+  echo "Next: $([ -n "$IMAGE" ] || echo 'image= of game/distrib.cfg, ')input_exe= of game/game.cfg ($INPUT_EXE)$([ -n "$EXE" ] || echo ' and its sha256 in game/recomp/'"$MODULE"'/default/sha256'), then: scons stage=input"
 fi

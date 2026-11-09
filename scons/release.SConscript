@@ -25,7 +25,7 @@
 #
 #     linux          the native binary and libSDL2_mixer beside it
 #     windows        the MinGW cross build and the SDL DLLs beside the exe
-#     disc           build/disc: the disc image with game/portable.cfg over it
+#     disc           build/disc: the disc image with game/distrib.cfg over it
 #     distrib-data   build/distrib/data: the game directory of the fullest install, with the music
 #     distrib        build/distrib/<dist_name>-x64.zip
 #     check          the native binary is there
@@ -41,7 +41,7 @@
 # (runtime/core/Game_gamedir.c).
 #
 # game.cfg keys: program (the binary is <program>-x64, scons/game.py binary_name), dist_name (the archives' name, default
-# program).  The data: game/portable.cfg (SR-SDK/tools/portable_cd.py).
+# program).  The data: game/distrib.cfg (SR-SDK/tools/distrib_cd.py).
 #
 # A repository with several targets (targets= of game/game.cfg, game-<name>/):
 # a target other than the main one has only `linux` and `windows`; the main
@@ -61,9 +61,9 @@ Import('env device CFG ROOT BUILD SDK_ROOT PROGRAM program_nodes TARGET TARGET_P
 
 DIST = os.path.join(BUILD, 'distrib')
 DIST_NAME = CFG.get('dist_name', PROGRAM)
-PORTABLE_CFG = os.path.join(ROOT, 'game', 'portable.cfg')
-PORTABLE_DIR = os.path.join(DIST, 'data')
-PORTABLE_STAMP = os.path.join(DIST, 'data.stamp')
+DISTRIB_CFG = os.path.join(ROOT, 'game', 'distrib.cfg')
+DISTRIB_DIR = os.path.join(DIST, 'data')
+DISTRIB_STAMP = os.path.join(DIST, 'data.stamp')
 RELEASE_DIR = os.path.join(ROOT, 'game', 'release')
 SDL_DLLS = ('SDL2.dll', 'SDL3.dll', 'SDL2_mixer.dll')    # SDL2.dll is sdl2-compat and loads SDL3.dll
 LINUX_DEVICE = 'arm64-linux' if platform.machine().lower() in ('aarch64', 'arm64') else 'x64-linux'
@@ -114,44 +114,44 @@ if program_nodes is not None and device == LINUX_DEVICE:
 if TARGET != 'default':
     Return()
 
-if os.path.isfile(PORTABLE_CFG):
+if os.path.isfile(DISTRIB_CFG):
     def make_disc(target, source, env):
         subprocess.run([sys.executable, '-I', os.path.join(SDK_ROOT, 'tools', 'disc_tree.py'),
                         os.path.join(BUILD, 'disc')], cwd=ROOT, check=True)
 
     env.Alias('disc', env.AlwaysBuild(env.Command(os.path.join(DIST, 'disc.stamp'),
-                                                  PORTABLE_CFG, make_disc)))
+                                                  DISTRIB_CFG, make_disc)))
 
     def inputs_hash():
         digest = hashlib.sha256()
-        for path in (PORTABLE_CFG, os.path.join(SDK_ROOT, 'tools', 'portable_cd.py')):
+        for path in (DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py')):
             with open(path, 'rb') as stream:
                 digest.update(stream.read())
         return digest.hexdigest()
 
-    def make_portable(target, source, env):
+    def make_distrib(target, source, env):
         # SCons's database is not kept by `clean`: the stamp says what the directory was made from
         # (SCons removes the target before the action: the stamp was read when the graph was made)
-        if os.path.isdir(PORTABLE_DIR) and OLD_STAMP.split()[-1:] == [inputs_hash()]:
-            print('==> Portable data: %s is up to date' % PORTABLE_DIR)
+        if os.path.isdir(DISTRIB_DIR) and OLD_STAMP.split()[-1:] == [inputs_hash()]:
+            print('==> Distrib data: %s is up to date' % DISTRIB_DIR)
             return
         for tool in ('python3', 'ffmpeg'):
             if shutil.which(tool) is None:
                 raise Exception('distrib-data: %s not found' % tool)
-        print('==> Portable data: making %s from the disc of game/portable.cfg' % PORTABLE_DIR)
-        shutil.rmtree(PORTABLE_DIR, ignore_errors=True)
-        subprocess.run([sys.executable, os.path.join(SDK_ROOT, 'tools', 'portable_cd.py'), PORTABLE_DIR],
+        print('==> Distrib data: making %s from the disc of game/distrib.cfg' % DISTRIB_DIR)
+        shutil.rmtree(DISTRIB_DIR, ignore_errors=True)
+        subprocess.run([sys.executable, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py'), DISTRIB_DIR],
                        cwd=ROOT, check=True)
         with open(str(target[0]), 'wt') as stamp:
-            stamp.write('made from game/portable.cfg %s\n' % inputs_hash())
+            stamp.write('made from game/distrib.cfg %s\n' % inputs_hash())
 
-    OLD_STAMP = open(PORTABLE_STAMP).read() if os.path.isfile(PORTABLE_STAMP) else ''
+    OLD_STAMP = open(DISTRIB_STAMP).read() if os.path.isfile(DISTRIB_STAMP) else ''
     # the stamp stands for the directory: when it is gone, so is the stamp
-    if not os.path.isdir(PORTABLE_DIR) and os.path.exists(PORTABLE_STAMP):
-        os.remove(PORTABLE_STAMP)
+    if not os.path.isdir(DISTRIB_DIR) and os.path.exists(DISTRIB_STAMP):
+        os.remove(DISTRIB_STAMP)
     # made again when the cfg or the tool that reads it changes
-    env.Alias('distrib-data', env.Command(PORTABLE_STAMP, [PORTABLE_CFG, os.path.join(SDK_ROOT, 'tools', 'portable_cd.py')],
-                                           make_portable))
+    env.Alias('distrib-data', env.Command(DISTRIB_STAMP, [DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py')],
+                                           make_distrib))
 
 # ------------------------------------------------------------------ distrib --
 
@@ -172,7 +172,7 @@ def check_names(directory, names):
     """A game's directory is the port's too, and Windows has one file for names
     that differ only in case: a port's file must not be one of the game's."""
     game = {}
-    for entry in os.listdir(PORTABLE_DIR):
+    for entry in os.listdir(DISTRIB_DIR):
         game.setdefault(entry.lower(), entry)
     clashes = ['%s (the port) / %s (the game)' % (name, game[name.lower()])
                for name in names if name.lower() in game]
@@ -191,9 +191,9 @@ def stage_directory(name, binaries, dlls, release_oses):
     # The data first: a game may install a file of the same name as the program
     # (the original's exe in another case), and the programs of the release must
     # be the port's, not covered by it.
-    if os.path.isdir(PORTABLE_DIR):
+    if os.path.isdir(DISTRIB_DIR):
         check_names(directory, port_names(binaries, dlls, release_oses))
-        shutil.copytree(PORTABLE_DIR, directory, symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(DISTRIB_DIR, directory, symlinks=True, dirs_exist_ok=True)
     for release_os in release_oses:
         for source in release_files(release_os):
             shutil.copy2(source, directory)
@@ -251,7 +251,7 @@ target_binaries = [linux_file(program) for program in TARGET_PROGRAMS] \
     + [windows_file(program) for program in TARGET_PROGRAMS]
 dlls = [File(os.path.join(WINDOWS_BIN_DIR, dll)) for dll in SDL_DLLS] \
     + [File(os.path.join(LINUX_BIN_DIR, so)) for so in LINUX_SOS]
-data = [File(PORTABLE_STAMP)] if os.path.isfile(PORTABLE_CFG) else []
+data = [File(DISTRIB_STAMP)] if os.path.isfile(DISTRIB_CFG) else []
 release = release_files('linux') + release_files('windows')
 # scons compares the sources by their contents: the names are a source too, or a
 # renamed release file leaves the archive with the old name

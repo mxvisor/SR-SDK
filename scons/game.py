@@ -77,7 +77,7 @@ SR_ROOT = os.path.join(SDK_ROOT, 'SR')
 # disc): game/ is its main target, game-<name>/ the others, each with a game.cfg
 # of its own; game/game.cfg lists them (targets=). `scons target=<name>` builds
 # one, target=default (or none) the main one. The disc, the game directory
-# (game/portable.cfg), build/bin and build/distrib are the repository's, shared by
+# (game/distrib.cfg), build/bin and build/distrib are the repository's, shared by
 # all; the stages up to obj of a target go to build/target-<name>/.
 TARGET = ARGUMENTS.get('target', 'default')
 GAME_DIR = os.path.join(ROOT, 'game' if TARGET == 'default' else 'game-' + TARGET)
@@ -282,8 +282,8 @@ game/game.cfg) instead of game/; its stages up to obj go to build/target-<name>/
 Targets (scons/release.SConscript; the game's Makefile has them as `make <name>`):
   linux          the native binary: build/bin/x64-linux/<program>-x64 (arm64-linux/<program>-arm64)
   windows        the MinGW cross build with the SDL DLLs beside the exe
-  disc           build/disc, the disc image with game/portable.cfg over it
-  distrib-data  build/distrib/data, the disc's files and music (game/portable.cfg)
+  disc           build/disc, the disc image with game/distrib.cfg over it
+  distrib-data  build/distrib/data, the disc's files and music (game/distrib.cfg)
   distrib        the release archives in build/distrib/ (linux and windows must be built)
   check          the native binary is there
   clean          remove build/ and run/ but the disc's unpacked files (build/disc, build/cd,
@@ -582,7 +582,7 @@ def disc_file(name):
     disc = os.path.join(BUILD, 'disc')
     if subprocess.call([sys.executable, '-I', os.path.join(SDK_ROOT, 'tools', 'disc_tree.py'), disc],
                        cwd=ROOT) != 0:
-        raise Exception('stage 0: cannot make %s from game/portable.cfg' % disc)
+        raise Exception('stage 0: cannot make %s from game/distrib.cfg' % disc)
     path = disc
     for part in name.split('/'):
         entry = next((e for e in os.listdir(path) if e.lower() == part.lower()), None)
@@ -639,7 +639,7 @@ def module_pipeline(MODULE, EXT, input_key):
             if not source and input_key != 'input_exe':
                 source = 'disc:' + MODULE + EXT      # a DLL: the file of that name on the disc
             if source.startswith('disc:'):
-                # the exe is a file of the game's disc, as game/portable.cfg makes it
+                # the exe is a file of the game's disc, as game/distrib.cfg makes it
                 # (the image with its patch= archives over it): build/disc/
                 source = disc_file(source[len('disc:'):])
             elif source and not os.path.isabs(source):

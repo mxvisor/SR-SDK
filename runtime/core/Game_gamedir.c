@@ -310,7 +310,7 @@ static int game_dir_has_marker(const char *dir)
 }
 
 /* The directory of the port's executable, into dir (PATH_MAX bytes); NULL
- * when it is not known.  A portable copy has the program beside the game's
+ * when it is not known.  A distrib copy has the program beside the game's
  * files, so it is started from anywhere, without a launcher that cd's there. */
 static const char *executable_directory(char *dir)
 {

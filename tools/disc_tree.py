@@ -24,7 +24,7 @@
 
 # The game's disc, unpacked and patched, run from the game repository's root:
 #
-#     disc_tree.py OUT_DIR [--cfg game/portable.cfg] [--cue CUE]
+#     disc_tree.py OUT_DIR [--cfg game/distrib.cfg] [--cue CUE]
 #
 # OUT_DIR is the disc as the build and the port's launchers see it, made from
 # the files the game's repository names, so nobody edits it by hand:
@@ -40,8 +40,8 @@
 # 4. every SZDD file the cfg's expand= names, unpacked (COMPRESS.EXE's
 #    LZSS: SETUP.EX_ is SETUP.EXE) over the name it unpacks to.
 #
-# game/portable.cfg (read as portable_cd.py reads it, same keys):
-#     image=            the disc, as in portable_cd.py (its cue sheet: build/cd/)
+# game/distrib.cfg (read as distrib_cd.py reads it, same keys):
+#     image=            the disc, as in distrib_cd.py (its cue sheet: build/cd/)
 #     patch=<archive>[ <dir>]
 #                       .zip, .rar, .7z, .tar...: the archive of a patch; <dir>
 #                       is the directory inside it that holds the files, when
@@ -72,7 +72,7 @@ import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from portable_cd import Copy, ImageTree, disc_cue, fail, read_cfg  # noqa: E402
+from distrib_cd import Copy, ImageTree, disc_cue, fail, read_cfg  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
 from cdimage import Image, parse_cue  # noqa: E402
 import szdd  # noqa: E402
@@ -242,7 +242,7 @@ def overlay(source, target):
 def main():
     parser = argparse.ArgumentParser(description="Unpacks a game's disc image and puts its patches over it.")
     parser.add_argument('out', help='the directory to make; rebuilt when its inputs changed')
-    parser.add_argument('--cfg', default=os.path.join('game', 'portable.cfg'))
+    parser.add_argument('--cfg', default=os.path.join('game', 'distrib.cfg'))
     parser.add_argument('--cue', help="the disc's cue sheet (default: the one of image= of the cfg, build/cd/)")
     args = parser.parse_args()
 

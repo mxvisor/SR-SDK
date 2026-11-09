@@ -32,9 +32,9 @@
 #   WIN_EXE        Wine: the exe, relative to the data directory
 #   WINE_NAME      Wine, optional: the prefix under ~/.cache (default dos-recomp-wine)
 #
-# The game's files are build/distrib/data, the game directory as the portable copy
+# The game's files are build/distrib/data, the game directory as the distrib copy
 # has it (make distrib-data, made here when it is not there yet): C: of DOSBox, the
-# directory with the exe for Wine.  The disc is the image of game/portable.cfg: its cue
+# directory with the exe for Wine.  The disc is the image of game/distrib.cfg: its cue
 # sheet in build/cd/, mounted on D: with IMGMOUNT, or for Wine, which mounts no image,
 # build/disc (make disc), linked as the D: drive of the prefix.
 # The game's files are never written: DOSBox mounts them with an overlay, Wine runs on
@@ -50,10 +50,10 @@
 #   --help
 
 _orig_init() {
-  local v portable="$GAME_REPO/build/distrib/data"
-  v="${ENVP}_DATA_DIR"; DATA_DIR="${!v:-$portable}"
+  local v distrib="$GAME_REPO/build/distrib/data"
+  v="${ENVP}_DATA_DIR"; DATA_DIR="${!v:-$distrib}"
   v="${ENVP}_WRITE_ROOT"; WRITE_ROOT="${!v:-$GAME_REPO/build/run}"
-  if [ "$DATA_DIR" = "$portable" ] && [ ! -f "$portable.stamp" ]; then
+  if [ "$DATA_DIR" = "$distrib" ] && [ ! -f "$distrib.stamp" ]; then
     make -C "$GAME_REPO" distrib-data || exit 1
   fi
   v="${ENVP}_CD_${1}"; CD="${!v:-}"
