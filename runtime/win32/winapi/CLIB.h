@@ -26,6 +26,7 @@
 #if !defined(_CLIB_H_INCLUDED_)
 #define _CLIB_H_INCLUDED_
 
+#include <stddef.h>
 #include <stdint.h>
 #include "platform.h"
 
@@ -70,6 +71,10 @@ void CCALL sync_c(void);
 #endif
 
 int CLIB_FindFile(const char *src, char *dst);
+int CLIB_WriteOverlay(const char *src, char *dst, size_t size);
+int CLIB_FindOverlayFile(const char *src, char *dst);
+void CLIB_MakeParentDirs(const char *path);
+int CLIB_CopyFile(const char *from, const char *to);
 
 #endif
 

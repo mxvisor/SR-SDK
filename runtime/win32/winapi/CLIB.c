@@ -56,6 +56,133 @@
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
+/* The write root over the game directory (Game_vfs.h): a file the game writes by a
+ * relative name is made in the write root, the same name under the same
+ * directory, so the game directory stays what the install made.  A name that
+ * reaches into the game directory is read from the write root first. */
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define CLIB_MKDIR(path) _mkdir(path)
+#define CLIB_GETCWD(buf, size) _getcwd(buf, (int)(size))
+#define CLIB_STRNCMP_CWD(a, b, n) _strnicmp(a, b, n)
+#define CLIB_PATH_MAX 1024
+#else
+#define CLIB_MKDIR(path) mkdir(path, 0777)
+#define CLIB_GETCWD(buf, size) getcwd(buf, size)
+#define CLIB_STRNCMP_CWD(a, b, n) strncmp(a, b, n)
+#define CLIB_PATH_MAX 4096
+#endif
+
+/* The name as the write root has it: the relative src, from the current
+ * directory when that is in the game directory.  0: there is no such name (the
+ * write root is the game directory, the name is absolute, the current directory
+ * is elsewhere, or the name has ".." in it). */
+int CLIB_WriteOverlay(const char *src, char *dst, size_t size)
+{
+    char cwd[CLIB_PATH_MAX];
+    char root[CLIB_PATH_MAX];
+    size_t length, used, i;
+    const char *data_root, *write_root, *part;
+    int same;
+
+    if (Game_WriteRootIsDataRoot()) return 0;
+    if (src == NULL || src[0] == 0 || src[0] == '/' || src[0] == '\\' || src[1] == ':') return 0;
+    data_root = Game_DataRoot();
+    write_root = Game_WriteRoot();
+    if (data_root == NULL || write_root == NULL || data_root[0] == 0) return 0;
+    if (CLIB_GETCWD(cwd, sizeof(cwd)) == NULL) return 0;
+
+    for (i = 0; cwd[i] != 0; i++) if (cwd[i] == '\\') cwd[i] = '/';
+    snprintf(root, sizeof(root), "%s", data_root);
+    for (i = 0; root[i] != 0; i++) if (root[i] == '\\') root[i] = '/';
+    length = strlen(root);
+    while (length > 1 && root[length - 1] == '/') root[--length] = 0;
+    same = CLIB_STRNCMP_CWD(cwd, root, length) == 0;
+#ifndef _WIN32
+    if (!same)
+    {
+        char resolved[CLIB_PATH_MAX];
+
+        if (realpath(data_root, resolved) != NULL)
+        {
+            snprintf(root, sizeof(root), "%s", resolved);
+            length = strlen(root);
+            same = strncmp(cwd, root, length) == 0;
+        }
+    }
+#endif
+    if (!same || (cwd[length] != 0 && cwd[length] != '/')) return 0;
+
+    used = (size_t)snprintf(dst, size, "%s%s/", write_root, cwd + length);
+    if (used >= size) return 0;
+    for (part = src; *part != 0; )
+    {
+        const char *end = part;
+        size_t n;
+
+        while (*end != 0 && *end != '/' && *end != '\\') end++;
+        n = (size_t)(end - part);
+        if (n == 2 && part[0] == '.' && part[1] == '.') return 0;
+        if (!(n == 0 || (n == 1 && part[0] == '.')))
+        {
+            if (used + n + 1 >= size) return 0;
+            memcpy(dst + used, part, n);
+            used += n;
+            if (*end != 0) dst[used++] = '/';
+        }
+        part = (*end != 0) ? end + 1 : end;
+    }
+    dst[used] = 0;
+    return used > 0 && dst[used - 1] != '/';
+}
+
+/* a regular file of the write root under that name (in any case): its host path */
+int CLIB_FindOverlayFile(const char *src, char *dst)
+{
+    char overlay[CLIB_PATH_MAX];
+    struct stat status;
+
+    if (!CLIB_WriteOverlay(src, overlay, sizeof(overlay))) return 0;
+    if (!CLIB_FindFile(overlay, dst)) return 0;
+    return stat(dst, &status) == 0 && S_ISREG(status.st_mode);
+}
+
+/* the directories above a file the write root is to get */
+void CLIB_MakeParentDirs(const char *path)
+{
+    char dir[CLIB_PATH_MAX];
+
+    snprintf(dir, sizeof(dir), "%s", path);
+    for (size_t i = 1; dir[i] != 0; i++)
+    {
+        if (dir[i] == '/' || dir[i] == '\\')
+        {
+            char saved = dir[i];
+
+            dir[i] = 0;
+            CLIB_MKDIR(dir);
+            dir[i] = saved;
+        }
+    }
+}
+
+/* the game's file copied into the write root before it is changed there */
+int CLIB_CopyFile(const char *from, const char *to)
+{
+    FILE *in = fopen(from, "rb");
+    FILE *out;
+    char block[8192];
+    size_t n;
+
+    if (in == NULL) return -1;
+    out = fopen(to, "wb");
+    if (out == NULL) { fclose(in); return -1; }
+    while ((n = fread(block, 1, sizeof(block), in)) > 0) fwrite(block, 1, n, out);
+    fclose(in);
+    return fclose(out) == 0 ? 0 : -1;
+}
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -509,6 +636,8 @@ int CLIB_FindFile(const char *src, char *dst)
     char *replace, *dirstart;
     int dirlen, found;
 
+    if (CLIB_FindOverlayFile(src, dst)) return 1;
+
     filename_start = src;
     if (src[0] == '/')
     {
@@ -651,6 +780,7 @@ int CLIB_FindFile(const char *src, char *dst)
 /* The Windows file system is case-insensitive: the name is used as given. */
 int CLIB_FindFile(const char *src, char *dst)
 {
+    if (CLIB_FindOverlayFile(src, dst)) return 1;
     strcpy(dst, src);
     return _access(src, 0) == 0;
 }

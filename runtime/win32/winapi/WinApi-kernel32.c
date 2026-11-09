@@ -90,6 +90,7 @@ static clockid_t monotonic_clock_id;
 #endif
 
 #endif
+#include "CLIB.h"
 #include "WinApi-kernel32.h"
 #include "Game_memory.h"
 #include "Game_cdrom.h"
@@ -1088,6 +1089,9 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
     int SeekToStart;
     handle ret;
     char resolved_path[MAX_PATH];
+    char overlay_found[8192];
+    char overlay[8192];
+    const char *target;
 #ifndef _WIN32
     char buf[8192];
 #endif
@@ -1147,6 +1151,10 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
     lpFileName = resolved_path;
 
 #ifdef _WIN32
+    if (CLIB_FindOverlayFile(lpFileName, overlay_found))
+    {
+        lpFileName = overlay_found;
+    }
     file_exists = (INVALID_FILE_ATTRIBUTES != GetFileAttributes(lpFileName));
 #else
     file_exists = CLIB_FindFile(lpFileName, buf);
@@ -1291,10 +1299,32 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
     ret->handle_type = HT_FILE;
 
 #ifdef _WIN32
-    ret->fh.f = fopen(lpFileName, mode);
+    target = lpFileName;
 #else
-    ret->fh.f = fopen(buf, mode);
+    target = buf;
 #endif
+    /* a file the game changes is the write root's, when that is not the game
+     * directory: made there, a copy of the game's file when it is only changed */
+    if ((mode[0] != 'r' || mode[2] == '+') && strcasecmp(lpFileName, "nul") != 0 &&
+        CLIB_WriteOverlay(resolved_path, overlay, sizeof(overlay)))
+    {
+        if (CLIB_FindOverlayFile(resolved_path, overlay_found))
+        {
+            target = overlay_found;
+        }
+        else
+        {
+            CLIB_MakeParentDirs(overlay);
+            if (mode[0] != 'w' && file_exists && CLIB_CopyFile(target, overlay) != 0)
+            {
+                x86_free(ret);
+                Winapi_SetLastError(ERROR_ACCESS_DENIED);
+                return INVALID_HANDLE32_VALUE;
+            }
+            target = overlay;
+        }
+    }
+    ret->fh.f = fopen(target, mode);
     if (ret->fh.f == NULL)
     {
         x86_free(ret);
