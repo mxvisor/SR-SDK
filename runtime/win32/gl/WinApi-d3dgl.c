@@ -101,6 +101,8 @@ static int scene_w = 0, scene_h = 0;
 /* the multisampled frame buffer of an antialiased scene (ms_samples 0: none) */
 static GLuint ms_fbo = 0, ms_color = 0, ms_depth = 0;
 static int ms_samples = 0;
+/* the samples asked for when it was made (the driver may make fewer) */
+static int ms_asked = 0;
 static int scene_ms = 0;                /* the scene draws into ms_fbo */
 static struct IDirectDrawSurface_c *scene_target = NULL;
 static int scene_active = 0;
@@ -486,10 +488,11 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
         int want = scene_samples();
         static int failed_for = -1;
 
-        if ((want < 2) || (want != ms_samples)) ms_fbo_delete();
+        if ((want < 2) || (want != ms_asked)) ms_fbo_delete();
         if ((want >= 2) && (ms_fbo == 0) && (failed_for != want))
         {
-            if (!ms_fbo_create(want)) failed_for = want;
+            if (ms_fbo_create(want)) ms_asked = want;
+            else failed_for = want;
         }
         scene_ms = (ms_fbo != 0);
     }

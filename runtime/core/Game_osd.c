@@ -45,6 +45,14 @@ extern "C"
 void Winapi_DirectDrawOsdItems(void);
 #endif
 
+#if defined(GAME_D3D_GL) || defined(GAME_GLIDE)
+/* WinApi-d3d.c: the item of Display_Antialiasing */
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_Direct3DOsdItems(void);
+#endif
+
 #if defined(GAME_GLIDE_3D_RESOLUTION_ITEM) && GAME_GLIDE_3D_RESOLUTION_ITEM
 /* Glide2x.c: the item of Display_3D_Resolution */
 #ifdef __cplusplus
@@ -162,6 +170,9 @@ void Game_OsdInit(void)
 #endif
 #if defined(GAME_GLIDE_3D_RESOLUTION_ITEM) && GAME_GLIDE_3D_RESOLUTION_ITEM
     Glide_OsdItems();
+#endif
+#if defined(GAME_D3D_GL) || defined(GAME_GLIDE)
+    Winapi_Direct3DOsdItems();
 #endif
 #ifdef GAME_OSD_ITEMS
     GAME_OSD_ITEMS();

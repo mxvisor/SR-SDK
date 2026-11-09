@@ -50,6 +50,8 @@ int Winapi_Direct3DSetAntialiasing(const char *value);
  * (<GAME>_ANTIALIASING wins); the game's own D3DRENDERSTATE_ANTIALIAS takes 4;
  * Glide's buffers take it too */
 int Winapi_Direct3DAntialiasing(void);
+/* the item "Antialiasing" of the port's panel (a d3d_gl=yes or glide=yes build) */
+void Winapi_Direct3DOsdItems(void);
 
 struct SDL_Window;
 

@@ -47,6 +47,7 @@
 #endif
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
+#include "Game_osd.h"
 
 #ifndef GAME_DIRECT3D
 #define GAME_DIRECT3D 0     /* a game that uses Direct3D says so in Game_hooks.h */
@@ -131,6 +132,52 @@ int Winapi_Direct3DAntialiasing(void)
     const char *e = getenv(GAME_ENV("ANTIALIASING"));
     if (e != NULL) return (strcasecmp(e, "on") == 0) ? 4 : atoi(e);
     return d3d_cfg_antialiasing;
+}
+
+/* the item of the port's panel, saved as Display_Antialiasing; the buffers are
+ * made again before the next frame */
+static const int aa_values[] = { 0, 2, 4, 8 };
+#define AA_VALUES (int)(sizeof(aa_values) / sizeof(aa_values[0]))
+
+static int aa_index(void)
+{
+    int i;
+    for (i = AA_VALUES - 1; i > 0 && aa_values[i] > d3d_cfg_antialiasing; i--) ;
+    return i;
+}
+
+static int aa_item_active(void)
+{
+    return getenv(GAME_ENV("ANTIALIASING")) == NULL;
+}
+
+static void aa_item_press(void)
+{
+    d3d_cfg_antialiasing = aa_values[(aa_index() + 1) % AA_VALUES];
+}
+
+static void aa_item_step(int dir)
+{
+    int i = aa_index() + dir;
+    if (i >= 0 && i < AA_VALUES) d3d_cfg_antialiasing = aa_values[i];
+}
+
+static const char *aa_item_state(void)
+{
+    static char name[16];
+    const char *e = getenv(GAME_ENV("ANTIALIASING"));
+
+    if (e != NULL) return e;
+    if (d3d_cfg_antialiasing == 0) return "off";
+    snprintf(name, sizeof(name), "%d", d3d_cfg_antialiasing);
+    return name;
+}
+
+static const Game_OsdItem aa_item = { "Antialiasing", aa_item_active, aa_item_press, aa_item_state, "Display_Antialiasing", aa_item_step };
+
+void Winapi_Direct3DOsdItems(void)
+{
+    Game_OsdAddItem(&aa_item);
 }
 
 int Winapi_Direct3DEnabled(void)

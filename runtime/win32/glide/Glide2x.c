@@ -753,6 +753,7 @@ static GLuint fbo_lo, fbo_lo_tex;   /* hires: a buffer at the size of the screen
 static GLuint lfb_tex;              /* hires: the pixels the guest changed */
 static uint16_t *base_mem[3];       /* hires: the shadow as GL has it (stride scr_width) */
 static int ms_samples;              /* antialiasing: the samples per pixel, 0 without */
+static int ms_asked;                /* the samples asked for when the buffers were made */
 static GLuint ms_fbo[3], ms_color[3];
 static int ms_dirty[3];             /* the multisampled image is newer than fbo[] */
 static GLint u_psize, u_inv_size, u_tex, u_texscale, u_cc, u_asrc, u_usetex, u_ccolor, u_chroma, u_chroma_on;
@@ -1046,6 +1047,7 @@ static void ms_create(uint32_t nbuf)
     int n = Winapi_Direct3DAntialiasing();
     uint32_t i;
 
+    ms_asked = n;
     glGetIntegerv(GL_MAX_SAMPLES, &max);
     if (n > max) n = max;
     if (n < 2) return;
@@ -1800,6 +1802,28 @@ static void shadow_to_gl(int pi)
 /* the colour buffers at width x height, between two frames (the item "3D
  * resolution" of the port's panel): their images scaled into the new ones, the
  * shadows read again at the next lock; the screen's size if the new ones fail */
+/* the multisampled buffers made again for a new Display_Antialiasing, with
+ * the pictures of the colour buffers */
+static void ms_remake(void)
+{
+    uint32_t i;
+
+    gl_flush();
+    for (i = 0; i < num_color_buffers; i++) ms_resolve((int)i);
+    ms_delete();
+    ms_create(num_color_buffers);
+    if (ms_samples == 0)
+    {
+        ms_delete();
+        return;
+    }
+    for (i = 0; i < num_color_buffers; i++)
+    {
+        put_texture(ms_fbo[i], fbo_tex[i], 0);
+        ms_dirty[i] = 0;
+    }
+}
+
 static void buffers_resize(uint32_t width, uint32_t height)
 {
     GLuint old_fbo[3], old_tex[3];
@@ -2140,12 +2164,17 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
     {
         uint32_t width, height;
 
-        /* Display_3D_Resolution changed from the port's panel */
+        /* Display_3D_Resolution or Display_Antialiasing changed from the port's panel */
         fb_target(&width, &height, 0);
         if (width != fb_width || height != fb_height)
         {
             gl_acquire();
             buffers_resize(width, height);
+        }
+        else if (Winapi_Direct3DAntialiasing() != ms_asked)
+        {
+            gl_acquire();
+            ms_remake();
         }
     }
     if (swap_interval > 0) vr_wait_retrace();

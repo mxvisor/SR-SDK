@@ -385,7 +385,8 @@ display modes with 1024x768, 1152x864, 1280x960, 1280x1024 and 1600x1200 after t
 `Display_Antialiasing=off|on|2|4|8`, the multisampling of the scene on OpenGL, `on` 4 samples, the
 game's own `D3DRENDERSTATE_ANTIALIAS` 4 when the key is off; with Glide `Display_3D_Resolution=WxH|off`,
 the 3D at that resolution (the picture is 4:3 either way), `<ENVP>_3D_RESOLUTION` over it, and
-`Display_Antialiasing` too, the multisampling of the 3D, off unless set). In `Game_hooks.h`, all optional:
+`Display_Antialiasing` too, the multisampling of the 3D, off unless set; an item of the port's panel
+in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 
 | Macro | Meaning |
 |---|---|
