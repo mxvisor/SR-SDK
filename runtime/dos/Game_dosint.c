@@ -317,6 +317,13 @@ static int dos_call(Game_DosRegs *regs)
     case 0x2c:
         dos_get_time(regs);
         break;
+    case 0x2b:
+    case 0x2d:
+        /* Set date, set time: a game that reprogrammed the timer (the BIOS
+         * clock stood or raced meanwhile) puts the RTC's time back into DOS
+         * on its way out.  The host keeps its clock: AL = 00h, accepted. */
+        Game_DosSetAL(regs, 0);
+        break;
     case 0x30:
         /* DOS 7.0 and, in the upper half of EAX, the DOS/4GW signature "DX".
          * BL is the extender's major version in ASCII: WATCOM's start-up
