@@ -2748,6 +2748,14 @@ uint32_t CCALL QueryPerformanceFrequency_c(void *lpFrequency)
 #endif
 }
 
+/* the reads of a file by this thread (ReadFile), for Winapi_RetraceFlip */
+static thread_local uint32_t file_reads;
+
+uint32_t Winapi_FileReadsOfThread(void)
+{
+    return file_reads;
+}
+
 uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, uint32_t *lpNumberOfBytesRead, void *lpOverlapped)
 {
 #ifdef DEBUG_KERNEL32
@@ -2827,6 +2835,7 @@ uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesTo
         {
             size_t bytesread;
 
+            file_reads++;
             bytesread = fread(lpBuffer, 1, bytes_to_read, f);
             if (bytesread == 0)
             {

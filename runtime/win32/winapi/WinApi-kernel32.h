@@ -33,6 +33,9 @@
 extern "C" {
 #endif
 
+/* how many times this thread read a file with ReadFile */
+uint32_t Winapi_FileReadsOfThread(void);
+
 uint32_t CCALL GetCurrentDirectoryA_c(uint32_t nBufferLength, char *lpBuffer);
 uint32_t CCALL SetCurrentDirectoryA_c(const char *lpPathName);
 uint32_t CCALL Beep_c(uint32_t dwFreq, uint32_t dwDuration);

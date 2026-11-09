@@ -39,6 +39,7 @@
 #include "Game_hooks.h"
 #include "WinApi-guest.h"
 #include "WinApi-d3d.h"
+#include "WinApi-kernel32.h"
 #include "Game_defs.h"
 #include "Game_thread.h"
 #include "Game_ui.h"
@@ -419,7 +420,11 @@ void Winapi_SurfaceToBgra(struct IDirectDrawSurface_c *prim, uint32_t *dst, int 
 }
 
 
-/* <GAME>_FPS=1 prints the number of presented frames per second to stderr */
+/* <GAME>_FPS=1 prints to stderr, every 2 seconds: the presented frames per second,
+ * the flips per second and the time the game waited for the retrace (ms per second) */
+static uint32_t fps_flips;
+static uint64_t fps_waited;   /* in performance counter ticks */
+
 static void CountFrame(void)
 {
     static int enabled = -1;
@@ -433,71 +438,96 @@ static void CountFrame(void)
     }
     if (!enabled) return;
     now = SDL_GetTicks();
-    if (frames == 0) t0 = now;
+    if (frames == 0)
+    {
+        t0 = now;
+        fps_flips = 0;
+        fps_waited = 0;
+    }
     frames++;
     if (now - t0 >= 2000)
     {
-        fprintf(stderr, "FPS: %.1f\n", frames * 1000.0 / (now - t0));
+        double s = (now - t0) / 1000.0;
+
+        fprintf(stderr, "FPS: %.1f (flips %.1f, waited for the retrace %.0f ms/s)\n", (frames - 1) / s,
+                fps_flips / s, fps_waited * 1000.0 / (double)SDL_GetPerformanceFrequency() / s);
         frames = 0;
     }
 }
 
 /* ---- the vertical retrace, from a clock of the display mode's refresh rate ----
- * DirectDraw flips at the retrace, and so does 3dfx's grBufferSwap when it is asked
- * to: a game that draws as fast as it can is held at the rate of its monitor, as on
- * the machines it was made for. The clock counts the mode's rate (60 Hz when the
- * game names none), not the host display's. */
+ * A flip of DirectDraw (and 3dfx's grBufferSwap when it is asked to) is shown at the next
+ * retrace; the caller goes on at once, and only a flip while the last one is not shown yet
+ * waits for it. A game that draws as fast as it can is held at the rate of its monitor, as
+ * on the machines it was made for, and one that needs a little more than a refresh period
+ * for a frame loses no more than that. The clock counts the mode's rate (60 Hz when the
+ * game names none), not the host display's.
+ * A flip after the flipping thread read a file does not wait: a loading screen flips after
+ * every step of the loading, and the disc of its time, not the monitor, was what held it. */
 #define RETRACE_PART 0.05   /* the part of a refresh period that counts as the retrace */
 
 static double retrace_hz = 60.0;
 static uint64_t retrace_base;
-static double retrace_flipped = -1.0;   /* the retrace of the last flip */
+static uint64_t retrace_shown;   /* the retrace that shows the last flip */
 
 void Winapi_RetraceStart(double hz)
 {
     retrace_hz = (hz >= 1.0) ? hz : 60.0;
     retrace_base = SDL_GetPerformanceCounter();
-    retrace_flipped = -1.0;
+    retrace_shown = 0;
 }
 
-static double retrace_position(void)
+/* the position on the clock, in refresh periods */
+static double retrace_position(uint64_t now)
 {
-    uint64_t now = SDL_GetPerformanceCounter();
-
     if (retrace_base == 0) retrace_base = now;
     return (double)(now - retrace_base) / (double)SDL_GetPerformanceFrequency() * retrace_hz;
 }
 
+/* the start of the first retrace after now */
+static uint64_t retrace_next(uint64_t now)
+{
+    double next = floor(retrace_position(now)) + 1.0;
+    return retrace_base + (uint64_t)(next / retrace_hz * (double)SDL_GetPerformanceFrequency());
+}
+
+static void retrace_sleep_until(uint64_t when)
+{
+    uint64_t start = SDL_GetPerformanceCounter(), now = start;
+    uint64_t ms;
+
+    if (now >= when) return;
+    ms = (when - now) * 1000 / SDL_GetPerformanceFrequency();
+    if (ms > 1) SDL_Delay((uint32_t)(ms - 1));
+    while ((now = SDL_GetPerformanceCounter()) < when) SDL_Delay(0);
+    fps_waited += now - start;
+}
+
 int Winapi_RetraceIn(void)
 {
-    double pos = retrace_position();
+    double pos = retrace_position(SDL_GetPerformanceCounter());
     return (pos - floor(pos)) < RETRACE_PART;
 }
 
 void Winapi_RetraceWait(void)
 {
-    double pos = retrace_position();
-    double left = (ceil(pos) - pos) / retrace_hz;
+    uint64_t now = SDL_GetPerformanceCounter();
+    double pos = retrace_position(now);
 
     if ((pos - floor(pos)) < RETRACE_PART) return;
-    if (left > 0.0) SDL_Delay((uint32_t)(left * 1000.0));
-    while (!Winapi_RetraceIn()) SDL_Delay(0);
+    retrace_sleep_until(retrace_next(now));
 }
 
 void Winapi_RetraceFlip(void)
 {
-    double pos;
+    static uint32_t reads;
+    uint32_t now_reads = Winapi_FileReadsOfThread();
 
-    Winapi_RetraceWait();
-    pos = retrace_position();
-    /* one flip in a retrace: a second one waits for the next */
-    while (floor(pos) == retrace_flipped)
-    {
-        SDL_Delay((uint32_t)((ceil(pos) - pos) / retrace_hz * 1000.0));
-        Winapi_RetraceWait();
-        pos = retrace_position();
-    }
-    retrace_flipped = floor(pos);
+    fps_flips++;
+    /* the last flip is not shown yet */
+    if (now_reads == reads) retrace_sleep_until(retrace_shown);
+    reads = now_reads;
+    retrace_shown = retrace_next(SDL_GetPerformanceCounter());
 }
 
 static void Present(struct IDirectDraw_c *dd)
@@ -505,6 +535,18 @@ static void Present(struct IDirectDraw_c *dd)
     CountFrame();
     /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
     if ((dd->Primary != NULL) && (dd->Window != NULL)) Winapi_D3dGLPresent(dd->Primary, dd->Window);
+}
+
+/* After a blit onto the primary. A blit of a whole frame onto a primary without a back
+ * buffer is how a game without a flip chain shows a frame: it is shown as a flip. */
+static void PresentBlit(struct IDirectDrawSurface_c *dst, struct IDirectDrawSurface_c *src, const struct _rect *d)
+{
+    if ((dst->lpBackbuffer == NULL) && (src != NULL) && (src != dst) &&
+        (d->left <= 0) && (d->top <= 0) && (d->right >= (int32_t)dst->width) && (d->bottom >= (int32_t)dst->height))
+    {
+        Winapi_RetraceFlip();
+    }
+    Present(dst->dd);
 }
 
 static struct IDirectDrawSurface_c *NewSurface(struct IDirectDraw_c *dd, uint32_t width, uint32_t height, uint32_t bpp)
@@ -1445,7 +1487,7 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
     }
     if (shown)
     {
-        Present(lpThis->dd);
+        PresentBlit(lpThis, lpDDSrcSurface, &d);
         return DD_OK;
     }
 #endif
@@ -1500,7 +1542,7 @@ uint32_t CCALL IDirectDrawSurface_Blt_c(struct IDirectDrawSurface_c *lpThis, str
     }
 #endif
 
-    if ((result == DD_OK) && lpThis->primary) Present(lpThis->dd);
+    if ((result == DD_OK) && lpThis->primary) PresentBlit(lpThis, (dwFlags & DDBLT_COLORFILL) ? NULL : lpDDSrcSurface, &d);
 
     return result;
 }
@@ -1531,7 +1573,10 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
             (s.left == 0) && (s.top == 0) && (s.right == (int32_t)lpThis->width) && (s.bottom == (int32_t)lpThis->height) &&
             Winapi_D3dGLShow(lpThis, lpDDSrcSurface))
         {
-            Present(lpThis->dd);
+            d.left = d.top = 0;
+            d.right = (int32_t)lpThis->width;
+            d.bottom = (int32_t)lpThis->height;
+            PresentBlit(lpThis, lpDDSrcSurface, &d);
             return DD_OK;
         }
         Winapi_D3dGLSync(lpThis);
@@ -1553,7 +1598,7 @@ uint32_t CCALL IDirectDrawSurface_BltFast_c(struct IDirectDrawSurface_c *lpThis,
     if (Winapi_Direct3DGL()) Winapi_D3dGLUpload(lpThis);
 #endif
 
-    if ((result == DD_OK) && lpThis->primary) Present(lpThis->dd);
+    if ((result == DD_OK) && lpThis->primary) PresentBlit(lpThis, lpDDSrcSurface, &d);
 
     return result;
 }
@@ -1589,7 +1634,7 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, st
 #endif
     memcpy(lpThis->pixels, src->pixels, lpThis->height * lpThis->pitch);
     lpThis->flipped = 1;
-    /* the new front buffer is shown at the next retrace */
+    /* shown at the next retrace; a flip while the last one is not shown yet waits */
     if (!(dwFlags & DDFLIP_NOVSYNC)) Winapi_RetraceFlip();
     Present(lpThis->dd);
 
