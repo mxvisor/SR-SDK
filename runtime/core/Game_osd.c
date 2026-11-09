@@ -32,6 +32,7 @@
 #include "Game_defs.h"
 #include "Game_thread.h"
 #include "touchgamepad.h"
+#include "Game_pad.h"
 #ifdef GAME_GL
 #include "gl/Game_gl.h"
 #endif
@@ -478,17 +479,23 @@ int Game_OsdStamp(void)
 
 static void gamepad_text(char *text, size_t size)
 {
-    const char *name;
+    unsigned int slots = Game_PadSlots();
+    int pad, first = -1, count = 0;
 
-    /* the port has no gamepad layer of its own yet: what SDL has opened */
-    if (!SDL_WasInit(SDL_INIT_JOYSTICK) || SDL_NumJoysticks() <= 0)
+    /* the first pad by its name, the others counted (Game_pad.h) */
+    for (pad = 0; pad < GAME_PAD_MAX; pad++)
+    {
+        if (!(slots & (1u << pad))) continue;
+        if (first < 0) first = pad;
+        count++;
+    }
+    if (count == 0)
     {
         snprintf(text, size, "Gamepad: none");
         return;
     }
-    name = SDL_JoystickNameForIndex(0);
-    snprintf(text, size, "Gamepad: %s", (name != NULL) ? name : "?");
-    if (SDL_NumJoysticks() > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", SDL_NumJoysticks() - 1);
+    snprintf(text, size, "Gamepad: %s", Game_PadName(first));
+    if (count > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", count - 1);
 }
 
 #define INFO_LINES 5

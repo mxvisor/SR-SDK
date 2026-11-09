@@ -41,10 +41,6 @@ GAME_CONFIG_STORAGE int Audio_ResamplingQuality;/* resampling quality
                                                        0: normal quality
                                                        1: higher quality */
 
-GAME_CONFIG_STORAGE int Input_GameController;   /* use gamepad or joystick as mouse/keyboard ? */
-
-GAME_CONFIG_STORAGE int Controller_Deadzone;    /* controller deadzone */
-
 GAME_CONFIG_STORAGE int Keys_SwitchWSAD;        /* switch WSAD keys for arrow keys ? */
 GAME_CONFIG_STORAGE int Keys_SwitchArrowKeys;   /* switch arrow keys for WSAD keys ? */
 

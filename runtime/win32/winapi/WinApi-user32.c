@@ -314,7 +314,6 @@ typedef struct {
 } wndclassa;
 
 
-extern uint32_t SoundEngine_Counter;
 
 int sdl_versionnum = 0;
 static void *lpfnWndProc = NULL;
@@ -342,16 +341,6 @@ static SDL_Window *mouse_window = NULL;
 extern uint32_t winapi_get_dd_window_id(void);
 extern int winapi_get_dd_mode(int *width, int *height);
 
-static SDL_Joystick *joystick = NULL;
-static SDL_GameController *controller = NULL;
-static int controller_base_axis;
-static unsigned int joystick_hat_position = 0;
-static int controller_axis_x = 0;
-static int controller_axis_y = 0;
-static int controller_mouse_motion = 0;
-static int controller_frac_x;
-static int controller_frac_y;
-static uint32_t controller_mouse_last_time;
 static SDL_Event priority_event;
 static uint32_t window_thread_id;    /* the guest thread that created the pseudo window */
 #if GAME_WINAPI_ACTIVATE_APP_ON_IDLE
@@ -559,76 +548,6 @@ static void mouse_to_mode(SDL_Event *event)
     if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, " -> mode %d,%d of %dx%d]\n", *x, *y, mode_w, mode_h);
 }
 
-static void open_controller_or_joystick(int device_index)
-{
-    int num_joysticks, index;
-
-    num_joysticks = SDL_NumJoysticks();
-
-    // prefer game controllers over joysticks
-    for (index = 0; index < num_joysticks; index++)
-    {
-        if ((device_index >= 0) && (index != device_index))
-        {
-            continue;
-        }
-
-        if (SDL_IsGameController(index))
-        {
-            controller = SDL_GameControllerOpen(index);
-            if (controller != NULL)
-            {
-#if SDL_VERSION_ATLEAST(2,0,14)
-                if (sdl_versionnum >= SDL_VERSIONNUM(2,0,14))
-                {
-                    if (SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_LEFTX) && SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_LEFTY))
-                    {
-                        controller_base_axis = SDL_CONTROLLER_AXIS_LEFTX;
-                    }
-                    else if (SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX) && SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY))
-                    {
-                        controller_base_axis = SDL_CONTROLLER_AXIS_RIGHTX;
-                    }
-                    else
-                    {
-                        SDL_GameControllerClose(controller);
-                        controller = NULL;
-                        continue;
-                    }
-                }
-                else
-#endif
-                controller_base_axis = SDL_CONTROLLER_AXIS_LEFTX;
-                printf("Using controller: %s (%s)\n", SDL_GameControllerName(controller), SDL_JoystickName(SDL_GameControllerGetJoystick(controller)));
-                break;
-            }
-        }
-    }
-
-    if (controller == NULL)
-    for (index = 0; index < num_joysticks; index++)
-    {
-        if ((device_index >= 0) && (index != device_index))
-        {
-            continue;
-        }
-
-        joystick = SDL_JoystickOpen(index);
-        if (joystick != NULL)
-        {
-            if (SDL_JoystickNumAxes(joystick) < 2)
-            {
-                SDL_JoystickClose(joystick);
-                joystick = NULL;
-                continue;
-            }
-
-            printf("Using joystick: %s\n", SDL_JoystickName(joystick));
-            break;
-        }
-    }
-}
-
 static void handle_mouse_button(int pressed, int mouse_button, int event_button, int force_detect, int remove)
 {
     if (pressed)
@@ -674,75 +593,6 @@ static void handle_mouse_button(int pressed, int mouse_button, int event_button,
     {
         mouse_buttons &= ~SDL_BUTTON(event_button);
     }
-}
-
-static int check_controller_event(SDL_Event *event, int remove)
-{
-    int x, y, dx, dy, newx, newy;
-    uint32_t diff;
-
-    x = controller_axis_x;
-    if ((x <= Controller_Deadzone) && (x >= -Controller_Deadzone)) x = 0;
-    y = controller_axis_y;
-    if ((y <= Controller_Deadzone) && (y >= -Controller_Deadzone)) y = 0;
-
-    if ((x != 0) || (y != 0))
-    {
-        diff = SoundEngine_Counter - controller_mouse_last_time;
-
-        if (diff > 0)
-        {
-            if (!controller_mouse_motion)
-            {
-                diff = 1;
-                controller_frac_x = 0;
-                controller_frac_y = 0;
-            }
-
-            controller_mouse_motion = 1;
-            controller_mouse_last_time = SoundEngine_Counter;
-
-            dx = x * diff + controller_frac_x;
-            newx = dx >> 12;
-            controller_frac_x = dx - (newx << 12);
-            newx += mouse_x;
-
-            dy = y * diff + controller_frac_y;
-            newy = dy >> 12;
-            controller_frac_y = dy - (newy << 12);
-            newy += mouse_y;
-
-            if (newx < 0) newx = 0;
-            else if (newx >= 640) newx = 639;
-
-            if (newy < 0) newy = 0;
-            else if (newy >= 480) newy = 479;
-
-
-            event->type = SDL_MOUSEMOTION;
-            event->motion.state = mouse_buttons;
-            event->motion.x = newx;
-            event->motion.y = newy;
-            event->motion.xrel = newx - mouse_x;
-            event->motion.yrel = newy - mouse_y;
-
-            mouse_x = newx;
-            mouse_y = newy;
-
-            if (!remove)
-            {
-                priority_event = *event;
-            }
-
-            return 1;
-        }
-    }
-    else
-    {
-        controller_mouse_motion = 0;
-    }
-
-    return 0;
 }
 
 /* Posted messages and the guest's message queues.
@@ -1026,11 +876,6 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 }
             }
 
-            if (check_controller_event(event, remove))
-            {
-                return 1;
-            }
-
             return 0;
         }
 
@@ -1152,74 +997,11 @@ static int find_event(SDL_Event *event, int remove, int wait)
             break;
 
         case SDL_JOYAXISMOTION:
-            // joystick axis motion event
-            if (joystick != NULL)
-            {
-                if (event->jaxis.axis == 0)
-                {
-                    controller_axis_x = event->jaxis.value;
-                }
-                else if (event->jaxis.axis == 1)
-                {
-                    controller_axis_y = event->jaxis.value;
-                }
-
-                if (check_controller_event(event, remove))
-                {
-                    keep_event = 1;
-                }
-            }
-            break;
-
         case SDL_JOYBALLMOTION:
-            // joystick trackball motion event
-            break;
-
         case SDL_JOYHATMOTION:
-            // joystick hat motion event
-            if (joystick != NULL)
-            {
-                if (event->jhat.hat == 0)
-                {
-                    if ((event->jhat.value & 0x0f) != joystick_hat_position)
-                    {
-                        keep_event = 1;
-                        event->jhat.value = (event->jhat.value & 0x0f) | (joystick_hat_position << 4); // store previous hat position in upper nibble
-                        if (remove || !keep_event)
-                        {
-                            joystick_hat_position = event->jhat.value & 0x0f;
-                        }
-                    }
-                }
-            }
-            break;
-
         case SDL_JOYBUTTONDOWN:
         case SDL_JOYBUTTONUP:
-            // joystick button event
-            if (joystick != NULL)
-            {
-                mouse_button = -1;
-                switch (event->jbutton.button)
-                {
-                case 0:
-                case 1:
-                    mouse_button = event->jbutton.button;
-                    break;
-                case 3:
-                    keep_event = 1;
-                    break;
-                default:
-                    break;
-                }
-
-                if (mouse_button >= 0)
-                {
-                    keep_event = 1;
-                    mouse_doubleclick = 0;
-                    handle_mouse_button((event->type == SDL_JOYBUTTONDOWN)?1:0, mouse_button, (mouse_button)?SDL_BUTTON_RIGHT:SDL_BUTTON_LEFT, 1, remove);
-                }
-            }
+            // the gamepads are read by Game_pad.c; their events are of no use here
             break;
 
         case SDL_QUIT:
@@ -1257,90 +1039,13 @@ static int find_event(SDL_Event *event, int remove, int wait)
             break;
 #endif
 
-        case  SDL_CONTROLLERAXISMOTION:
-            // game controller axis motion event
-            if (controller != NULL)
-            {
-                if (event->caxis.axis == controller_base_axis)
-                {
-                    controller_axis_x = event->caxis.value;
-                }
-                else if (event->caxis.axis == (controller_base_axis + 1))
-                {
-                    controller_axis_y = event->caxis.value;
-                }
-
-                if (check_controller_event(event, remove))
-                {
-                    keep_event = 1;
-                }
-            }
-            break;
-
+        case SDL_CONTROLLERAXISMOTION:
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP:
-            // game controller button event
-            if (controller != NULL)
-            {
-                mouse_button = -1;
-                switch (event->cbutton.button)
-                {
-                case SDL_CONTROLLER_BUTTON_A:
-                case SDL_CONTROLLER_BUTTON_X:
-                    mouse_button = 0;
-                    break;
-                case SDL_CONTROLLER_BUTTON_B:
-                case SDL_CONTROLLER_BUTTON_Y:
-                    mouse_button = 1;
-                    break;
-
-                case SDL_CONTROLLER_BUTTON_BACK:
-                case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                    keep_event = 1;
-                    break;
-
-                default:
-                    break;
-                }
-
-                if (mouse_button >= 0)
-                {
-                    keep_event = 1;
-                    mouse_doubleclick = 0;
-                    handle_mouse_button((event->type == SDL_CONTROLLERBUTTONDOWN)?1:0, mouse_button, (mouse_button)?SDL_BUTTON_RIGHT:SDL_BUTTON_LEFT, 1, remove);
-                }
-            }
-            break;
-
         case SDL_CONTROLLERDEVICEADDED:
-            // controller device event
-            if (Input_GameController && (joystick == NULL) && (controller == NULL))
-            {
-                open_controller_or_joystick(event->cdevice.which);
-            }
-            break;
         case SDL_CONTROLLERDEVICEREMOVED:
-            // controller device event
-            if (controller != NULL)
-            {
-                if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)) == event->cdevice.which)
-                {
-                    SDL_GameControllerClose(controller);
-                    controller = NULL;
-
-                    controller_axis_x = 0;
-                    controller_axis_y = 0;
-                    controller_mouse_motion = 0;
-
-                    printf("Controller disconnected\n");
-                }
-            }
-            break;
         case SDL_CONTROLLERDEVICEREMAPPED:
-            // controller device event
+            // Game_pad.c
             break;
 
         case SDL_DOLLARGESTURE:
@@ -1405,29 +1110,8 @@ static int find_event(SDL_Event *event, int remove, int wait)
             break;
 
         case SDL_JOYDEVICEADDED:
-            // joystick device event
-            if (Input_GameController && (joystick == NULL) && (controller == NULL))
-            {
-                open_controller_or_joystick(event->jdevice.which);
-            }
-            break;
         case SDL_JOYDEVICEREMOVED:
-            // joystick device event
-            if (joystick != NULL)
-            {
-                if (SDL_JoystickInstanceID(joystick) == event->jdevice.which)
-                {
-                    SDL_JoystickClose(joystick);
-                    joystick = NULL;
-
-                    joystick_hat_position = 0;
-                    controller_axis_x = 0;
-                    controller_axis_y = 0;
-                    controller_mouse_motion = 0;
-
-                    printf("Joystick disconnected\n");
-                }
-            }
+            // Game_pad.c
             break;
 
         case SDL_MOUSEWHEEL:
@@ -1583,7 +1267,7 @@ static void translate_mouse_button(lpmsg lpMsg, int pressed, int mouse_button, i
 
 static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
 {
-    int doubleclick, mouse_button, vkey, scancode, index, released;
+    int doubleclick, mouse_button, vkey, scancode;
 
     const static uint8_t vkey_table[128] = {
            0,    0,    0,    0,    0,    0,    0,    0, 0x08, 0x09,    0,    0, 0x0c, 0x0d,    0,    0, /*   0- 15 */
@@ -2060,97 +1744,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
         translate_mouse_button(lpMsg, (event->button.state == SDL_PRESSED)?1:0, mouse_button, doubleclick);
         break;
 
-    case SDL_JOYHATMOTION:
-        // joystick hat motion event
-        released = 0;
-        for (index = 0; index < 4; index++)
-        {
-            // search for released key
-            if ((event->jhat.value & (0x10 << index)) && !(event->jhat.value & (1 << index)))
-            {
-                released = 1;
-                event->jhat.value &= ~(0x10 << index);
-                break;
-            }
-        }
-        if (!released)
-        {
-            released = 1;
-            for (index = 0; index < 4; index++)
-            {
-                // search for pressed key
-                if ((event->jhat.value & (1 << index)) && !(event->jhat.value & (0x10 << index)))
-                {
-                    released = 0;
-                    event->jhat.value |= (0x10 << index);
-                    break;
-                }
-            }
-        }
-
-        switch (index)
-        {
-        case 0:
-            vkey = VK_UP;
-            scancode = 0x48;
-            break;
-        case 1:
-            vkey = VK_RIGHT;
-            scancode = 0x4d;
-            break;
-        case 2:
-            vkey = VK_DOWN;
-            scancode = 0x50;
-            break;
-        case 3:
-            vkey = VK_LEFT;
-            scancode = 0x4b;
-            break;
-        default:
-            vkey = 0;
-            scancode = 0;
-            break;
-        }
-
-        translate_key(lpMsg, released, vkey, scancode, 0);
-
-        if (remove && ((event->jhat.value & 0x0f) != (event->jhat.value >> 4)))
-        {
-            priority_event = *event;
-        }
-        break;
-
-    case SDL_JOYBUTTONDOWN:
-    case SDL_JOYBUTTONUP:
-        // joystick button event
-        mouse_button = -1;
-        vkey = 0;
-        scancode = 0;
-
-        switch (event->jbutton.button)
-        {
-        case 0:
-        case 1:
-            mouse_button = event->jbutton.button;
-            break;
-        case 3:
-            vkey = VK_TAB;
-            scancode = 0x0f;
-            break;
-        default:
-            break;
-        }
-
-        if (vkey)
-        {
-            translate_key(lpMsg, (event->type == SDL_JOYBUTTONUP)?1:0, vkey, scancode, 0);
-        }
-        else
-        {
-            translate_mouse_button(lpMsg, (event->type == SDL_JOYBUTTONDOWN)?1:0, mouse_button, mouse_doubleclick);
-        }
-        break;
-
     case SDL_QUIT:
         //lpMsg->message = WM_QUIT;
         lpMsg->message = WM_SYSCOMMAND;
@@ -2192,61 +1785,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
         {
             priority_event.type = 0;
         }
-        break;
-
-    case SDL_CONTROLLERBUTTONDOWN:
-    case SDL_CONTROLLERBUTTONUP:
-        // game controller button event
-        mouse_button = -1;
-        vkey = 0;
-        scancode = 0;
-
-        switch (event->cbutton.button)
-        {
-        case SDL_CONTROLLER_BUTTON_A:
-        case SDL_CONTROLLER_BUTTON_X:
-            mouse_button = 0;
-            break;
-
-        case SDL_CONTROLLER_BUTTON_B:
-        case SDL_CONTROLLER_BUTTON_Y:
-            mouse_button = 1;
-            break;
-
-        case SDL_CONTROLLER_BUTTON_BACK:
-            vkey = VK_TAB;
-            scancode = 0x0f;
-            break;
-        case SDL_CONTROLLER_BUTTON_DPAD_UP:
-            vkey = VK_UP;
-            scancode = 0x48;
-            break;
-        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-            vkey = VK_DOWN;
-            scancode = 0x50;
-            break;
-        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-            vkey = VK_LEFT;
-            scancode = 0x4b;
-            break;
-        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-            vkey = VK_RIGHT;
-            scancode = 0x4d;
-            break;
-
-        default:
-            break;
-        }
-
-        if (vkey)
-        {
-            translate_key(lpMsg, (event->type == SDL_CONTROLLERBUTTONUP)?1:0, vkey, scancode, 0);
-        }
-        else
-        {
-            translate_mouse_button(lpMsg, (event->type == SDL_CONTROLLERBUTTONDOWN)?1:0, mouse_button, mouse_doubleclick);
-        }
-
         break;
 
     case SDL_FINGERMOTION:
@@ -2336,22 +1874,6 @@ void * CCALL CreateWindowExA_c(uint32_t /*dwExStyle*/, const char */*lpClassName
     window_thread_id = GetCurrentThreadId_c();
 
     priority_event.type = 0;
-    controller_mouse_last_time = SoundEngine_Counter;
-
-    if (Input_GameController && (joystick == NULL) && (controller == NULL))
-    {
-        SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
-
-#if SDL_VERSION_ATLEAST(2,0,2)
-        if (sdl_versionnum >= SDL_VERSIONNUM(2,0,2))
-        {
-            SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
-        }
-#endif
-
-        open_controller_or_joystick(-1);
-    }
-
     /* a window without its own menu gets the one of its class (WNDCLASS.lpszMenuName),
      * so the game finds it at once with GetMenu */
     if ((hMenu_arg == NULL) && (class_menu_name != 0) && (GetMenu_c(1) == 0))

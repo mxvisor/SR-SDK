@@ -25,12 +25,14 @@
 
 /* The pc input: the keyboard as it is.  main.c queues SDL's key events and
  * the game's runtime turns their scan codes into the PC keyboard's; nothing is
- * remapped here, and there is no controller support. */
+ * remapped here.  The gamepads are Game_pad.c's: opened here, read by the
+ * joystick APIs of the runtime. */
 
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "input.h"
 #include "touchgamepad.h"
+#include "Game_pad.h"
 
 /* A key event as SDL would send it.  The scan code
  * is set too: that is what the game's runtime reads. */
@@ -54,18 +56,17 @@ void Init_Input(void)
 
 void Init_Input2(void)
 {
+    Game_PadInit();
 }
 
 int Config_Input(char *str, char *param)
 {
-    (void)str;
-    (void)param;
-
-    return 0;
+    return Game_PadConfig(str, param);
 }
 
 void Cleanup_Input(void)
 {
+    Game_PadQuit();
 }
 
 int Handle_Input_Event(SDL_Event *_event)
@@ -86,4 +87,5 @@ int Handle_Input_Event2(SDL_Event *_event)
 
 void Handle_Timer_Input_Event(void)
 {
+    Game_PadTick();
 }

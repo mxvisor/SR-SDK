@@ -482,7 +482,8 @@ runtime/core/           threads, memory, frontends, the OSD and its font, printf
                         share: WATCOM C library and file I/O (Game_clib, Game_vfs,
                         Game_file), the game directory (Game_gamedir), CD image
                         (Game_cdrom), CD audio (Game_music), the Miles Sound
-                        System (Game_ail), PC scancodes and AUTO_KEYS (Game_keys)
+                        System (Game_ail), PC scancodes and AUTO_KEYS (Game_keys),
+                        the gamepads (Game_pad)
 runtime/dos/            the runtime of a DOS4GW game: start and end, ports and segment
                         accesses (Game_dosrt), interrupts (Game_dosint), registers
                         (Game_dosregs.h), DOS memory (Game_dosmem), INT 21h file functions
@@ -540,6 +541,11 @@ skeleton/               a starting point for a new game repository -- to come
   the digital driver (`$<GAME>_NOSOUND`) and its samples; the game's `external_procedures.sci`
   routes AIL's entry points to the `SR_AIL_*` of `llasm/ail.llinc`, which its own llasm includes;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
+- `Game_pad.c`, `.h`: the host's gamepads (`SDL_GameController`, up to four, plugged in and out
+  while the game runs) with the state of XInput: its buttons, two sticks, two triggers, with or
+  without XInput's dead zones, and the motors; for the joystick APIs of the games. No pad, or
+  `Gamepad=off` in the settings file: nothing is opened. `$<GAME>_DEBUG_PAD` logs the pads and
+  every change of their state;
 - `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
 - `Game_audiostream.c/.h`: a stream of PCM (`Game_AudioSourceOpen`, SDL_OpenAudioDevice's calls: a fill callback or a queue) on a device of its own or in SDL_mixer's output, whose one post-mix hook it owns; the Sound Blaster, DirectSound and a game's own driver play through it.
 
