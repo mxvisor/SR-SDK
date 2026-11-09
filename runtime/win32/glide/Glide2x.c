@@ -210,8 +210,6 @@ extern "C" {
 /* the size of the GrState of glide2x.h, which grGlideGetState fills */
 #define GRSTATE_SIZE 312
 #define MAX_TEXTURES 4096
-/* the part of a refresh period that counts as the vertical retrace */
-#define VBLANK_PART 0.05
 
 
 /* the guest's GrVertex (glide2x.h, GLIDE_NUM_TMU = 3) */
@@ -341,7 +339,6 @@ static void gl_release(void)
 static int win_open = 0;
 static uint32_t scr_width, scr_height, scr_stride;
 static uint32_t color_format, buffer_origin, num_color_buffers, num_aux_buffers;
-static double refresh_hz = 60.0;
 
 static uint16_t *color_mem[3];
 static uint16_t *aux_mem;
@@ -357,8 +354,6 @@ static uint32_t palette_serial = 1;
 static void *lfb_scratch;
 static uint32_t lfb_scratch_buffer, lfb_scratch_bpp;
 static int lfb_scratch_write;
-
-static uint64_t vr_base;
 
 
 #define DEBUG(...) do { if (glide_debug > 0) eprintf(__VA_ARGS__); } while (0)
@@ -436,38 +431,6 @@ static uint16_t *buffer_of(uint32_t which)
         case GR_BUFFER_BACKBUFFER: return buffer[1];
         case GR_BUFFER_AUXBUFFER: return aux_mem;
         default: return NULL;
-    }
-}
-
-
-/* ---- the vertical retrace, from a clock of the refresh rate ---- */
-
-static double vr_frame_position(void)
-{
-    uint64_t now = SDL_GetPerformanceCounter();
-    double t = (double)(now - vr_base) / (double)SDL_GetPerformanceFrequency();
-    return t * refresh_hz;
-}
-
-static int vr_in_retrace(void)
-{
-    double pos = vr_frame_position();
-    return (pos - floor(pos)) < VBLANK_PART;
-}
-
-static void vr_wait_retrace(void)
-{
-    double pos = vr_frame_position();
-    double left = (ceil(pos) - pos) / refresh_hz;
-
-    if ((pos - floor(pos)) < VBLANK_PART) return;
-    if (left > 0.0)
-    {
-        SDL_Delay((uint32_t)(left * 1000.0));
-    }
-    while (!vr_in_retrace())
-    {
-        SDL_Delay(0);
     }
 }
 
@@ -2065,7 +2028,6 @@ uint32_t CCALL grSstWinOpen_c(uint32_t hWnd, uint32_t resolution, uint32_t refre
     scr_width = resolutions[resolution][0];
     scr_height = resolutions[resolution][1];
     scr_stride = (scr_width > LFB_STRIDE) ? scr_width : LFB_STRIDE;
-    refresh_hz = (refresh < sizeof(refresh_rates)) ? refresh_rates[refresh] : 60;
     color_format = color_fmt;
     buffer_origin = origin;
     num_color_buffers = (nColBuffers < 1) ? 1 : ((nColBuffers > 3) ? 3 : nColBuffers);
@@ -2101,7 +2063,7 @@ uint32_t CCALL grSstWinOpen_c(uint32_t hWnd, uint32_t resolution, uint32_t refre
 
     if (!gl_start(num_color_buffers)) goto fail;
 
-    vr_base = SDL_GetPerformanceCounter();
+    Winapi_RetraceStart((refresh < sizeof(refresh_rates)) ? refresh_rates[refresh] : 60);
     win_open = 1;
     reset_state();
     gl_release();
@@ -2157,9 +2119,9 @@ uint32_t CCALL grSstIdle_c(void)
 
 uint32_t CCALL grSstVRetraceOn_c(void)
 {
-    if (vr_in_retrace()) return FXTRUE;
+    if (Winapi_RetraceIn()) return FXTRUE;
     /* a program that polls for the retrace sleeps here instead of spinning */
-    vr_wait_retrace();
+    Winapi_RetraceWait();
     return FXFALSE;
 }
 
@@ -2241,7 +2203,7 @@ uint32_t CCALL grBufferSwap_c(uint32_t swap_interval)
             ms_remake();
         }
     }
-    if (swap_interval > 0) vr_wait_retrace();
+    if (swap_interval > 0) Winapi_RetraceWait();
 
     if (num_color_buffers > 1)
     {

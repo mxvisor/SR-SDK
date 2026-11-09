@@ -30,6 +30,7 @@
 #include "WinApi-ddraw.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <SDL.h>
 #include "WinApi-config.h"
@@ -296,6 +297,11 @@ typedef struct _ddbltfx
 } ddbltfx;
 
 #define DDERR_UNSUPPORTED                       ((uint32_t)0x80004001L)
+
+#define DDFLIP_NOVSYNC                          0x00000008
+#define DDWAITVB_BLOCKBEGIN                     0x00000001
+#define DDWAITVB_BLOCKBEGINEVENT                0x00000002
+#define DDWAITVB_BLOCKEND                       0x00000004
 #define DDERR_GENERIC                           ((uint32_t)0x80004005L)
 #define DDERR_NOTFOUND                          MAKE_DDHRESULT( 1 )
 
@@ -434,6 +440,46 @@ static void CountFrame(void)
         fprintf(stderr, "FPS: %.1f\n", frames * 1000.0 / (now - t0));
         frames = 0;
     }
+}
+
+/* ---- the vertical retrace, from a clock of the display mode's refresh rate ----
+ * DirectDraw flips at the retrace, and so does 3dfx's grBufferSwap when it is asked
+ * to: a game that draws as fast as it can is held at the rate of its monitor, as on
+ * the machines it was made for. The clock counts the mode's rate (60 Hz when the
+ * game names none), not the host display's. */
+#define RETRACE_PART 0.05   /* the part of a refresh period that counts as the retrace */
+
+static double retrace_hz = 60.0;
+static uint64_t retrace_base;
+
+void Winapi_RetraceStart(double hz)
+{
+    retrace_hz = (hz >= 1.0) ? hz : 60.0;
+    retrace_base = SDL_GetPerformanceCounter();
+}
+
+static double retrace_position(void)
+{
+    uint64_t now = SDL_GetPerformanceCounter();
+
+    if (retrace_base == 0) retrace_base = now;
+    return (double)(now - retrace_base) / (double)SDL_GetPerformanceFrequency() * retrace_hz;
+}
+
+int Winapi_RetraceIn(void)
+{
+    double pos = retrace_position();
+    return (pos - floor(pos)) < RETRACE_PART;
+}
+
+void Winapi_RetraceWait(void)
+{
+    double pos = retrace_position();
+    double left = (ceil(pos) - pos) / retrace_hz;
+
+    if ((pos - floor(pos)) < RETRACE_PART) return;
+    if (left > 0.0) SDL_Delay((uint32_t)(left * 1000.0));
+    while (!Winapi_RetraceIn()) SDL_Delay(0);
 }
 
 static void Present(struct IDirectDraw_c *dd)
@@ -1163,7 +1209,7 @@ uint32_t CCALL IDirectDraw_GetVerticalBlankStatus_c(struct IDirectDraw_c *lpThis
 {
     lpThis = DDBase(lpThis);
     if (param1 == NULL) return DDERR_INVALIDPARAMS;
-    *param1 = 1;
+    *param1 = Winapi_RetraceIn() ? 1 : 0;
     return DD_OK;
 }
 
@@ -1192,8 +1238,13 @@ uint32_t CCALL IDirectDraw_SetCooperativeLevel_c(struct IDirectDraw_c *lpThis, v
 
 uint32_t CCALL IDirectDraw2_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP, uint32_t dwRefreshRate, uint32_t dwFlags)
 {
-    (void)dwRefreshRate; (void)dwFlags;
-    return IDirectDraw_SetDisplayMode_c(lpThis, dwWidth, dwHeight, dwBPP);
+    uint32_t ret;
+
+    (void)dwFlags;
+    ret = IDirectDraw_SetDisplayMode_c(lpThis, dwWidth, dwHeight, dwBPP);
+    /* 0 is the default rate of the mode */
+    if ((ret == DD_OK) && (dwRefreshRate != 0)) Winapi_RetraceStart(dwRefreshRate);
+    return ret;
 }
 
 uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32_t dwWidth, uint32_t dwHeight, uint32_t dwBPP)
@@ -1228,6 +1279,7 @@ uint32_t CCALL IDirectDraw_SetDisplayMode_c(struct IDirectDraw_c *lpThis, uint32
     lpThis->width = dwWidth;
     lpThis->height = dwHeight;
     lpThis->bpp = dwBPP;
+    Winapi_RetraceStart(60.0);
 
     return DD_OK;
 }
@@ -1241,9 +1293,15 @@ uint32_t CCALL IDirectDraw_GetAvailableVidMem_c(struct IDirectDraw_c *lpThis, vo
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, uint32_t /*param1*/, void * /*param2*/)
+uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(struct IDirectDraw_c *lpThis, uint32_t dwFlags, void * /*hEvent*/)
 {
     lpThis = DDBase(lpThis);
+    if (dwFlags & DDWAITVB_BLOCKBEGINEVENT) return DDERR_UNSUPPORTED;
+    Winapi_RetraceWait();
+    if (dwFlags & DDWAITVB_BLOCKEND)
+    {
+        while (Winapi_RetraceIn()) SDL_Delay(0);
+    }
     return DD_OK;
 }
 
@@ -1497,7 +1555,7 @@ uint32_t CCALL IDirectDrawSurface_EnumOverlayZOrders_c(struct IDirectDrawSurface
     return DDERR_UNSUPPORTED;
 }
 
-uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDrawSurface_c * lpDDSurfaceTargetOverride, uint32_t /*dwFlags*/)
+uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, struct IDirectDrawSurface_c * lpDDSurfaceTargetOverride, uint32_t dwFlags)
 {
     struct IDirectDrawSurface_c *src;
 
@@ -1513,6 +1571,8 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(struct IDirectDrawSurface_c *lpThis, st
 #endif
     memcpy(lpThis->pixels, src->pixels, lpThis->height * lpThis->pitch);
     lpThis->flipped = 1;
+    /* the new front buffer is shown at the next retrace */
+    if (!(dwFlags & DDFLIP_NOVSYNC)) Winapi_RetraceWait();
     Present(lpThis->dd);
 
     SDL_Delay(Display_DelayAfterFlip);

@@ -151,6 +151,13 @@ struct SDL_Window *Winapi_ScreenOpenGL(uint32_t width, uint32_t height);
 void Winapi_EarlyWindow(uint32_t width, uint32_t height);
 void Winapi_ScreenCloseGL(void);
 
+/* The vertical retrace, from a clock of the display mode's refresh rate (60 Hz until
+ * a mode names one): Start sets the rate, In says whether the clock is in the retrace,
+ * Wait sleeps until the next one begins (at once when it is in one) */
+void Winapi_RetraceStart(double hz);
+int Winapi_RetraceIn(void);
+void Winapi_RetraceWait(void);
+
 #ifdef __cplusplus
 }
 #endif
