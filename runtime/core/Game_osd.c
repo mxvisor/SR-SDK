@@ -459,8 +459,41 @@ int Game_OsdStamp(void)
 
 /* ---- the panel ---- */
 
+/* The panel's font has ASCII only: the words of a pad's name with other characters
+ * (UTF-8; Steam names its pad in the user's language: "Контроллер Steam Deck") are
+ * left out; "gamepad" when none is left. */
+static void ascii_words(char *out, size_t size, const char *name)
+{
+    size_t length = 0;
+
+    if (size == 0) return;
+    while (*name != 0)
+    {
+        const char *word = name;
+        size_t word_length = 0;
+        int ascii = 1;
+
+        while (*name == ' ') name++;
+        word = name;
+        while (*name != 0 && *name != ' ')
+        {
+            if ((unsigned char)*name >= 0x80 || (unsigned char)*name < 0x20) ascii = 0;
+            name++;
+        }
+        word_length = (size_t)(name - word);
+        if (!ascii || word_length == 0) continue;
+        if (length + (length != 0) + word_length + 1 > size) break;
+        if (length != 0) out[length++] = ' ';
+        memcpy(out + length, word, word_length);
+        length += word_length;
+    }
+    out[length] = 0;
+    if (length == 0) snprintf(out, size, "gamepad");
+}
+
 static void gamepad_text(char *text, size_t size)
 {
+    char name[64];
     unsigned int slots = Game_PadSlots();
     int pad, first = -1, count = 0;
 
@@ -476,7 +509,8 @@ static void gamepad_text(char *text, size_t size)
         snprintf(text, size, "Gamepad: none");
         return;
     }
-    snprintf(text, size, "Gamepad: %s", Game_PadName(first));
+    ascii_words(name, sizeof(name), Game_PadName(first));
+    snprintf(text, size, "Gamepad: %s", name);
     if (count > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", count - 1);
 }
 
