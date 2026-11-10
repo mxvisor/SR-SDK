@@ -156,8 +156,83 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 
 
 #if !defined(_WIN32)
+/* A directory's names, read at once and sorted the way Windows lists them: '.' and '..'
+ * first, then the rest in case-insensitive order (NTFS).  readdir's order is the file
+ * system's own (on ext4 a hash order that differs from one file system to another), and a
+ * game may count on '.' and '..' coming first. */
 typedef struct {
-    DIR *dirinfo;
+    char **names;
+    int count, next;
+} find_list;
+
+static int find_list_rank(const char *name)
+{
+    if (name[0] == '.' && name[1] == 0) return 0;
+    if (name[0] == '.' && name[1] == '.' && name[2] == 0) return 1;
+    return 2;
+}
+
+static int find_list_compare(const void *first, const void *second)
+{
+    const char *a = *(const char *const *)first, *b = *(const char *const *)second;
+    int rank_a = find_list_rank(a), rank_b = find_list_rank(b);
+    if (rank_a != rank_b) return rank_a - rank_b;
+    for (;; a++, b++)
+    {
+        int ca = toupper((unsigned char)*a), cb = toupper((unsigned char)*b);
+        if (ca != cb) return ca - cb;
+        if (ca == 0) return strcmp(*(const char *const *)first, *(const char *const *)second);
+    }
+}
+
+static void find_list_close(find_list *list)
+{
+    if (list == NULL) return;
+    for (int index = 0; index < list->count; index++) free(list->names[index]);
+    free(list->names);
+    free(list);
+}
+
+static find_list *find_list_open(const char *path)
+{
+    DIR *dir = opendir(path);
+    struct dirent *entry;
+    find_list *list;
+    int capacity = 0;
+
+    if (dir == NULL) return NULL;
+    list = (find_list *) calloc(1, sizeof(find_list));
+    if (list == NULL)
+    {
+        closedir(dir);
+        return NULL;
+    }
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char *name;
+        if (list->count == capacity)
+        {
+            char **grown = (char **) realloc(list->names, (capacity ? capacity * 2 : 32) * sizeof(char *));
+            if (grown == NULL) break;
+            list->names = grown;
+            capacity = capacity ? capacity * 2 : 32;
+        }
+        name = strdup(entry->d_name);
+        if (name == NULL) break;
+        list->names[list->count++] = name;
+    }
+    closedir(dir);
+    if (list->count > 1) qsort(list->names, list->count, sizeof(char *), find_list_compare);
+    return list;
+}
+
+static const char *find_list_read(find_list *list)
+{
+    return (list->next < list->count) ? list->names[list->next++] : NULL;
+}
+
+typedef struct {
+    find_list *dirinfo;
     char *directory;
     char *filename;
 } find_file_state;
@@ -1634,7 +1709,7 @@ uint32_t CCALL FindClose_c(void *hFindFile)
 
         if (state->dirinfo != NULL)
         {
-            closedir(state->dirinfo);
+            find_list_close(state->dirinfo);
             state->dirinfo = NULL;
         }
         if (state->directory != NULL)
@@ -1696,8 +1771,8 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
 #else
     int readdirtype;
     struct stat filestat;
-    DIR *dirinfo;
-    struct dirent *direntry;
+    find_list *dirinfo;
+    const char *direntry;
     find_file_state *state;
     const char *pattern, *slash;
     char *replace;
@@ -1737,17 +1812,17 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         if (S_ISDIR(filestat.st_mode))
         {
             // directory
-            dirinfo = opendir(buf);
+            dirinfo = find_list_open(buf);
             if (dirinfo == NULL)
             {
                 Winapi_SetLastError(ERROR_ACCESS_DENIED);
                 return INVALID_HANDLE32_VALUE;
             }
 
-            direntry = readdir(dirinfo);
+            direntry = find_list_read(dirinfo);
             if (direntry == NULL)
             {
-                closedir(dirinfo);
+                find_list_close(dirinfo);
                 Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
                 return INVALID_HANDLE32_VALUE;
             }
@@ -1806,7 +1881,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             return INVALID_HANDLE32_VALUE;
         }
 
-        dirinfo = opendir(buf);
+        dirinfo = find_list_open(buf);
         if (dirinfo == NULL)
         {
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
@@ -1823,17 +1898,17 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             *replace = toupper(*replace);
         }
 
-        direntry = readdir(dirinfo);
+        direntry = find_list_read(dirinfo);
 
         // find first name matching pattern
-        while (direntry != NULL && !file_pattern_match(direntry->d_name, orig_directory))
+        while (direntry != NULL && !file_pattern_match(direntry, orig_directory))
         {
-            direntry = readdir(dirinfo);
+            direntry = find_list_read(dirinfo);
         }
 
         if (direntry == NULL)
         {
-            closedir(dirinfo);
+            find_list_close(dirinfo);
             Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
             return INVALID_HANDLE32_VALUE;
         }
@@ -1843,7 +1918,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     ret = Winapi_AllocHandle();
     if (ret == NULL)
     {
-        if (dirinfo != NULL) closedir(dirinfo);
+        if (dirinfo != NULL) find_list_close(dirinfo);
         Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return INVALID_HANDLE32_VALUE;
     }
@@ -1852,7 +1927,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     if (state == NULL)
     {
         x86_free(ret);
-        if (dirinfo != NULL) closedir(dirinfo);
+        if (dirinfo != NULL) find_list_close(dirinfo);
         Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return INVALID_HANDLE32_VALUE;
     }
@@ -1872,7 +1947,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         {
             free(state);
             x86_free(ret);
-            if (dirinfo != NULL) closedir(dirinfo);
+            if (dirinfo != NULL) find_list_close(dirinfo);
             Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return INVALID_HANDLE32_VALUE;
         }
@@ -1886,13 +1961,13 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
                 free(state->directory);
                 free(state);
                 x86_free(ret);
-                if (dirinfo != NULL) closedir(dirinfo);
+                if (dirinfo != NULL) find_list_close(dirinfo);
                 Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                 return INVALID_HANDLE32_VALUE;
             }
         }
 
-        snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry->d_name);
+        snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry);
 
         if (0 != stat(buf, &filestat))
         {
@@ -1900,7 +1975,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             free(state->directory);
             free(state);
             x86_free(ret);
-            if (dirinfo != NULL) closedir(dirinfo);
+            if (dirinfo != NULL) find_list_close(dirinfo);
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
             return INVALID_HANDLE32_VALUE;
         }
@@ -1909,7 +1984,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     // fill find structure
     {
         /* cFileName is the name without its directory, as on Windows */
-        const char *name = (direntry != NULL) ? direntry->d_name : buf;
+        const char *name = (direntry != NULL) ? direntry : buf;
         const char *sep = strrchr(name, '/');
 
         if (sep != NULL) name = sep + 1;
@@ -1917,7 +1992,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     }
 
 #ifdef DEBUG_KERNEL32
-    eprintf("found file: %s\n", (direntry != NULL)?direntry->d_name:buf);
+    eprintf("found file: %s\n", (direntry != NULL)?direntry:buf);
 #endif
 
     return ret;
@@ -1953,7 +2028,7 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
 #ifdef _WIN32
     return FindNextFileA((HANDLE)((handle)hFindFile)->sh.d, (LPWIN32_FIND_DATAA)lpFindFileData);
 #else
-    struct dirent *direntry;
+    const char *direntry;
     find_file_state *state;
     struct stat filestat;
     char buf[8192];
@@ -1966,16 +2041,16 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
     }
     else if (state->filename == NULL)
     {
-        direntry = readdir(state->dirinfo);
+        direntry = find_list_read(state->dirinfo);
     }
     else
     {
-        direntry = readdir(state->dirinfo);
+        direntry = find_list_read(state->dirinfo);
 
         // find first name matching pattern
-        while (direntry != NULL && !file_pattern_match(direntry->d_name, state->filename))
+        while (direntry != NULL && !file_pattern_match(direntry, state->filename))
         {
-            direntry = readdir(state->dirinfo);
+            direntry = find_list_read(state->dirinfo);
         }
     }
 
@@ -1983,7 +2058,7 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
     {
         if (state->dirinfo != NULL)
         {
-            closedir(state->dirinfo);
+            find_list_close(state->dirinfo);
             state->dirinfo = NULL;
         }
         if (state->directory != NULL)
@@ -2001,12 +2076,12 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
         return 0;
     }
 
-    snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry->d_name);
+    snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry);
 
     stat(buf, &filestat);
 
     // fill find structure
-    Conv_find((win32_find_data *)lpFindFileData, &filestat, direntry->d_name);
+    Conv_find((win32_find_data *)lpFindFileData, &filestat, direntry);
 
 #ifdef DEBUG_KERNEL32
     eprintf("found file: %s\n", direntry->d_name);

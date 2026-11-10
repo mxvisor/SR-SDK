@@ -89,6 +89,12 @@ static int Game_Run(int argc, char *argv[])
 
     Winapi_InitTicks();
 
+#if !defined(__ANDROID__) && defined(SDL_HINT_ENABLE_SCREEN_KEYBOARD)
+    /* No screen keyboard of the system: the port never asks for text, yet an sdl2-compat older than
+     * 2.32.70 opens one (Steam Deck) for the text input SDL2 starts by itself; the environment wins */
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
     {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());

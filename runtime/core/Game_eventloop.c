@@ -40,6 +40,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <SDL.h>
 
@@ -129,12 +130,40 @@ void Game_HideWindow(SDL_Window *window)
 static SDL_Window *port_window;
 static int port_width, port_height;
 
+/* Under gamescope (the game mode of Steam on SteamOS, or gamescope started by hand): it
+ * shows a window on the whole screen only when the window asks for it, and scales any
+ * other at most twice (--max-scale 2 of Steam), so a 320x240 window stays small; nor
+ * does it give a window a frame to resize.  There the window is always on the whole
+ * screen, whatever Display_Fullscreen says, and the panel has no item for it.  gamescope
+ * sets XDG_CURRENT_DESKTOP=gamescope and GAMESCOPE_WAYLAND_DISPLAY for what it starts; Wine
+ * (Proton) passes them on to the Windows build. */
+static int under_gamescope(void)
+{
+#if !defined(__ANDROID__)
+    static int mode = -1;
+    if (mode < 0)
+    {
+        const char *desktop = getenv("XDG_CURRENT_DESKTOP");
+        mode = (desktop != NULL && strstr(desktop, "gamescope") != NULL) || getenv("GAMESCOPE_WAYLAND_DISPLAY") != NULL;
+        if (mode) fprintf(stderr, GAME_NAME ": under gamescope: the window on the whole screen\n");
+    }
+    return mode;
+#else
+    return 0;
+#endif
+}
+
+static unsigned int fullscreen_flag(void)
+{
+    return (Game_Fullscreen || under_gamescope()) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
+}
+
 SDL_Window *Game_WindowCreate(int width, int height, unsigned int flags)
 {
     SDL_Window *window;
 
     window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
-                              flags | SDL_WINDOW_RESIZABLE | (Game_Fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+                              flags | SDL_WINDOW_RESIZABLE | fullscreen_flag());
     if (window == NULL) return NULL;
     SDL_SetWindowMinimumSize(window, width, height);
     port_window = window;
@@ -175,7 +204,7 @@ void Game_WindowSetFullscreen(int on)
     Game_Fullscreen = on ? 1 : 0;
     if (port_window == NULL) return;
     if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
-    SDL_SetWindowFullscreen(port_window, Game_Fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    SDL_SetWindowFullscreen(port_window, fullscreen_flag());
     if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
 #else
     (void)on;
@@ -204,7 +233,7 @@ static const Game_OsdItem fullscreen_item = { "Fullscreen", fullscreen_item_acti
 void Game_WindowOsdItems(void)
 {
 #if !defined(__ANDROID__)
-    Game_OsdAddItem(&fullscreen_item);
+    if (!under_gamescope()) Game_OsdAddItem(&fullscreen_item);
 #endif
 }
 

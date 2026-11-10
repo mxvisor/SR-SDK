@@ -230,6 +230,10 @@ def pack_archive(target, source, env):
     with zipfile.ZipFile(str(target[0]), 'w', zipfile.ZIP_DEFLATED) as archive:
         for base, dirs, files in os.walk(directory):
             dirs.sort()
+            if not dirs and not files and base != directory:
+                # an empty directory the game writes into (a save directory): unzip
+                # makes it only from an entry of its own
+                archive.write(base, os.path.join(name, os.path.relpath(base, directory)))
             for file in sorted(files):
                 path = os.path.join(base, file)
                 archive.write(path, os.path.join(name, os.path.relpath(path, directory)))
