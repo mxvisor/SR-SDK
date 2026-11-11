@@ -407,7 +407,7 @@ in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 | `GAME_WINAPI_GDI` | 1: the game draws into DIB sections and copies them to its window with `BitBlt`/`StretchBlt` (`WinApi-gdi.c`: device contexts, bitmaps with their pixels in the guest's memory, palettes; the window's picture, its client size, shown through OpenGL) |
 | `GAME_WINAPI_WAIL32` | 1: the Miles Sound System for Win32 (`WinApi-wail32.c`, AIL 3.03, over `core/Game_ail.c`): samples from WAV images or raw PCM, played on the port's mixer, and XMIDI sequences (`soundfont.sf2` of the game directory); a game that loads `WAIL32.DLL` with `LoadLibrary` lists the functions in `GAME_EXTRA_PROCS` and its import shim |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
-| `GAME_WINAPI_PUMP_ON_MAIN_THREAD` | defined: only the host's main thread pumps SDL's events, for a game whose threads call the window and message API |
+| `GAME_WINAPI_GUEST_PUMP` | 1: the game's thread pumps SDL's events too, as on Android (the default there; elsewhere 0: only the host's main thread pumps) |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
 | `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: the host pointer is hidden and held in the window from the first click in it until the focus is lost |
 | `GAME_WINAPI_ADDITIONAL_RESOLUTIONS` | 1: the game picks its mode from DirectDraw's list in its menu: the port's panel has the item of `Display_Additional_Resolutions` (seen at the next start) |
@@ -427,9 +427,12 @@ in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 
 The game brings `WinApi-game.h`, the prototypes of the imports of its executable, and
 `WinApi-game*.c`, their implementation, which `WinApi-guest.h` (calling back into the
-guest) completes. A window opened on a thread other than the event loop's is shown and
-hidden with `Game_ShowWindow` and `Game_HideWindow` (`Game_thread.h`): SDL's X11 driver
-waits for the server's answer on the connection the event loop pumps.
+guest) completes. Only the event loop's thread pumps SDL's events, so the windows are made
+and changed on it: `Game_RunOnMain` (`Game_thread.h`) runs a call there and waits for it,
+and `Game_WindowCreate`, `Game_ShowWindow`, `Game_HideWindow`, `Game_ShowCursor`,
+`Game_SetCursor`, `Game_SetRelativeMouseMode` and `Game_WarpMouse` go through it (on
+Windows a window's messages reach only the thread that made it; SDL's X11 and Wayland
+drivers wait for the server's answer on the connection the event loop pumps).
 
 The remaining `GAME_*` names of the runtime are not hooks: `GAME_D3D_GL`, `GAME_WINAPI` and
 `GAME_PROGRAM_NAME` come from `scons/game.py`, `GAME_CORE_CONSUMES_INPUT`, `GAME_DOS_ENTRY` and

@@ -125,8 +125,8 @@ static void set_shown(int shown)
     {
         /* what is held on the touch gamepad is let go: the touches are the panel's */
         TouchGamepad_ReleaseAll();
-        osd_cursor = SDL_ShowCursor(SDL_QUERY);
-        SDL_ShowCursor(SDL_ENABLE);
+        osd_cursor = Game_ShowCursor(SDL_QUERY);
+        Game_ShowCursor(SDL_ENABLE);
         osd_shown = 1;
         /* the first item that can be switched, else "Close" */
         osd_sel = item_count;
@@ -134,7 +134,7 @@ static void set_shown(int shown)
     }
     else if (osd_cursor >= 0)
     {
-        SDL_ShowCursor(osd_cursor);
+        Game_ShowCursor(osd_cursor);
         osd_cursor = -1;
     }
     osd_shown = shown;

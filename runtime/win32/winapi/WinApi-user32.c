@@ -39,6 +39,7 @@
 #include "Game_memory.h"
 #include "Game_defs.h"
 #include "Game_hooks.h"
+#include "Game_thread.h"
 #include "main.h"
 
 /* Game_hooks.h may set: GAME_WINAPI_KEY_MESSAGES, the message pump delivers key events
@@ -486,7 +487,7 @@ static void warp_mouse(int x, int y)
             x = picture.x + (int)(((int64_t)x * 2 + 1) * picture.w / (2 * mode_w));
             y = picture.y + (int)(((int64_t)y * 2 + 1) * picture.h / (2 * mode_h));
         }
-        SDL_WarpMouseInWindow(mouse_window, x, y);
+        Game_WarpMouse(mouse_window, x, y);
     }
 }
 
@@ -717,7 +718,7 @@ void Winapi_StopMainIfExiting(void)
 }
 extern SDL_sem *Game_FlipSem;
 
-#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if !GAME_WINAPI_GUEST_PUMP
 /* sleeps until an event is queued (at most ms): Game_Event_Loop, on the host's main
  * thread, is the one that pumps; a pump from a game thread races its window calls */
 static void wait_queue(unsigned int ms)
@@ -757,7 +758,7 @@ int Winapi_CloseRequest(void)
 
 static int find_event(SDL_Event *event, int remove, int wait)
 {
-#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if GAME_WINAPI_GUEST_PUMP
     int pump_events;
 #endif
     int can_sleep;
@@ -774,7 +775,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
         return 1;
     }
 
-#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if GAME_WINAPI_GUEST_PUMP
     pump_events = 1;
 #endif
     can_sleep = (CPU_SleepMode != 2)?1:0;
@@ -820,14 +821,14 @@ static int find_event(SDL_Event *event, int remove, int wait)
             {
                 /* not for ever: a close of the window sets Thread_Exit and may send no
                  * further event to wake this thread (under Wine it does not) */
-#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if !GAME_WINAPI_GUEST_PUMP
                 wait_queue(100);
 #else
                 SDL_WaitEventTimeout(NULL, 100);
 #endif
                 continue;
             }
-#ifndef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if GAME_WINAPI_GUEST_PUMP
             else if (pump_events)
             {
                 pump_events = 0;
@@ -2777,7 +2778,7 @@ void * CCALL SetCursor_c(PTR32(void) hCursor)
     // the original loads and sets cursor only once and doesn't free it, so SDL cursor can be used directly
     if (GET_PTR32_VALUE(hCursor) == 32514)
     {
-        SDL_SetCursor(wait_cursor);
+        Game_SetCursor(wait_cursor);
     }
 
     return NULL;
@@ -2813,7 +2814,7 @@ int32_t CCALL ShowCursor_c(uint32_t bShow)
         cursor_visibility++;
         if (cursor_visibility == 0)
         {
-            SDL_ShowCursor(SDL_ENABLE);
+            Game_ShowCursor(SDL_ENABLE);
         }
     }
     else
@@ -2821,7 +2822,7 @@ int32_t CCALL ShowCursor_c(uint32_t bShow)
         cursor_visibility--;
         if (cursor_visibility == -1)
         {
-            SDL_ShowCursor(SDL_DISABLE);
+            Game_ShowCursor(SDL_DISABLE);
         }
     }
 
@@ -2902,7 +2903,7 @@ uint32_t CCALL WaitMessage_c(void)
     /* Windows wakes the program up when a message arrives. The port has no
      * message queue of its own: the program is woken up regularly and finds
      * the repaint request (the port's own WM_PAINT) in PeekMessage. */
-#ifdef GAME_WINAPI_PUMP_ON_MAIN_THREAD
+#if !GAME_WINAPI_GUEST_PUMP
     wait_queue(33);
     if (Thread_Exit) Game_StopMain();
 #else

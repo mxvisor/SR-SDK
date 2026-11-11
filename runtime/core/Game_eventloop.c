@@ -91,38 +91,156 @@ int Game_QueueKeyboardEvent(const SDL_Event *event)
 /* the player closed the window: the game's stop is not an error to report */
 int Game_QuitRequested;
 
-/* SDL's X11 driver waits for the server's answer to showing or hiding a window by
- * reading the connection itself.  A pump on the event loop's thread at that moment
- * takes the answer away, and the guest's thread, which opens the game's window,
- * waits for ever.  The pump stays off while another thread does that. */
-static SDL_mutex *Game_PumpMutex;
-/* On Android the pump also parks the program on a pause and hands the GL
- * context over, which works on the thread that has the context: the guest's
- * thread draws there, and the message functions pump on it, so this one must
- * not (the surface would die under the renderer: black screen on resume). */
+/* Game_RunOnMain (Game_thread.h): the requests of the other threads, each on the stack of
+ * the thread that waits for it.  run_open: the loop takes them; outside it the caller runs
+ * its own (before the loop only the main thread runs; after it, a thread of the game that
+ * is still on its way out must not wait for ever). */
+typedef struct run_request {
+    void (*fn)(void *arg);
+    void *arg;
+    int done;
+    struct run_request *next;
+} run_request;
 
-/* On Windows (and Wine) it is the other way round: the window belongs to the thread that
- * made it, this one, and showing, hiding or resizing it from another thread waits until this
- * thread's pump takes the messages; with the pump held off both threads would wait for ever
- * (a game whose driver changes the mode from a thread of its own). */
-#ifdef _WIN32
-#define PUMP_HELD_FOR_WINDOW 0
-#else
-#define PUMP_HELD_FOR_WINDOW 1
+static SDL_mutex *run_lock;
+static SDL_cond *run_cond;
+static run_request *run_head, *run_tail;
+static int run_open;
+static SDL_threadID run_main_thread;
+
+void Game_RunOnMain(void (*fn)(void *arg), void *arg)
+{
+    run_request request;
+
+#if !defined(__ANDROID__)
+    if ((run_lock != NULL) && (SDL_ThreadID() != run_main_thread))
+    {
+        SDL_LockMutex(run_lock);
+        if (run_open)
+        {
+            request.fn = fn;
+            request.arg = arg;
+            request.done = 0;
+            request.next = NULL;
+            if (run_tail != NULL) run_tail->next = &request; else run_head = &request;
+            run_tail = &request;
+            while (!request.done) SDL_CondWait(run_cond, run_lock);
+            SDL_UnlockMutex(run_lock);
+            return;
+        }
+        SDL_UnlockMutex(run_lock);
+    }
 #endif
+    (void)request;
+    fn(arg);
+}
+
+/* on the main thread: the requests waiting now; open = 0 closes the door after them */
+static void run_requests(int open)
+{
+    if (run_lock == NULL) return;
+    SDL_LockMutex(run_lock);
+    while (run_head != NULL)
+    {
+        run_request *request = run_head;
+
+        run_head = request->next;
+        if (run_head == NULL) run_tail = NULL;
+        SDL_UnlockMutex(run_lock);
+        request->fn(request->arg);
+        SDL_LockMutex(run_lock);
+        request->done = 1;
+        SDL_CondBroadcast(run_cond);
+    }
+    run_open = open;
+    SDL_UnlockMutex(run_lock);
+}
+
+static void show_window(void *window)
+{
+    SDL_ShowWindow((SDL_Window *)window);
+}
+
+static void hide_window(void *window)
+{
+    SDL_HideWindow((SDL_Window *)window);
+}
+
+typedef struct {
+    SDL_Window *window;
+    SDL_Cursor *cursor;
+    int x, y, result;
+} pointer_args;
+
+static void show_cursor(void *data)
+{
+    pointer_args *args = (pointer_args *)data;
+    args->result = SDL_ShowCursor(args->x);
+}
+
+int Game_ShowCursor(int toggle)
+{
+    pointer_args args;
+
+    args.x = toggle;
+    args.result = -1;
+    Game_RunOnMain(show_cursor, &args);
+    return args.result;
+}
+
+static void set_cursor(void *data)
+{
+    SDL_SetCursor(((pointer_args *)data)->cursor);
+}
+
+void Game_SetCursor(SDL_Cursor *cursor)
+{
+    pointer_args args;
+
+    args.cursor = cursor;
+    Game_RunOnMain(set_cursor, &args);
+}
+
+static void relative_mouse(void *data)
+{
+    pointer_args *args = (pointer_args *)data;
+    args->result = SDL_SetRelativeMouseMode(args->x ? SDL_TRUE : SDL_FALSE);
+}
+
+int Game_SetRelativeMouseMode(int enabled)
+{
+    pointer_args args;
+
+    args.x = enabled;
+    args.result = -1;
+    Game_RunOnMain(relative_mouse, &args);
+    return args.result;
+}
+
+static void warp_mouse(void *data)
+{
+    pointer_args *args = (pointer_args *)data;
+    SDL_WarpMouseInWindow(args->window, args->x, args->y);
+}
+
+void Game_WarpMouse(SDL_Window *window, int x, int y)
+{
+    pointer_args args;
+
+    args.window = window;
+    args.x = x;
+    args.y = y;
+    Game_RunOnMain(warp_mouse, &args);
+}
 
 void Game_ShowWindow(SDL_Window *window)
 {
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
-    SDL_ShowWindow(window);
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    Game_RunOnMain(show_window, window);
 }
 
 void Game_HideWindow(SDL_Window *window)
 {
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
-    SDL_HideWindow(window);
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    Game_RunOnMain(hide_window, window);
 }
 
 /* The window of the picture: the last one of Game_WindowCreate, and the size it
@@ -158,26 +276,44 @@ static unsigned int fullscreen_flag(void)
     return (Game_Fullscreen || under_gamescope()) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
 }
 
-SDL_Window *Game_WindowCreate(int width, int height, unsigned int flags)
-{
+typedef struct {
     SDL_Window *window;
+    int width, height;
+    unsigned int flags;
+} window_args;
 
-    window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
-                              flags | SDL_WINDOW_RESIZABLE | fullscreen_flag());
-    if (window == NULL) return NULL;
-    SDL_SetWindowMinimumSize(window, width, height);
-    port_window = window;
-    port_width = width;
-    port_height = height;
-    return window;
+static void window_create(void *data)
+{
+    window_args *args = (window_args *)data;
+
+    args->window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, args->width, args->height,
+                                    args->flags | SDL_WINDOW_RESIZABLE | fullscreen_flag());
+    if (args->window == NULL) return;
+    SDL_SetWindowMinimumSize(args->window, args->width, args->height);
+    port_window = args->window;
+    port_width = args->width;
+    port_height = args->height;
 }
 
-void Game_WindowFit(SDL_Window *window, int width, int height)
+SDL_Window *Game_WindowCreate(int width, int height, unsigned int flags)
 {
+    window_args args;
+
+    args.window = NULL;
+    args.width = width;
+    args.height = height;
+    args.flags = flags;
+    Game_RunOnMain(window_create, &args);
+    return args.window;
+}
+
+static void window_fit(void *data)
+{
+    window_args *args = (window_args *)data;
+    SDL_Window *window = args->window;
+    int width = args->width, height = args->height;
     int w = 0, h = 0, resized;
 
-    if (window == NULL) return;
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
     SDL_GetWindowSize(window, &w, &h);
     resized = (window != port_window) || (w != port_width) || (h != port_height) ||
               (SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED));
@@ -195,17 +331,31 @@ void Game_WindowFit(SDL_Window *window, int width, int height)
         port_width = width;
         port_height = height;
     }
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+}
+
+void Game_WindowFit(SDL_Window *window, int width, int height)
+{
+    window_args args;
+
+    if (window == NULL) return;
+    args.window = window;
+    args.width = width;
+    args.height = height;
+    args.flags = 0;
+    Game_RunOnMain(window_fit, &args);
+}
+
+static void window_fullscreen(void *data)
+{
+    (void)data;
+    if (port_window != NULL) SDL_SetWindowFullscreen(port_window, fullscreen_flag());
 }
 
 void Game_WindowSetFullscreen(int on)
 {
 #if !defined(__ANDROID__)
     Game_Fullscreen = on ? 1 : 0;
-    if (port_window == NULL) return;
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
-    SDL_SetWindowFullscreen(port_window, fullscreen_flag());
-    if (PUMP_HELD_FOR_WINDOW && Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
+    Game_RunOnMain(window_fullscreen, NULL);
 #else
     (void)on;
 #endif
@@ -269,7 +419,10 @@ void Game_Event_Loop(void)
     Game_TimerRun = 0;
     Game_VSyncTick = 0;
 
-    Game_PumpMutex = SDL_CreateMutex();
+    run_main_thread = SDL_ThreadID();
+    run_lock = SDL_CreateMutex();
+    run_cond = SDL_CreateCond();
+    run_open = (run_lock != NULL) && (run_cond != NULL);
 
     Game_FlipSem = SDL_CreateSemaphore(0);
     if (Game_FlipSem == NULL)
@@ -327,6 +480,7 @@ void Game_Event_Loop(void)
 
     while (!Thread_Exited || !Thread_Exit)
     {
+        run_requests(1);
 #if GAME_CORE_CONSUMES_INPUT
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
 #else
@@ -358,9 +512,7 @@ void Game_Event_Loop(void)
             {
                 PumpEvents = 0;
 #if !(defined(GAME_WINAPI) && defined(__ANDROID__))
-                if (Game_PumpMutex != NULL) SDL_LockMutex(Game_PumpMutex);
                 SDL_PumpEvents();
-                if (Game_PumpMutex != NULL) SDL_UnlockMutex(Game_PumpMutex);
 #endif
             }
             else
@@ -483,6 +635,8 @@ void Game_Event_Loop(void)
         }
     }
 
+    /* the threads of the game that are still on their way out make their own window calls */
+    run_requests(0);
     if (Game_FlipSem != NULL)
     {
         SDL_SemPost(Game_FlipSem);

@@ -30,7 +30,31 @@ NORETURN void Game_StopMain(void);
 int Game_MainThread(void *data);
 int Game_TimerThread(void *data);
 int Game_FlipThread(void *data);
-/* SDL_ShowWindow and SDL_HideWindow for a thread that is not the event loop's */
+/* Stage 58: the host's main thread (Game_Event_Loop) is the one that pumps SDL's events,
+ * and it makes and changes the windows: a window of Windows gets its messages only on the
+ * thread that made it, and on X11 and Wayland a window call waits for the server's answer,
+ * which a pump on another thread would take.  Game_RunOnMain runs fn(arg) there and waits
+ * for it; on the main thread itself, before the loop runs and after it has ended, it calls
+ * fn at once.  On Android the guest's message functions pump as well (GAME_WINAPI_GUEST_PUMP):
+ * SDL's pump parks the program on a pause and hands the GL context over on the thread that
+ * draws. */
+#include "Game_defs.h"
+#include "Game_hooks.h"
+#ifndef GAME_WINAPI_GUEST_PUMP
+#if defined(__ANDROID__)
+#define GAME_WINAPI_GUEST_PUMP 1
+#else
+#define GAME_WINAPI_GUEST_PUMP 0
+#endif
+#endif
+void Game_RunOnMain(void (*fn)(void *arg), void *arg);
+/* the pointer of the window, from any thread (Game_RunOnMain): SDL_ShowCursor,
+ * SDL_SetCursor, SDL_SetRelativeMouseMode, SDL_WarpMouseInWindow */
+int Game_ShowCursor(int toggle);
+void Game_SetCursor(struct SDL_Cursor *cursor);
+int Game_SetRelativeMouseMode(int enabled);
+void Game_WarpMouse(struct SDL_Window *window, int x, int y);
+/* SDL_ShowWindow and SDL_HideWindow from any thread (Game_RunOnMain) */
 void Game_ShowWindow(struct SDL_Window *window);
 void Game_HideWindow(struct SDL_Window *window);
 /* The window of the picture, width x height, the picture's size at its aspect

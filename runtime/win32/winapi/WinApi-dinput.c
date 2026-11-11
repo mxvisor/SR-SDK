@@ -42,6 +42,7 @@
 #include "Game_memory.h"
 #include "touchgamepad.h"
 #include "Game_osd.h"
+#include "Game_thread.h"
 
 /* GAME_WINAPI_TOUCH_GAMEPAD 1 (WinApi-user32.c): on Android a finger away from
  * the buttons is the mouse of a game that reads it here (default 0) */
@@ -239,7 +240,7 @@ static void mouse_apply_hold(void)
 
     if ((mouse_held == wanted) && (SDL_GetRelativeMouseMode() == (mouse_held ? SDL_TRUE : SDL_FALSE))) return;
     mouse_held = wanted;
-    SDL_SetRelativeMouseMode(mouse_held ? SDL_TRUE : SDL_FALSE);
+    Game_SetRelativeMouseMode(mouse_held);
 }
 #endif
 
