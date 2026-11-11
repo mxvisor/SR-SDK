@@ -34,6 +34,8 @@
 #include <string.h>
 #include "Game_sound.h"
 #include "Game_vfs.h"
+#include "Game_pad.h"
+#include "WinApi-user32.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -194,55 +196,329 @@ uint32_t CCALL timeGetDevCaps_c(void *ptc, uint32_t cbtc)
     tc->wPeriodMax = 1000000;
     return 0;
 }
-/* Joysticks: none is attached.  A success code would make a game read the
- * JOYCAPS/JOYINFOEX it passed in, which nobody filled (a game took the
- * stack garbage in dwButtons for a pressed button and skipped every movie). */
+/* Joysticks: the gamepads of the host (Game_pad.h), as Windows shows an XInput
+ * pad through winmm.  Joystick id N is the Nth pad there is (one pad is
+ * always id 0, whatever slot it took).  The axes go 0..65535 with the centre
+ * at 32767 and Y down: X/Y the left stick, Z the triggers (the left one up,
+ * the right one down), R/U the right stick's Y/X.  The buttons: 1 A, 2 B,
+ * 3 X, 4 Y, 5 LB, 6 RB, 7 Back, 8 Start, 9 and 10 the sticks' clicks.  The
+ * D-pad is the POV for a game that asks for it (JOY_RETURNPOV, ...POVCTS);
+ * for any other (joyGetPos has no POV) it moves the X/Y axes, so that a game
+ * that reads the stick only can be played on the D-pad.  The dead zones are
+ * those of Game_PadGetState, none with JOY_RETURNRAWDATA.  No pad (or
+ * Gamepad=off): every id is unplugged, as it was before the pads.
+ * <GAME>_DEBUG_PAD writes what a game reads whenever it changes. */
 
+#define JOYERR_NOERROR_c   0
 #define JOYERR_PARMS_c     165
+#define JOYERR_NOCANDO_c   166
 #define JOYERR_UNPLUGGED_c 167
+
+#define JOY_RETURNPOV_c     0x0040
+#define JOY_RETURNRAWDATA_c 0x0100
+#define JOY_RETURNPOVCTS_c  0x0200
+#define JOY_POVCENTERED_c   0xffff
+
+#define JOYCAPS_HASZ_c    0x0001
+#define JOYCAPS_HASR_c    0x0002
+#define JOYCAPS_HASU_c    0x0004
+#define JOYCAPS_HASPOV_c  0x0010
+#define JOYCAPS_POVCTS_c  0x0040
+
+#define MM_JOY1MOVE_c       0x3a0
+#define MM_JOY1ZMOVE_c      0x3a2
+#define MM_JOY1BUTTONDOWN_c 0x3b5
+#define MM_JOY1BUTTONUP_c   0x3b7
+
+#define WINMM_JOY_BUTTONS 10
+
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t wMid, wPid;
+    char szPname[32];
+    uint32_t wXmin, wXmax, wYmin, wYmax, wZmin, wZmax;
+    uint32_t wNumButtons, wPeriodMin, wPeriodMax;
+    uint32_t wRmin, wRmax, wUmin, wUmax, wVmin, wVmax;
+    uint32_t wCaps, wMaxAxes, wNumAxes, wMaxButtons;
+    char szRegKey[32];
+    char szOEMVxD[260];
+} JOYCAPSA_c;
+
+typedef struct {
+    uint32_t wXpos, wYpos, wZpos, wButtons;
+} JOYINFO_c;
+
+typedef struct {
+    uint32_t dwSize, dwFlags;
+    uint32_t dwXpos, dwYpos, dwZpos, dwRpos, dwUpos, dwVpos;
+    uint32_t dwButtons, dwButtonNumber, dwPOV;
+    uint32_t dwReserved1, dwReserved2;
+} JOYINFOEX_c;
+#pragma pack(pop)
+
+typedef struct {
+    uint32_t x, y, z, r, u, v;
+    uint32_t buttons, count, pov;
+} winmm_joy;
+
+/* the slot of joystick id `id`, -1 when there is no such pad */
+static int winmm_joy_slot(uint32_t id)
+{
+    unsigned int slots = Game_PadSlots();
+    int slot;
+
+    for (slot = 0; slot < GAME_PAD_MAX; slot++)
+    {
+        if ((slots & (1u << slot)) == 0) continue;
+        if (id == 0) return slot;
+        id--;
+    }
+    return -1;
+}
+
+/* a stick's -32768..32767 (Y up) as an axis 0..65535 with the centre at 32767
+ * (`flip`: Y down) */
+static uint32_t winmm_joy_axis(int value, int flip)
+{
+    value = flip ? 32767 - value : 32767 + value;
+    return (value < 0) ? 0 : (uint32_t)value;
+}
+
+static int winmm_joy_read(uint32_t id, int raw, int pov, winmm_joy *joy)
+{
+    static const uint16_t order[WINMM_JOY_BUTTONS] = {
+        GAME_PAD_A, GAME_PAD_B, GAME_PAD_X, GAME_PAD_Y,
+        GAME_PAD_LEFT_SHOULDER, GAME_PAD_RIGHT_SHOULDER, GAME_PAD_BACK, GAME_PAD_START,
+        GAME_PAD_LEFT_THUMB, GAME_PAD_RIGHT_THUMB
+    };
+    Game_PadState state;
+    int slot = winmm_joy_slot(id);
+    int index, up, down, left, right;
+
+    if (slot < 0) return 0;
+    if (!(raw ? Game_PadGetRawState(slot, &state) : Game_PadGetState(slot, &state))) return 0;
+
+    joy->x = winmm_joy_axis(state.left_x, 0);
+    joy->y = winmm_joy_axis(state.left_y, 1);
+    joy->z = (uint32_t)(32767 + (state.left_trigger - state.right_trigger) * 128);
+    if (joy->z > 65535) joy->z = 65535;
+    joy->r = winmm_joy_axis(state.right_y, 1);
+    joy->u = winmm_joy_axis(state.right_x, 0);
+    joy->v = 32767;
+
+    joy->buttons = 0;
+    joy->count = 0;
+    for (index = 0; index < WINMM_JOY_BUTTONS; index++)
+    {
+        if (state.buttons & order[index])
+        {
+            joy->buttons |= 1u << index;
+            joy->count++;
+        }
+    }
+
+    up = (state.buttons & GAME_PAD_DPAD_UP) != 0;
+    down = (state.buttons & GAME_PAD_DPAD_DOWN) != 0;
+    left = (state.buttons & GAME_PAD_DPAD_LEFT) != 0;
+    right = (state.buttons & GAME_PAD_DPAD_RIGHT) != 0;
+    if (up && down) up = down = 0;
+    if (left && right) left = right = 0;
+
+    joy->pov = JOY_POVCENTERED_c;
+    if (pov)
+    {
+        if (up) joy->pov = right ? 4500 : (left ? 31500 : 0);
+        else if (down) joy->pov = right ? 13500 : (left ? 22500 : 18000);
+        else if (right) joy->pov = 9000;
+        else if (left) joy->pov = 27000;
+    }
+    else
+    {
+        /* the D-pad on the stick: it goes to the edge where it is pressed */
+        if (left) joy->x = 0;
+        if (right) joy->x = 65535;
+        if (up) joy->y = 0;
+        if (down) joy->y = 65535;
+    }
+
+    if (getenv(GAME_ENV("DEBUG_PAD")) != NULL && id < GAME_PAD_MAX)
+    {
+        /* what the game reads, when it changes */
+        static winmm_joy seen[GAME_PAD_MAX];
+        if (memcmp(&seen[id], joy, sizeof(*joy)) != 0)
+        {
+            seen[id] = *joy;
+            fprintf(stderr, "winmm: joy %u x=%u y=%u z=%u r=%u u=%u buttons=0x%x pov=%u\n", id, joy->x, joy->y, joy->z, joy->r, joy->u, joy->buttons, joy->pov);
+        }
+    }
+    return 1;
+}
 
 uint32_t CCALL joyGetNumDevs_c(void)
 {
-    return 0;
+    /* the ids a game may try, pads or not (Windows says 16) */
+    return GAME_PAD_MAX;
 }
 
 uint32_t CCALL joyGetDevCapsA_c(uint32_t id, uint32_t pjc, uint32_t cbjc)
 {
-    (void)id; (void)pjc; (void)cbjc;
-    return JOYERR_PARMS_c;
+    JOYCAPSA_c caps;
+    int slot;
+
+    if (pjc == 0) return JOYERR_PARMS_c;
+    slot = winmm_joy_slot(id);
+    if (slot < 0) return JOYERR_PARMS_c;
+
+    memset(&caps, 0, sizeof(caps));
+    caps.wMid = 0x045e;         /* as Windows names an XInput pad */
+    caps.wPid = 0x028e;
+    snprintf(caps.szPname, sizeof(caps.szPname), "%s", Game_PadName(slot));
+    caps.wXmax = caps.wYmax = caps.wZmax = 65535;
+    caps.wRmax = caps.wUmax = caps.wVmax = 65535;
+    caps.wNumButtons = WINMM_JOY_BUTTONS;
+    caps.wMaxButtons = 32;
+    caps.wPeriodMin = 10;
+    caps.wPeriodMax = 1000;
+    caps.wCaps = JOYCAPS_HASZ_c | JOYCAPS_HASR_c | JOYCAPS_HASU_c | JOYCAPS_HASPOV_c | JOYCAPS_POVCTS_c;
+    caps.wNumAxes = 5;
+    caps.wMaxAxes = 6;
+
+    memcpy(GUEST_MEM(pjc), &caps, (cbjc < sizeof(caps)) ? cbjc : sizeof(caps));
+    return JOYERR_NOERROR_c;
 }
 
 uint32_t CCALL joyGetPosEx_c(uint32_t id, uint32_t pji)
 {
-    (void)id; (void)pji;
-    return JOYERR_UNPLUGGED_c;
+    JOYINFOEX_c *info;
+    winmm_joy joy;
+
+    if (pji == 0) return JOYERR_PARMS_c;
+    info = (JOYINFOEX_c *)GUEST_MEM(pji);
+    if (info->dwSize < sizeof(JOYINFOEX_c)) return JOYERR_PARMS_c;
+    if (!winmm_joy_read(id, (info->dwFlags & JOY_RETURNRAWDATA_c) != 0,
+                        (info->dwFlags & (JOY_RETURNPOV_c | JOY_RETURNPOVCTS_c)) != 0, &joy))
+    {
+        return JOYERR_UNPLUGGED_c;
+    }
+
+    info->dwXpos = joy.x;
+    info->dwYpos = joy.y;
+    info->dwZpos = joy.z;
+    info->dwRpos = joy.r;
+    info->dwUpos = joy.u;
+    info->dwVpos = joy.v;
+    info->dwButtons = joy.buttons;
+    info->dwButtonNumber = joy.count;
+    info->dwPOV = joy.pov;
+    return JOYERR_NOERROR_c;
 }
 
 /* (a game that polls it every tick walked its hero by itself on the JOYINFO
- * that a success left unwritten) */
+ * that a success left unwritten: it is written whenever it succeeds) */
 uint32_t CCALL joyGetPos_c(uint32_t id, uint32_t pji)
 {
-    (void)id; (void)pji;
-    return JOYERR_UNPLUGGED_c;
+    JOYINFO_c *info;
+    winmm_joy joy;
+
+    if (pji == 0) return JOYERR_PARMS_c;
+    if (!winmm_joy_read(id, 0, 0, &joy)) return JOYERR_UNPLUGGED_c;
+
+    info = (JOYINFO_c *)GUEST_MEM(pji);
+    info->wXpos = joy.x;
+    info->wYpos = joy.y;
+    info->wZpos = joy.z;
+    info->wButtons = joy.buttons & 0x0f;
+    return JOYERR_NOERROR_c;
 }
 
+/* the pads are read anew at every call: there is nothing to reload */
 uint32_t CCALL joyConfigChanged_c(uint32_t flags)
 {
     (void)flags;
-    return 0;
+    return JOYERR_NOERROR_c;
 }
 
-/* no joystick to send messages of */
+/* joySetCapture: the window gets MM_JOY1MOVE/MM_JOY1ZMOVE (wParam the
+ * buttons 1-4, lParam X and Y; ZMOVE: Z) and MM_JOY1BUTTONDOWN/UP (the
+ * buttons and, in the high byte, the ones that changed), MM_JOY2* for id 1.
+ * An SDL timer reads the pad every period and posts the messages to the
+ * window's thread.  A move is posted when the joystick moved, also without
+ * fChanged: one every period would only fill the queue of a game that does
+ * not take them. */
+#define WINMM_JOY_CAPTURES 2
+
+struct winmm_capture {
+    SDL_TimerID timer;
+    uint32_t hwnd;
+    uint32_t id;
+    uint32_t period;
+    int first;
+    winmm_joy last;
+};
+
+static struct winmm_capture winmm_captures[WINMM_JOY_CAPTURES];
+
+static Uint32 SDLCALL winmm_capture_tick(Uint32 interval, void *param)
+{
+    struct winmm_capture *capture = (struct winmm_capture *)param;
+    void *hwnd = (void *)GAME_GUEST32_TO_PTR(capture->hwnd);
+    winmm_joy joy;
+    uint32_t pressed, changed;
+
+    if (!winmm_joy_read(capture->id, 0, 0, &joy)) return interval;
+
+    pressed = joy.buttons & 0x0f;
+    changed = capture->first ? 0 : (pressed ^ (capture->last.buttons & 0x0f));
+    if (changed & pressed)
+    {
+        PostMessageA_c(hwnd, MM_JOY1BUTTONDOWN_c + capture->id, pressed | ((changed & pressed) << 8), (joy.x & 0xffff) | (joy.y << 16));
+    }
+    if (changed & ~pressed)
+    {
+        PostMessageA_c(hwnd, MM_JOY1BUTTONUP_c + capture->id, pressed | ((changed & ~pressed) << 8), (joy.x & 0xffff) | (joy.y << 16));
+    }
+    if (capture->first || joy.x != capture->last.x || joy.y != capture->last.y)
+    {
+        PostMessageA_c(hwnd, MM_JOY1MOVE_c + capture->id, pressed, (joy.x & 0xffff) | (joy.y << 16));
+    }
+    if (capture->first || joy.z != capture->last.z)
+    {
+        PostMessageA_c(hwnd, MM_JOY1ZMOVE_c + capture->id, pressed, joy.z & 0xffff);
+    }
+    capture->last = joy;
+    capture->first = 0;
+    return interval;
+}
+
 uint32_t CCALL joySetCapture_c(uint32_t hwnd, uint32_t id, uint32_t period, uint32_t changed)
 {
-    (void)hwnd; (void)id; (void)period; (void)changed;
-    return JOYERR_UNPLUGGED_c;
+    struct winmm_capture *capture;
+
+    (void)changed;
+    if (hwnd == 0 || id >= WINMM_JOY_CAPTURES) return JOYERR_PARMS_c;
+    if (winmm_joy_slot(id) < 0) return JOYERR_UNPLUGGED_c;
+    capture = &winmm_captures[id];
+    if (capture->timer != 0) return JOYERR_NOCANDO_c;
+
+    if (period < 10) period = 10;
+    if (period > 1000) period = 1000;
+    capture->hwnd = hwnd;
+    capture->id = id;
+    capture->period = period;
+    capture->first = 1;
+    capture->timer = SDL_AddTimer(period, winmm_capture_tick, capture);
+    return (capture->timer != 0) ? JOYERR_NOERROR_c : JOYERR_NOCANDO_c;
 }
 
 uint32_t CCALL joyReleaseCapture_c(uint32_t id)
 {
-    (void)id;
-    return JOYERR_UNPLUGGED_c;
+    if (id >= WINMM_JOY_CAPTURES) return JOYERR_PARMS_c;
+    if (winmm_captures[id].timer != 0)
+    {
+        SDL_RemoveTimer(winmm_captures[id].timer);
+        winmm_captures[id].timer = 0;
+    }
+    return JOYERR_NOERROR_c;
 }
 
 /* One MIDI and one wave output device: a game that counts them keeps its music

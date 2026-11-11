@@ -417,6 +417,7 @@ in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 | `GAME_GLIDE_FOG_HIDDEN` | optional: an expression, non-zero while a toggle of the port hides the fog of a Glide program |
 | `GAME_GLIDE_SLI` | optional: 1, `grSstQueryHardware` reports a Voodoo2 SLI pair (`sliDetect`): a program that sizes its modes by the frame buffer memory gets twice as much (a depth buffer at 1024x768) |
 | `GAME_GLIDE_3D_RESOLUTION_ITEM` | optional: 1, the port's panel has the item "3D resolution" (`Display_3D_Resolution`: off, 640x480 … 1920x1440), the colour buffers made again at that size at the next `grBufferSwap` |
+| `GAME_COMMAND_LINE_ARGS` | the game's own switches, always first on its command line, before the player's arguments |
 | `GAME_DIRECT3D_ARG` | a switch added to the game's command line when Direct3D is on |
 | `GAME_DIRECT3D_ANTIALIAS_ARG` | the game's own switch of the antialiasing (it sets `D3DRENDERSTATE_ANTIALIAS`), added to its command line when Direct3D is on and `Display_Antialiasing` of the settings file (or `<ENVP>_ANTIALIASING`) asks for it |
 | `GAME_GUEST_LOW_MEMORY()` | the low memory of the guest window: how much of the guest's address space from `pointer_offset` up has to stay free of the host and of the guest's heap (default 1 MiB + 64 KiB, at most 64 MiB) |

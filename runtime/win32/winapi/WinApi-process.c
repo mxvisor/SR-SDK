@@ -153,6 +153,9 @@ uint32_t CCALL GetCommandLineA_c(void)
         char *text;
 
         for (index = 1; index < winapi_argc; index++) length += strlen(winapi_argv[index]) + 3;
+#ifdef GAME_COMMAND_LINE_ARGS
+        length += sizeof(GAME_COMMAND_LINE_ARGS) + 1;
+#endif
 #ifdef GAME_DIRECT3D_ARG
         length += sizeof(GAME_DIRECT3D_ARG) + 1;
 #endif
@@ -164,6 +167,11 @@ uint32_t CCALL GetCommandLineA_c(void)
 
         text = winapi_command_line;
         strcpy(text, program);
+#ifdef GAME_COMMAND_LINE_ARGS
+        /* the game's own switches the port always gives, first (a game may read
+         * only the first character of its command line) */
+        strcat(text, " " GAME_COMMAND_LINE_ARGS);
+#endif
         for (index = 1; index < winapi_argc; index++)
         {
             /* the CRT splits at blanks; quote an argument that has one */
