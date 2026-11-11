@@ -82,8 +82,11 @@ void Game_PadInit(void);
 void Game_PadQuit(void);
 /* the cfg key Gamepad=on/off (on by default); nonzero if it is that key */
 int  Game_PadConfig(const char *key, const char *value);
-/* the timer thread's 10 ms: pads that came or went, and <GAME>_DEBUG_PAD */
+/* the timer thread's 10 ms: the panel's keys of the pad, and <GAME>_DEBUG_PAD */
 void Game_PadTick(void);
+/* the host's main thread, for each event it takes out of the queue: a pad that
+ * came or went (SDL_CONTROLLERDEVICEADDED, ..REMOVED); nonzero if it was one */
+int  Game_PadEvent(const union SDL_Event *event);
 
 /* how many pads there are; a bit for each slot that has one */
 int  Game_PadCount(void);

@@ -50,6 +50,7 @@
 #include "input.h"
 #include "main.h"
 #include "Game_osd.h"
+#include "Game_pad.h"
 #include "Game_hooks.h"
 
 #if !defined(GAME_KEYBOARD_BLOCKED)
@@ -565,6 +566,8 @@ void Game_Event_Loop(void)
 #endif
         /* the wake-up of a request of Game_RunOnMain: taken at the top of the loop */
         if ((event.type == SDL_USEREVENT) && (event.user.code == EC_RUN_ON_MAIN)) continue;
+        /* a pad that came or went: looked at here, on the thread that pumps (Game_pad.c) */
+        if (Game_PadEvent(&event)) continue;
 
 #if GAME_CORE_CONSUMES_INPUT
         /* the port's panel first: its key, and all input while it is open */

@@ -24,26 +24,22 @@
 
 /* The host's gamepads (Game_pad.h).  The state is read from SDL when it is
  * asked for: SDL keeps it up to date in SDL_PumpEvents, on whichever thread
- * pumps, and its joystick functions take its own lock.  The pads' events are
- * not needed for that, and the axes' ones are off everywhere: a stick sends
- * hundreds a second, and on win32 they would wait in SDL's queue for the
- * guest's message pump.
+ * pumps, and the calls of a pad that is open take SDL's own lock.  The axes'
+ * events are off everywhere: a stick sends hundreds a second.
  *
- * Which pads there are is looked at by the timer thread's tick, every
- * SCAN_MS, not on SDL's events.  SDL2 on Linux and Windows is sdl2-compat over
- * SDL3, and it keeps the list of devices behind SDL2's device indices without
- * a lock: it makes it again, freeing the one before, in SDL_NumJoysticks, in
- * its event filter when SDL3 sends a pad's coming or going (SDL3 calls the
- * filter even for an event that is off, inside the pump of whichever thread
- * pumps), and when such an event is taken out of the queue.  A look at that
- * list from another thread freed it twice, and a pad that came or went while
- * the game ran crashed it under Windows.  So under sdl2-compat this file never
- * asks for the list by SDL2's indices: it asks SDL3 itself, which locks
- * (SDL_GetJoysticks, SDL_OpenGamepad by its ID; sdl3_load), and the pads'
- * events are off, so that none is taken out of the queue.  The other calls
- * of a pad that is open go straight through to SDL3.  SDL2 itself (the
- * Android build) locks its list, and stops updating the pads when all their
- * events are off: there the events stay on, and the loops let them go.
+ * Which pads there are comes from SDL's events of a pad that comes or goes
+ * (SDL_CONTROLLERDEVICEADDED, ..REMOVED), which the host's main thread takes
+ * out of the queue and hands here (Game_PadEvent); the list of devices behind
+ * SDL2's indices is looked at only there.  SDL2 on Linux and Windows is
+ * sdl2-compat over SDL3, and it keeps that list without a lock: it makes it
+ * again, freeing the one before, in SDL_NumJoysticks, in its event filter
+ * inside the pump, and as such an event is taken out of the queue.  Since
+ * stage 58 the main thread is the only one that pumps and reads the queue
+ * there, so all of that is on one thread (before, a look from the timer
+ * thread freed the list twice: 21.2b).  Under sdl2-compat the other events of
+ * the pads are off, no one needs them; SDL2 itself (Android, where the thread
+ * that draws pumps) locks its list, and stops updating the pads when all
+ * their events are off: there they stay on, and the loops let them go.
  *
  * The port's panel (Game_osd.c) is moved with the pad as with the keyboard:
  * while it is shown, the tick sends a key of the pad's button to it (a key
@@ -60,11 +56,9 @@
 #include "Game_osd.h"
 #include "Game_hooks.h"
 
-#define SCAN_MS 250
-
 typedef struct {
     SDL_GameController *controller;
-    uint32_t id;                /* SDL3's ID under sdl2-compat, else SDL2's instance ID */
+    uint32_t id;                /* SDL's instance ID */
     char name[64];
     Game_PadState last;         /* the raw state of the last read, for `packet` */
     Game_PadState logged;       /* <GAME>_DEBUG_PAD: the state last written */
@@ -76,7 +70,6 @@ static int pad_enabled = 1;
 static int pad_started = 0;
 static int pad_debug = 0;
 static uint32_t pad_debug_time = 0;
-static uint32_t pad_scan_time = 0;
 static uint16_t pad_osd_buttons = 0;    /* the timer thread's: the buttons held when it last looked */
 
 int Game_PadConfig(const char *key, const char *value)
@@ -94,50 +87,6 @@ static int sdl2_compat(void)
 
     SDL_GetVersion(&version);
     return (version.major == 2) && (version.patch >= 50);
-}
-
-/* SDL3's own functions for the list of pads, under sdl2-compat (see the top
- * of the file): the library sdl2-compat has loaded, by the names it loads */
-typedef uint32_t *(SDLCALL *sdl3_get_joysticks)(int *count);
-typedef bool (SDLCALL *sdl3_is_gamepad)(uint32_t id);
-typedef SDL_GameController *(SDLCALL *sdl3_open_gamepad)(uint32_t id);
-typedef void (SDLCALL *sdl3_free)(void *mem);
-
-static struct {
-    void *library;
-    sdl3_get_joysticks get_joysticks;
-    sdl3_is_gamepad is_gamepad;
-    sdl3_open_gamepad open_gamepad;
-    sdl3_free free;
-} sdl3;
-
-static int sdl3_load(void)
-{
-    static const char *const names[] = {
-#if defined(_WIN32)
-        "SDL3.dll",
-#else
-        "libSDL3.so.0", "libSDL3.so",
-#endif
-    };
-    unsigned int i;
-
-    for (i = 0; (sdl3.library == NULL) && (i < sizeof(names) / sizeof(names[0])); i++)
-    {
-        sdl3.library = SDL_LoadObject(names[i]);
-    }
-    if (sdl3.library == NULL) return 0;
-    sdl3.get_joysticks = (sdl3_get_joysticks)SDL_LoadFunction(sdl3.library, "SDL_GetJoysticks");
-    sdl3.is_gamepad = (sdl3_is_gamepad)SDL_LoadFunction(sdl3.library, "SDL_IsGamepad");
-    sdl3.open_gamepad = (sdl3_open_gamepad)SDL_LoadFunction(sdl3.library, "SDL_OpenGamepad");
-    sdl3.free = (sdl3_free)SDL_LoadFunction(sdl3.library, "SDL_free");
-    if ((sdl3.get_joysticks != NULL) && (sdl3.is_gamepad != NULL) && (sdl3.open_gamepad != NULL) && (sdl3.free != NULL))
-    {
-        return 1;
-    }
-    SDL_UnloadObject(sdl3.library);
-    memset(&sdl3, 0, sizeof(sdl3));
-    return 0;
 }
 
 /* the pads' events: see the top of the file */
@@ -163,8 +112,11 @@ static void pad_events(void)
     SDL_EventState(SDL_JOYAXISMOTION, SDL_IGNORE);
     SDL_EventState(SDL_JOYBALLMOTION, SDL_IGNORE);
     SDL_EventState(SDL_CONTROLLERAXISMOTION, SDL_IGNORE);
-    if (sdl3.library == NULL) return;
-    for (i = 0; i < sizeof(all) / sizeof(all[0]); i++) SDL_EventState(all[i], SDL_IGNORE);
+    if (!sdl2_compat()) return;
+    for (i = 0; i < sizeof(all) / sizeof(all[0]); i++)
+    {
+        if ((all[i] != SDL_CONTROLLERDEVICEADDED) && (all[i] != SDL_CONTROLLERDEVICEREMOVED)) SDL_EventState(all[i], SDL_IGNORE);
+    }
 }
 
 static void close_slot(int pad)
@@ -199,7 +151,7 @@ static void take_slot(int pad, SDL_GameController *controller, uint32_t id)
     fprintf(stderr, "Gamepad %d: %s\n", pad, slots[pad].name);
 }
 
-/* under pad_lock: close the pads that went, open the ones that came */
+/* the main thread, under pad_lock: close the pads that went, open the ones that came */
 static void rescan(void)
 {
     int pad, free_pad, i, count;
@@ -213,26 +165,6 @@ static void rescan(void)
         }
     }
 
-    if (sdl3.library != NULL)
-    {
-        /* sdl2-compat: SDL3's list, by SDL3's IDs */
-        uint32_t *ids = sdl3.get_joysticks(&count);
-
-        if (ids == NULL) return;
-        for (i = 0; i < count; i++)
-        {
-            SDL_GameController *controller;
-
-            if (!sdl3.is_gamepad(ids[i])) continue;
-            if ((find_slot(ids[i], &free_pad) >= 0) || (free_pad < 0)) continue;
-            controller = sdl3.open_gamepad(ids[i]);
-            if (controller != NULL) take_slot(free_pad, controller, ids[i]);
-        }
-        sdl3.free(ids);
-        return;
-    }
-
-    /* SDL2: its device indices (it locks its list) */
     count = SDL_NumJoysticks();
     for (i = 0; i < count; i++)
     {
@@ -261,12 +193,6 @@ void Game_PadInit(void)
 
     if (pad_started || !pad_enabled) return;
 
-    if (sdl2_compat() && !sdl3_load())
-    {
-        /* no SDL3 to ask: the pads would be looked at through sdl2-compat's list */
-        fprintf(stderr, "Gamepad: SDL3 not found under sdl2-compat, no gamepads\n");
-        return;
-    }
     /* before the pads are opened, so that no event of theirs is queued (and
      * again after: switching an event off also drops the queued ones) */
     pad_events();
@@ -295,7 +221,17 @@ void Game_PadInit(void)
     SDL_LockMutex(pad_lock);
     rescan();
     SDL_UnlockMutex(pad_lock);
-    pad_scan_time = SDL_GetTicks();
+}
+
+int Game_PadEvent(const SDL_Event *event)
+{
+    if ((event->type != SDL_CONTROLLERDEVICEADDED) && (event->type != SDL_CONTROLLERDEVICEREMOVED)) return 0;
+    if (lock_pads())
+    {
+        rescan();
+        SDL_UnlockMutex(pad_lock);
+    }
+    return 1;
 }
 
 void Game_PadQuit(void)
@@ -310,8 +246,6 @@ void Game_PadQuit(void)
     SDL_DestroyMutex(pad_lock);
     pad_lock = NULL;
     SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
-    if (sdl3.library != NULL) SDL_UnloadObject(sdl3.library);
-    memset(&sdl3, 0, sizeof(sdl3));
 }
 
 int Game_PadCount(void)
@@ -512,14 +446,6 @@ void Game_PadTick(void)
 
     if (!pad_started) return;
     now = SDL_GetTicks();
-
-    if ((now - pad_scan_time) >= SCAN_MS)
-    {
-        pad_scan_time = now;
-        SDL_LockMutex(pad_lock);
-        rescan();
-        SDL_UnlockMutex(pad_lock);
-    }
 
     if (Game_OsdVisible())
     {
