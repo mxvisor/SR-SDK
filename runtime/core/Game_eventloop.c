@@ -68,8 +68,8 @@
  * events of the winapi layer) to the input queue of the window's thread
  * (Winapi_RouteEvent, WinApi-user32.c), whose message pump makes window messages
  * of them; the port's panel takes its own first.  On Android the game's thread
- * pumps and reads SDL's queue itself (GAME_WINAPI_GUEST_PUMP): the loop then
- * leaves everything from SDL_KEYDOWN up to the user events alone. */
+ * pumps (GAME_WINAPI_GUEST_PUMP) and this loop does not, but it is still the one
+ * that reads. */
 #ifndef GAME_CORE_CONSUMES_INPUT
 #ifdef GAME_WINAPI
 #define GAME_CORE_CONSUMES_INPUT 0
@@ -77,7 +77,7 @@
 #define GAME_CORE_CONSUMES_INPUT 1
 #endif
 #endif
-#if defined(GAME_WINAPI) && !GAME_WINAPI_GUEST_PUMP
+#if defined(GAME_WINAPI)
 #define WINAPI_ROUTES_INPUT 1
 #ifdef __cplusplus
 extern "C" {
@@ -498,37 +498,13 @@ void Game_Event_Loop(void)
     while (!Thread_Exited || !Thread_Exit)
     {
         run_requests(1);
-#if GAME_CORE_CONSUMES_INPUT || WINAPI_ROUTES_INPUT
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
-#else
-        /* SDL_FIRSTEVENT..SDL_WINDOWEVENT-1: quit, app.  The window events go to the
-         * winapi message pump (WM_ACTIVATEAPP, SC_MINIMIZE, close). */
-        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_WINDOWEVENT - 1);
-        if (NumEvents <= 0)
-        {
-            NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_USEREVENT, SDL_LASTEVENT);
-#ifdef GAME_WINAPI
-            /* the winapi layer's own user events (its timer callbacks, wake-ups of its message
-             * queue) are for the guest's message pump: they go back, or the timer of a game
-             * that is started again by its callback dies when this loop wins the race */
-            if ((NumEvents > 0) && (event.type == SDL_USEREVENT) && ((event.user.code == EC_WINAPI_WAKE)
-#if GAME_WINAPI_TIMER_EVENTS
-                || (event.user.code == EC_WINAPI_TIMER)
-#endif
-                ))
-            {
-                SDL_PushEvent(&event);
-                NumEvents = 0;
-            }
-#endif
-        }
-#endif
         if (NumEvents <= 0)
         {
             if (PumpEvents)
             {
                 PumpEvents = 0;
-#if !(defined(GAME_WINAPI) && defined(__ANDROID__))
+#if !(defined(GAME_WINAPI) && GAME_WINAPI_GUEST_PUMP)
                 SDL_PumpEvents();
 #endif
             }

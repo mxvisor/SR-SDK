@@ -90,12 +90,10 @@ static int timer_log(void)
     return on;
 }
 
-#if !GAME_WINAPI_GUEST_PUMP
 #ifdef __cplusplus
 extern "C"
 #endif
 void Winapi_InputPut(const SDL_Event *event);
-#endif
 
 static uint32_t SDLCALL winapi_timer_callback(uint32_t interval, void *userdata)
 {
@@ -110,12 +108,8 @@ static uint32_t SDLCALL winapi_timer_callback(uint32_t interval, void *userdata)
     event.user.code = EC_WINAPI_TIMER;
     event.user.data1 = (void *)(uintptr_t)GAME_PTR_TO_GUEST32(timer->callback);
     event.user.data2 = timer->user;
-#if !GAME_WINAPI_GUEST_PUMP
     /* straight into the input queue of the window's thread (WinApi-user32.c) */
     Winapi_InputPut(&event);
-#else
-    SDL_PushEvent(&event);
-#endif
 
     return (timer->event & TIME_PERIODIC) ? interval : 0;
 }

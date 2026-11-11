@@ -35,9 +35,9 @@ int Game_FlipThread(void *data);
  * thread that made it, and on X11 and Wayland a window call waits for the server's answer,
  * which a pump on another thread would take.  Game_RunOnMain runs fn(arg) there and waits
  * for it; on the main thread itself, before the loop runs and after it has ended, it calls
- * fn at once.  On Android the guest's message functions pump as well (GAME_WINAPI_GUEST_PUMP):
+ * fn at once.  On Android the guest's message functions pump instead (GAME_WINAPI_GUEST_PUMP):
  * SDL's pump parks the program on a pause and hands the GL context over on the thread that
- * draws. */
+ * draws.  The main thread reads the events either way. */
 #include "Game_defs.h"
 #include "Game_hooks.h"
 #ifndef GAME_WINAPI_GUEST_PUMP
