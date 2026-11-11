@@ -125,6 +125,30 @@ static run_request *run_head, *run_tail;
 static int run_open;
 static SDL_threadID run_main_thread;
 
+/* The loop sleeps in SDL_WaitEventTimeout until an event comes (input, the frames
+ * and the requests of the other threads push theirs), at most MAIN_WAIT_MS: it
+ * also looks at Thread_Exit and at the end of the game's thread.  Where the main
+ * thread must not pump (the winapi layer on Android, GAME_WINAPI_GUEST_PUMP: a
+ * wait of SDL pumps), it looks at the queue every millisecond instead. */
+#if defined(GAME_WINAPI) && GAME_WINAPI_GUEST_PUMP
+#define MAIN_WAITS 0
+#else
+#define MAIN_WAITS 1
+#endif
+#define MAIN_WAIT_MS 10
+
+static void run_wake(void)
+{
+#if MAIN_WAITS
+    SDL_Event event;
+
+    SDL_zero(event);
+    event.type = SDL_USEREVENT;
+    event.user.code = EC_RUN_ON_MAIN;
+    SDL_PushEvent(&event);
+#endif
+}
+
 void Game_RunOnMain(void (*fn)(void *arg), void *arg)
 {
     run_request request;
@@ -141,6 +165,9 @@ void Game_RunOnMain(void (*fn)(void *arg), void *arg)
             request.next = NULL;
             if (run_tail != NULL) run_tail->next = &request; else run_head = &request;
             run_tail = &request;
+            SDL_UnlockMutex(run_lock);
+            run_wake();
+            SDL_LockMutex(run_lock);
             while (!request.done) SDL_CondWait(run_cond, run_lock);
             SDL_UnlockMutex(run_lock);
             return;
@@ -413,7 +440,7 @@ void Game_Event_Loop(void)
     uint32_t AppMouseFocus;
     uint32_t AppInputFocus;
     uint32_t AppActive;
-    int FlipActive, NumEvents, PumpEvents;
+    int FlipActive;
 
     /* The close of the window arrives twice (SDL_WINDOWEVENT_CLOSE, then SDL_QUIT),
      * and the winapi message pump may have taken the first and set Thread_Exit: the
@@ -493,28 +520,21 @@ void Game_Event_Loop(void)
     /* read only where the core consumes input (GAME_CORE_CONSUMES_INPUT) */
     (void)AppMouseFocus; (void)AppInputFocus; (void)AppActive;
     FlipActive = 0;
-    PumpEvents = 1;
 
     while (!Thread_Exited || !Thread_Exit)
     {
         run_requests(1);
-        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
-        if (NumEvents <= 0)
+#if MAIN_WAITS
+        if (!SDL_WaitEventTimeout(&event, MAIN_WAIT_MS)) continue;
+#else
+        if (SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) <= 0)
         {
-            if (PumpEvents)
-            {
-                PumpEvents = 0;
-#if !(defined(GAME_WINAPI) && GAME_WINAPI_GUEST_PUMP)
-                SDL_PumpEvents();
-#endif
-            }
-            else
-            {
-                SDL_Delay(1);
-                PumpEvents = 1;
-            }
+            SDL_Delay(1);
             continue;
         }
+#endif
+        /* the wake-up of a request of Game_RunOnMain: taken at the top of the loop */
+        if ((event.type == SDL_USEREVENT) && (event.user.code == EC_RUN_ON_MAIN)) continue;
 
 #if GAME_CORE_CONSUMES_INPUT
         /* the port's panel first: its key, and all input while it is open */

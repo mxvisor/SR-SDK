@@ -63,6 +63,7 @@
 #define EC_INPUT_KEY 			(7)
 #define EC_SMK_FUNCTION			(8)
 #define EC_WINAPI_TIMER			(9)
+#define EC_RUN_ON_MAIN			(10)
 
 #if defined(__GNUC__)
     #define INLINE __inline__
