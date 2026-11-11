@@ -30,21 +30,24 @@ NORETURN void Game_StopMain(void);
 int Game_MainThread(void *data);
 int Game_TimerThread(void *data);
 int Game_FlipThread(void *data);
+/* any thread: one frame to the flip thread (Game_FlipThread), unless it has one already */
+void Game_RequestFlip(void);
 /* Stage 58: the host's main thread (Game_Event_Loop) is the one that pumps SDL's events,
  * and it makes and changes the windows: a window of Windows gets its messages only on the
  * thread that made it, and on X11 and Wayland a window call waits for the server's answer,
  * which a pump on another thread would take.  Game_RunOnMain runs fn(arg) there and waits
  * for it; on the main thread itself, before the loop runs and after it has ended, it calls
- * fn at once.  On Android the guest's message functions pump instead (GAME_WINAPI_GUEST_PUMP):
- * SDL's pump parks the program on a pause and hands the GL context over on the thread that
- * draws.  The main thread reads the events either way. */
+ * fn at once.  On Android the thread that draws pumps instead (GAME_GUEST_PUMP): the guest's
+ * message functions of a Win32 game, the flip thread of a DOS one (stage 61): SDL's pump parks
+ * the program on a pause and hands the GL context over on the thread that pumps.  The main
+ * thread reads the events either way. */
 #include "Game_defs.h"
 #include "Game_hooks.h"
-#ifndef GAME_WINAPI_GUEST_PUMP
+#ifndef GAME_GUEST_PUMP
 #if defined(__ANDROID__)
-#define GAME_WINAPI_GUEST_PUMP 1
+#define GAME_GUEST_PUMP 1
 #else
-#define GAME_WINAPI_GUEST_PUMP 0
+#define GAME_GUEST_PUMP 0
 #endif
 #endif
 void Game_RunOnMain(void (*fn)(void *arg), void *arg);

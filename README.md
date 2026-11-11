@@ -349,7 +349,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_CONFIG()` | the port's configuration, read after the options and the defaults of `Init_Display`/`Init_Audio`/`Init_Input` (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
 | `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
 | `GAME_DISPLAY_INIT()`, `GAME_DISPLAY_INIT2()`, `GAME_DISPLAY_CLEANUP()`, `GAME_DISPLAY_DESTROY()` | `core/display/pc.c`, the default display: after the defaults of `Init_Display`; at the end of `Init_Display2` (may change `Render_Width`, `Render_Height`, `Display_Flip_Procedure`); in `Cleanup_Display`; in `Game_Display_Destroy` |
-| `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip` (nonzero: the game showed the frame itself) |
+| `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip`, on the flip thread (nonzero: the game showed the frame itself) |
 | `GAME_DISPLAY_MAX_PIXELS` | the same: the most pixels of the frame, for a `Display_Flip_Procedure` that changes `Render_Width` and `Render_Height` as the game runs (default 1024×768) |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
@@ -376,7 +376,7 @@ with the same filter). Every window of a picture comes from `Game_WindowCreate` 
 `Game_thread.h`): it opens at the picture's own size at its aspect (320x240 for mode 13h, a Win32
 game's display mode), the player makes it bigger and the picture stays at its aspect inside, with
 black bars; a new mode resizes a window the player did not; `Display_Fullscreen=off|on` (the item
-Fullscreen of the panel) puts it on the whole screen. `Game_state.c` the variables
+Fullscreen of the panel) puts it on the whole screen; `Display_FPS=off|on` (the item FPS) shows the frames per second in the upper right corner. `Game_state.c` the variables
 of `Game_vars.h` and `Game_CleanState`, `Game_log.c` the log file of a Windows program without
 a console and the report of a crash. A game with its own window has its own `game/display/pc.c`.
 
@@ -407,7 +407,7 @@ in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 | `GAME_WINAPI_GDI` | 1: the game draws into DIB sections and copies them to its window with `BitBlt`/`StretchBlt` (`WinApi-gdi.c`: device contexts, bitmaps with their pixels in the guest's memory, palettes; the window's picture, its client size, shown through OpenGL) |
 | `GAME_WINAPI_WAIL32` | 1: the Miles Sound System for Win32 (`WinApi-wail32.c`, AIL 3.03, over `core/Game_ail.c`): samples from WAV images or raw PCM, played on the port's mixer, and XMIDI sequences (`soundfont.sf2` of the game directory); a game that loads `WAIL32.DLL` with `LoadLibrary` lists the functions in `GAME_EXTRA_PROCS` and its import shim |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
-| `GAME_WINAPI_GUEST_PUMP` | 1: the game's thread pumps SDL's events, as on Android (the default there; elsewhere 0: the host's main thread pumps); the host's main thread always reads them |
+| `GAME_GUEST_PUMP` | 1: the thread that draws pumps SDL's events (a Win32 game's own thread, a DOS game's flip thread), as on Android (the default there; elsewhere 0: the host's main thread pumps); the host's main thread always reads them |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |
 | `GAME_DINPUT_EXCLUSIVE_MOUSE` | defined: the game draws its cursor from DirectInput's deltas: the host pointer is hidden and held in the window from the first click in it until the focus is lost |
 | `GAME_WINAPI_ADDITIONAL_RESOLUTIONS` | 1: the game picks its mode from DirectDraw's list in its menu: the port's panel has the item of `Display_Additional_Resolutions` (seen at the next start) |

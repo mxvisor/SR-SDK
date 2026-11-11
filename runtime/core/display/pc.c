@@ -27,10 +27,14 @@
  * showing the game's video mode.
  *
  * The flip thread expands the frame (Render_Width x Render_Height, 8 bits) through
- * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip
- * shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, by
+ * the palette into 32-bit pixels (Display_Flip_Procedure); Game_Display_Flip,
+ * on the same thread, shows that through OpenGL (Game_GlPresentAspect), 4:3 inside the window, by
  * the nearest pixel, or through the 2D filter of Display_Shader (Game_GlFilter).
  * Without OpenGL there is no picture: Game_GlCreateContext says so and ends.
+ * The host's main thread makes the window and changes it; the OpenGL is the
+ * flip thread's alone, made at its first frame and deleted as it ends
+ * (Game_Display_FlipEnd), so the filters and the swap, which waits for the
+ * screen, never hold up the input (stage 61).
  * The window opens at the size of mode 13h on a 4:3 monitor, 320x240
  * (Game_WindowCreate); the player makes it bigger.
  * The palette is the game's DAC in 8-bit levels, set by the port 3C9h through
@@ -49,12 +53,12 @@
  *   GAME_DISPLAY_MAX_PIXELS             the most pixels the frame has, when the game's
  *                                       Display_Flip_Procedure changes Render_Width and
  *                                       Render_Height as it runs (else 1024x768)
- *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip: nonzero, the game showed
+ *   GAME_DISPLAY_FLIP()                 at the start of Game_Display_Flip (the flip thread): nonzero, the game showed
  *                                       the frame itself (another renderer)
  *   GAME_DISPLAY_DESTROY()              in Game_Display_Destroy, before the OpenGL goes
  * A game with a display altogether its own has its own game/display/pc.c with
  * Init_Display, Init_Display2, Config_Display, Cleanup_Display, Set_Palette_Value,
- * Game_Display_Create, Game_Display_Destroy and Game_Display_Flip. */
+ * Game_Display_Create, Game_Display_Destroy, Game_Display_Flip and Game_Display_FlipEnd. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,7 +82,7 @@
 #include "Game_hooks.h"
 
 #if !defined(GAME_WINAPI)
-/* The OpenGL of Game_Window: made and used on the main thread, which flips. */
+/* The OpenGL of Game_Window: made, used and deleted on the flip thread. */
 static SDL_GLContext gl_context;
 static GLuint gl_texture;
 static int gl_width, gl_height;
@@ -259,26 +263,13 @@ int Game_Display_Create(void)
         return -1;
     }
 
-#if !defined(GAME_WINAPI)
-    return gl_create();
-#else
     return 0;
-#endif
 }
 
 void Game_Display_Destroy(void)
 {
 #ifdef GAME_DISPLAY_DESTROY
     GAME_DISPLAY_DESTROY();
-#endif
-#if !defined(GAME_WINAPI)
-    if (gl_context != NULL)
-    {
-        if (gl_texture != 0) glDeleteTextures(1, &gl_texture);
-        SDL_GL_DeleteContext(gl_context);
-        gl_texture = 0;
-        gl_context = NULL;
-    }
 #endif
     if (Game_Window != NULL) SDL_DestroyWindow(Game_Window);
     free(Game_TextureData);
@@ -287,13 +278,30 @@ void Game_Display_Destroy(void)
     Game_TextureData = NULL;
 }
 
-/* Main thread only, on EC_DISPLAY_FLIP_FINISH. */
+/* The flip thread only, after Display_Flip_Procedure. */
 void Game_Display_Flip(void)
 {
 #ifdef GAME_DISPLAY_FLIP
     if (GAME_DISPLAY_FLIP()) return;
 #endif
 #if !defined(GAME_WINAPI)
-    if (gl_context != NULL) gl_flip();
+    if (Game_Window == NULL) return;
+    if ((gl_context == NULL) && (gl_create() != 0)) return;
+    gl_flip();
+#endif
+}
+
+/* The flip thread, as it ends: its OpenGL, before the main thread destroys the window. */
+void Game_Display_FlipEnd(void)
+{
+#if !defined(GAME_WINAPI)
+    if (gl_context != NULL)
+    {
+        if (gl_texture != 0) glDeleteTextures(1, &gl_texture);
+        SDL_GL_MakeCurrent(Game_Window, NULL);
+        SDL_GL_DeleteContext(gl_context);
+        gl_texture = 0;
+        gl_context = NULL;
+    }
 #endif
 }

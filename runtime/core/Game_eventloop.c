@@ -25,8 +25,8 @@
 
 /* The main thread's SDL event loop, the same in every game: it starts the
  * timer, flip and main threads, then handles the window's events, passes
- * input on (input.h), queues keyboard and mouse events for the guest, and runs
- * the flip on the guest's request.  It returns when the game's main thread has
+ * input on (input.h) and queues keyboard and mouse events for the guest; the
+ * frames are the flip thread's own (Game_RequestFlip, Game_thread.c).  It returns when the game's main thread has
  * finished and a stop was requested (the window closed, SDL_QUIT,
  * EC_PROGRAM_QUIT).
  *
@@ -36,7 +36,7 @@
  *   GAME_CLOSE_REQUEST()     non-zero when the game takes the close of the
  *                            window (SDL_QUIT) itself and quits on its own
  * The port's panel (Game_osd.h) sees the input first: its items are GAME_OSD_ITEMS().
- * and Game_Display_Flip() in the game's main.c draws one frame. */
+ * Game_Display_Flip() (display/pc.c) draws one frame, on the flip thread. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,8 +67,8 @@
  * hands what is the game's (keys, mouse, touch, the window's events, the user
  * events of the winapi layer) to the input queue of the window's thread
  * (Winapi_RouteEvent, WinApi-user32.c), whose message pump makes window messages
- * of them; the port's panel takes its own first.  On Android the game's thread
- * pumps (GAME_WINAPI_GUEST_PUMP) and this loop does not, but it is still the one
+ * of them; the port's panel takes its own first.  On Android the thread that
+ * draws pumps (GAME_GUEST_PUMP) and this loop does not, but it is still the one
  * that reads. */
 #ifndef GAME_CORE_CONSUMES_INPUT
 #ifdef GAME_WINAPI
@@ -125,17 +125,49 @@ static run_request *run_head, *run_tail;
 static int run_open;
 static SDL_threadID run_main_thread;
 
-/* The loop sleeps in SDL_WaitEventTimeout until an event comes (input, the frames
- * and the requests of the other threads push theirs), at most MAIN_WAIT_MS: it
- * also looks at Thread_Exit and at the end of the game's thread.  Where the main
- * thread must not pump (the winapi layer on Android, GAME_WINAPI_GUEST_PUMP: a
- * wait of SDL pumps), it looks at the queue every millisecond instead. */
-#if defined(GAME_WINAPI) && GAME_WINAPI_GUEST_PUMP
+/* The loop sleeps in SDL_WaitEventTimeout until an event comes (input, and the
+ * requests of the other threads push theirs), at most MAIN_WAIT_MS: it also looks
+ * at Thread_Exit and at the end of the game's thread.  Where the main thread must
+ * not pump (GAME_GUEST_PUMP, Android: a wait of SDL pumps), it reads the queue
+ * without a pump and sleeps on main_sem, which an event watch posts as an event
+ * comes.  SDL calls a watch just before the event is in the queue: after a wake
+ * that found nothing the next sleep is 1 ms. */
+#if GAME_GUEST_PUMP
 #define MAIN_WAITS 0
 #else
 #define MAIN_WAITS 1
 #endif
 #define MAIN_WAIT_MS 10
+
+#if !MAIN_WAITS
+static SDL_sem *main_sem;
+
+static int SDLCALL main_watch(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    (void)event;
+    if (SDL_SemValue(main_sem) == 0) SDL_SemPost(main_sem);
+    return 0;
+}
+
+static int main_next_event(SDL_Event *event)
+{
+    static int woken;
+
+    if (SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) > 0)
+    {
+        woken = 0;
+        return 1;
+    }
+    if (main_sem == NULL)
+    {
+        SDL_Delay(1);
+        return 0;
+    }
+    woken = (SDL_SemWaitTimeout(main_sem, woken ? 1 : MAIN_WAIT_MS) == 0);
+    return 0;
+}
+#endif
 
 static void run_wake(void)
 {
@@ -440,7 +472,6 @@ void Game_Event_Loop(void)
     uint32_t AppMouseFocus;
     uint32_t AppInputFocus;
     uint32_t AppActive;
-    int FlipActive;
 
     /* The close of the window arrives twice (SDL_WINDOWEVENT_CLOSE, then SDL_QUIT),
      * and the winapi message pump may have taken the first and set Thread_Exit: the
@@ -519,7 +550,10 @@ void Game_Event_Loop(void)
     AppActive = 1;
     /* read only where the core consumes input (GAME_CORE_CONSUMES_INPUT) */
     (void)AppMouseFocus; (void)AppInputFocus; (void)AppActive;
-    FlipActive = 0;
+#if !MAIN_WAITS
+    main_sem = SDL_CreateSemaphore(0);
+    if (main_sem != NULL) SDL_AddEventWatch(main_watch, NULL);
+#endif
 
     while (!Thread_Exited || !Thread_Exit)
     {
@@ -527,11 +561,7 @@ void Game_Event_Loop(void)
 #if MAIN_WAITS
         if (!SDL_WaitEventTimeout(&event, MAIN_WAIT_MS)) continue;
 #else
-        if (SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) <= 0)
-        {
-            SDL_Delay(1);
-            continue;
-        }
+        if (!main_next_event(&event)) continue;
 #endif
         /* the wake-up of a request of Game_RunOnMain: taken at the top of the loop */
         if ((event.type == SDL_USEREVENT) && (event.user.code == EC_RUN_ON_MAIN)) continue;
@@ -624,22 +654,6 @@ void Game_Event_Loop(void)
             case SDL_USEREVENT:
                 switch (event.user.code)
                 {
-                    case EC_DISPLAY_FLIP_START:
-                        if (!FlipActive && Game_FlipSem != NULL)
-                        {
-                            FlipActive = 1;
-                            SDL_SemPost(Game_FlipSem);
-                        }
-                        break;
-
-                    case EC_DISPLAY_FLIP_FINISH:
-                        if (FlipActive)
-                        {
-                            Game_Display_Flip();
-                            FlipActive = 0;
-                        }
-                        break;
-
                     case EC_PROGRAM_QUIT:
                         if (!Thread_Exit)
                         {
@@ -666,8 +680,17 @@ void Game_Event_Loop(void)
         SDL_WaitThread(MainThread, NULL);
         MainThread = NULL;
     }
+    /* the flip thread deletes its OpenGL before the window goes (Game_Display_FlipEnd) */
+    SDL_WaitThread(FlipThread, NULL);
+#if !MAIN_WAITS
+    if (main_sem != NULL)
+    {
+        SDL_DelEventWatch(main_watch, NULL);
+        SDL_DestroySemaphore(main_sem);
+        main_sem = NULL;
+    }
+#endif
     (void)TimerThread;
-    (void)FlipThread;
 
 #undef REQUEST_PROGRAM_EXIT
 }

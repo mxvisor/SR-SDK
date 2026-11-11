@@ -103,6 +103,8 @@ static int frame_width, frame_height;
 static char frame_output[64];
 static Uint32 fps_start;
 static int fps_frames, fps_tenths;
+/* the frames per second in the upper right corner (the item FPS, Display_FPS) */
+static volatile int fps_shown;
 
 void Game_OsdAddItem(const Game_OsdItem *entry)
 {
@@ -156,6 +158,19 @@ static int panel_key(SDL_Scancode scancode)
     return osd_key != SDL_SCANCODE_UNKNOWN && scancode == osd_key;
 }
 
+static void fps_item_press(void)
+{
+    fps_shown = !fps_shown;
+    osd_stamp++;
+}
+
+static const char *fps_item_state(void)
+{
+    return fps_shown ? "on" : "off";
+}
+
+static const Game_OsdItem fps_item = { "FPS", NULL, fps_item_press, fps_item_state, "Display_FPS", NULL };
+
 void Game_OsdInit(void)
 {
 #if defined(__ANDROID__)
@@ -166,6 +181,7 @@ void Game_OsdInit(void)
     Game_GlOsdItems();
 #endif
     Game_WindowOsdItems();
+    Game_OsdAddItem(&fps_item);
 #if defined(GAME_WINAPI_ADDITIONAL_RESOLUTIONS) && GAME_WINAPI_ADDITIONAL_RESOLUTIONS
     Winapi_DirectDrawOsdItems();
 #endif
@@ -184,6 +200,13 @@ int Game_OsdConfigKey(const char *key, const char *value)
 {
     SDL_Scancode scancode;
 
+    if (strcasecmp(key, "Display_FPS") == 0)
+    {
+        if (strcasecmp(value, "on") == 0) fps_shown = 1;
+        else if (strcasecmp(value, "off") == 0) fps_shown = 0;
+        else fprintf(stderr, GAME_NAME ": unknown Display_FPS: %s\n", value);
+        return 1;
+    }
     if (strcasecmp(key, "Display_OSD_Key") != 0) return 0;
     if (strcasecmp(value, "off") == 0) osd_key = SDL_SCANCODE_UNKNOWN;
     else if ((scancode = SDL_GetScancodeFromName(value)) != SDL_SCANCODE_UNKNOWN) osd_key = scancode;
@@ -435,7 +458,7 @@ void Game_OsdFrame(int width, int height, const char *output)
     {
         int tenths = (int)((fps_frames - 1) * 10000.0 / (now - fps_start) + 0.5);
 
-        if (tenths != fps_tenths && osd_shown) osd_stamp++;
+        if (tenths != fps_tenths && fps_shown) osd_stamp++;
         fps_tenths = tenths;
         fps_frames = 0;
     }
@@ -448,7 +471,7 @@ int Game_OsdVisible(void)
         message_live = 0;
         osd_stamp++;
     }
-    return osd_shown || message_live;
+    return osd_shown || message_live || fps_shown;
 }
 
 int Game_OsdStamp(void)
@@ -514,7 +537,7 @@ static void gamepad_text(char *text, size_t size)
     if (count > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", count - 1);
 }
 
-#define INFO_LINES 5
+#define INFO_LINES 4
 #define PANEL_LINES (INFO_LINES + OSD_ITEMS + 2)
 
 enum { LINE_INFO, LINE_ITEM, LINE_GREY, LINE_MESSAGE };
@@ -540,7 +563,6 @@ void Game_OsdDraw(SDL_Renderer *renderer, int width, int height)
                      (width * frame_height < height * frame_width) ? (double)width / frame_width : (double)height / frame_height);
         }
         else snprintf(lines[count++], sizeof(lines[0]), "Window %dx%d", width, height);
-        snprintf(lines[count++], sizeof(lines[0]), "FPS %d.%d", fps_tenths / 10, fps_tenths % 10);
         gamepad_text(lines[count++], sizeof(lines[0]));
         for (i = 0; i < count; i++) kind[i] = LINE_INFO;
         info = count;
@@ -588,6 +610,19 @@ void Game_OsdDraw(SDL_Renderer *renderer, int width, int height)
     drawn.W = width;
     drawn.H = height;
     SDL_AtomicUnlock(&message_lock);
+
+    if (fps_shown)
+    {
+        char fps[32];
+        int fps_w;
+
+        snprintf(fps, sizeof(fps), "FPS %d.%d", fps_tenths / 10, fps_tenths % 10);
+        fps_w = Game_UiTextWidth(fps, line_h) + 2 * pad;
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 176);
+        Game_UiFillRect(renderer, width - pad - fps_w, pad, fps_w, line_h + 2 * pad);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        Game_UiText(renderer, fps, width - fps_w, 2 * pad, line_h);
+    }
     if (count == 0) return;
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 176);

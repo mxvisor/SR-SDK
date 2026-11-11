@@ -55,8 +55,6 @@
 
 #define EC_DISPLAY_CREATE		(0)
 #define EC_DISPLAY_DESTROY		(1)
-#define EC_DISPLAY_FLIP_START	(2)
-#define EC_DISPLAY_FLIP_FINISH	(3)
 #define EC_PROGRAM_QUIT			(4)
 #define EC_MOUSE_MOVE			(5)
 #define EC_MOUSE_SET 			(6)

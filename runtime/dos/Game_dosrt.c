@@ -31,6 +31,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_memory.h"
+#include "Game_thread.h"
 #include "Game_vfs.h"
 #include "Game_sound.h"
 #include "Game_dosrt.h"
@@ -156,13 +157,7 @@ extern "C" void CCALL X86_WriteMemProcedure(uint32_t address, uint32_t size, uin
 
 void Game_DosRequestPresent(void)
 {
-    SDL_Event event;
-
-    event.type = SDL_USEREVENT;
-    event.user.code = EC_DISPLAY_FLIP_START;
-    event.user.data1 = NULL;
-    event.user.data2 = NULL;
-    SDL_PushEvent(&event);
+    Game_RequestFlip();
 }
 
 /* The shadows of the privileged registers and the descriptor table that the

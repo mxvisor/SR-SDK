@@ -716,7 +716,7 @@ void Winapi_StopMainIfExiting(void)
  * The message pump (find_event) makes window messages of them on the thread
  * that made the window; another thread of the game gets none (before there is
  * a window, any thread that asks).  The waits are on queue_cond, with the
- * posted messages.  On Android the game's thread pumps (GAME_WINAPI_GUEST_PUMP):
+ * posted messages.  On Android the game's thread pumps (GAME_GUEST_PUMP):
  * SDL's pump parks the program on a pause and hands over the GL context there;
  * it pumps when it finds no message and every 10 ms of a wait. */
 #define INPUT_QUEUE_SIZE 1024
@@ -777,7 +777,7 @@ static int queue_wait(unsigned int ms)
     uint32_t thread_id = GetCurrentThreadId_c();
     int reader = input_reader();
     int j, posted = 0;
-#if GAME_WINAPI_GUEST_PUMP
+#if GAME_GUEST_PUMP
     uint32_t start = SDL_GetTicks();
 #endif
 
@@ -793,7 +793,7 @@ static int queue_wait(unsigned int ms)
             }
         }
         if (posted || (reader && input_count != 0) || Thread_Exit) break;
-#if GAME_WINAPI_GUEST_PUMP
+#if GAME_GUEST_PUMP
         {
             uint32_t spent = SDL_GetTicks() - start;
 
@@ -827,8 +827,7 @@ int Winapi_RouteEvent(const SDL_Event *event)
             if (event->window.event == SDL_WINDOWEVENT_CLOSE) return 0;
             break;
         case SDL_USEREVENT:
-            if ((event->user.code == EC_DISPLAY_FLIP_START) || (event->user.code == EC_DISPLAY_FLIP_FINISH)
-                || (event->user.code == EC_PROGRAM_QUIT)) return 0;
+            if (event->user.code == EC_PROGRAM_QUIT) return 0;
             break;
     }
     Winapi_InputPut(event);
@@ -866,7 +865,7 @@ static int drop_event(SDL_Event *event)
 
 static int find_event(SDL_Event *event, int remove, int wait)
 {
-#if GAME_WINAPI_GUEST_PUMP
+#if GAME_GUEST_PUMP
     int pump_events;
 #endif
     int can_sleep;
@@ -883,7 +882,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
         return 1;
     }
 
-#if GAME_WINAPI_GUEST_PUMP
+#if GAME_GUEST_PUMP
     pump_events = 1;
 #endif
     can_sleep = (CPU_SleepMode != 2)?1:0;
@@ -917,7 +916,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 if (queue_wait(100)) return FIND_EVENT_WAKE;
                 continue;
             }
-#if GAME_WINAPI_GUEST_PUMP
+#if GAME_GUEST_PUMP
             else if (pump_events)
             {
                 pump_events = 0;

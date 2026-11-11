@@ -47,5 +47,7 @@ int Game_QueueKeyboardEvent(const SDL_Event *event);
 int Game_Display_Create(void);
 void Game_Display_Destroy(void);
 void Game_Display_Flip(void);
+/* on the flip thread, as it ends: what Game_Display_Flip made there */
+void Game_Display_FlipEnd(void);
 
 #endif /* _MAIN_H_INCLUDED_ */

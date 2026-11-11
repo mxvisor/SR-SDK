@@ -162,31 +162,55 @@ int Game_TimerThread(void *data)
     return 0;
 }
 
+/* 1 from a request of a frame until the flip thread has shown it: the requests
+ * in between are left out, as a frame the screen would not show anyway */
+static SDL_atomic_t flip_active;
+
+void Game_RequestFlip(void)
+{
+    if ((Game_FlipSem != NULL) && SDL_AtomicCAS(&flip_active, 0, 1)) SDL_SemPost(Game_FlipSem);
+}
+
+/* The thread of the frames: the game's frame through the palette into 32-bit
+ * pixels (Display_Flip_Procedure), then on the screen (Game_Display_Flip: the
+ * OpenGL of display/pc.c, made and used only here).  The host's main thread
+ * keeps the window and the input.  Where the thread that draws pumps SDL's
+ * events (GAME_GUEST_PUMP, Android) and the game is not a Win32 one (there the
+ * game's thread draws and pumps), it is this one, at least every 10 ms. */
+#if !defined(GAME_WINAPI) && GAME_GUEST_PUMP
+#define FLIP_PUMPS 1
+#else
+#define FLIP_PUMPS 0
+#endif
+
 int Game_FlipThread(void *data)
 {
-    SDL_Event event;
-
     (void)data;
 
     for (;;)
     {
+#if FLIP_PUMPS
+        SDL_PumpEvents();
+        if (SDL_SemWaitTimeout(Game_FlipSem, 10) != 0)
+        {
+            if (Thread_Exit) break;
+            continue;
+        }
+#else
         SDL_SemWait(Game_FlipSem);
+#endif
         if (Thread_Exit) break;
 
 #ifdef GAME_FLIP_HOOK
         GAME_FLIP_HOOK();
 #endif
         Display_Flip_Procedure(Game_FrameBuffer, Game_TextureData);
-
-        event.type = SDL_USEREVENT;
-        event.user.code = EC_DISPLAY_FLIP_FINISH;
-        event.user.data1 = NULL;
-        event.user.data2 = NULL;
-
-        SDL_PushEvent(&event);
+        Game_Display_Flip();
+        SDL_AtomicSet(&flip_active, 0);
 
         if (Thread_Exit) break;
     }
 
+    Game_Display_FlipEnd();
     return 0;
 }

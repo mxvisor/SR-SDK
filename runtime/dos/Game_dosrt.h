@@ -56,7 +56,7 @@ extern "C" {
 int Game_DosRuntimeInit(uint32_t first_free);
 void Game_DosRuntimeDeinit(void);
 
-/* Any thread: asks the main loop to show a frame (EC_DISPLAY_FLIP_START). */
+/* Any thread: asks the flip thread to show a frame (Game_RequestFlip). */
 void Game_DosRequestPresent(void);
 
 #ifdef __cplusplus
