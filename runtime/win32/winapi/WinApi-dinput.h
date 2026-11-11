@@ -55,9 +55,32 @@ uint32_t CCALL IDirectInputDevice_GetObjectInfo_c(uint32_t a0, uint32_t a1, uint
 uint32_t CCALL IDirectInputDevice_GetDeviceInfo_c(uint32_t a0, uint32_t a1);
 uint32_t CCALL IDirectInputDevice_RunControlPanel_c(uint32_t a0, uint32_t a1, uint32_t a2);
 uint32_t CCALL IDirectInputDevice_Initialize_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+uint32_t CCALL IDirectInputDevice2_CreateEffect_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4);
+uint32_t CCALL IDirectInputDevice2_EnumEffects_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+uint32_t CCALL IDirectInputDevice2_GetEffectInfo_c(uint32_t a0, uint32_t a1, uint32_t a2);
+uint32_t CCALL IDirectInputDevice2_GetForceFeedbackState_c(uint32_t a0, uint32_t a1);
+uint32_t CCALL IDirectInputDevice2_SendForceFeedbackCommand_c(uint32_t a0, uint32_t a1);
+uint32_t CCALL IDirectInputDevice2_EnumCreatedEffectObjects_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+uint32_t CCALL IDirectInputDevice2_Escape_c(uint32_t a0, uint32_t a1);
+uint32_t CCALL IDirectInputDevice2_Poll_c(uint32_t a0);
+uint32_t CCALL IDirectInputDevice2_SendDeviceData_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4);
+uint32_t CCALL IDirectInputEffect_QueryInterface_c(uint32_t a0, uint32_t a1, uint32_t a2);
+uint32_t CCALL IDirectInputEffect_AddRef_c(uint32_t a0);
+uint32_t CCALL IDirectInputEffect_Release_c(uint32_t a0);
+uint32_t CCALL IDirectInputEffect_Initialize_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+uint32_t CCALL IDirectInputEffect_GetEffectGuid_c(uint32_t a0, uint32_t a1);
+uint32_t CCALL IDirectInputEffect_GetParameters_c(uint32_t a0, uint32_t a1, uint32_t a2);
+uint32_t CCALL IDirectInputEffect_SetParameters_c(uint32_t a0, uint32_t a1, uint32_t a2);
+uint32_t CCALL IDirectInputEffect_Start_c(uint32_t a0, uint32_t a1, uint32_t a2);
+uint32_t CCALL IDirectInputEffect_Stop_c(uint32_t a0);
+uint32_t CCALL IDirectInputEffect_GetEffectStatus_c(uint32_t a0, uint32_t a1);
+uint32_t CCALL IDirectInputEffect_Download_c(uint32_t a0);
+uint32_t CCALL IDirectInputEffect_Unload_c(uint32_t a0);
+uint32_t CCALL IDirectInputEffect_Escape_c(uint32_t a0, uint32_t a1);
 
 extern uint32_t IDirectInputVtbl_asm2c;
 extern uint32_t IDirectInputDeviceVtbl_asm2c;
+extern uint32_t IDirectInputEffectVtbl_asm2c;
 
 /* whether the DirectInput keyboard device exists: it then owns the keyboard */
 uint32_t CCALL winapi_is_dinput_active(void);

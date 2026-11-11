@@ -22,6 +22,8 @@
 
 ;;
 ;;  DirectInput (dinput.dll) COM objects: stdcall vtable bridges into WinApi-dinput.c.
+;;  Every device has the vtable of IDirectInputDevice2 (that of IDirectInputDevice
+;;  and the force feedback after it); an effect has that of IDirectInputEffect.
 ;;
 
 include llasm.llinc
@@ -262,6 +264,205 @@ proc IDirectInputDevice_Initialize_asm2c public
 endp ; end procedure IDirectInputDevice_Initialize_asm2c
 
 
+func IDirectInputDevice2_CreateEffect_c a0, a1, a2, a3, a4
+proc IDirectInputDevice2_CreateEffect_asm2c public
+
+        Call_Asm_Stack5 IDirectInputDevice2_CreateEffect_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectInputDevice2_CreateEffect_asm2c
+
+func IDirectInputDevice2_EnumEffects_c a0, a1, a2, a3
+proc IDirectInputDevice2_EnumEffects_asm2c public
+
+        Call_Asm_Stack4 IDirectInputDevice2_EnumEffects_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputDevice2_EnumEffects_asm2c
+
+func IDirectInputDevice2_GetEffectInfo_c a0, a1, a2
+proc IDirectInputDevice2_GetEffectInfo_asm2c public
+
+        Call_Asm_Stack3 IDirectInputDevice2_GetEffectInfo_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputDevice2_GetEffectInfo_asm2c
+
+func IDirectInputDevice2_GetForceFeedbackState_c a0, a1
+proc IDirectInputDevice2_GetForceFeedbackState_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice2_GetForceFeedbackState_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice2_GetForceFeedbackState_asm2c
+
+func IDirectInputDevice2_SendForceFeedbackCommand_c a0, a1
+proc IDirectInputDevice2_SendForceFeedbackCommand_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice2_SendForceFeedbackCommand_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice2_SendForceFeedbackCommand_asm2c
+
+func IDirectInputDevice2_EnumCreatedEffectObjects_c a0, a1, a2, a3
+proc IDirectInputDevice2_EnumCreatedEffectObjects_asm2c public
+
+        Call_Asm_Stack4 IDirectInputDevice2_EnumCreatedEffectObjects_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputDevice2_EnumCreatedEffectObjects_asm2c
+
+func IDirectInputDevice2_Escape_c a0, a1
+proc IDirectInputDevice2_Escape_asm2c public
+
+        Call_Asm_Stack2 IDirectInputDevice2_Escape_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputDevice2_Escape_asm2c
+
+func IDirectInputDevice2_Poll_c a0
+proc IDirectInputDevice2_Poll_asm2c public
+
+        Call_Asm_Stack1 IDirectInputDevice2_Poll_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputDevice2_Poll_asm2c
+
+func IDirectInputDevice2_SendDeviceData_c a0, a1, a2, a3, a4
+proc IDirectInputDevice2_SendDeviceData_asm2c public
+
+        Call_Asm_Stack5 IDirectInputDevice2_SendDeviceData_c
+
+        Call_Asm_Return 5
+
+endp ; end procedure IDirectInputDevice2_SendDeviceData_asm2c
+
+func IDirectInputEffect_QueryInterface_c a0, a1, a2
+proc IDirectInputEffect_QueryInterface_asm2c public
+
+        Call_Asm_Stack3 IDirectInputEffect_QueryInterface_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputEffect_QueryInterface_asm2c
+
+func IDirectInputEffect_AddRef_c a0
+proc IDirectInputEffect_AddRef_asm2c public
+
+        Call_Asm_Stack1 IDirectInputEffect_AddRef_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputEffect_AddRef_asm2c
+
+func IDirectInputEffect_Release_c a0
+proc IDirectInputEffect_Release_asm2c public
+
+        Call_Asm_Stack1 IDirectInputEffect_Release_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputEffect_Release_asm2c
+
+func IDirectInputEffect_Initialize_c a0, a1, a2, a3
+proc IDirectInputEffect_Initialize_asm2c public
+
+        Call_Asm_Stack4 IDirectInputEffect_Initialize_c
+
+        Call_Asm_Return 4
+
+endp ; end procedure IDirectInputEffect_Initialize_asm2c
+
+func IDirectInputEffect_GetEffectGuid_c a0, a1
+proc IDirectInputEffect_GetEffectGuid_asm2c public
+
+        Call_Asm_Stack2 IDirectInputEffect_GetEffectGuid_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputEffect_GetEffectGuid_asm2c
+
+func IDirectInputEffect_GetParameters_c a0, a1, a2
+proc IDirectInputEffect_GetParameters_asm2c public
+
+        Call_Asm_Stack3 IDirectInputEffect_GetParameters_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputEffect_GetParameters_asm2c
+
+func IDirectInputEffect_SetParameters_c a0, a1, a2
+proc IDirectInputEffect_SetParameters_asm2c public
+
+        Call_Asm_Stack3 IDirectInputEffect_SetParameters_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputEffect_SetParameters_asm2c
+
+func IDirectInputEffect_Start_c a0, a1, a2
+proc IDirectInputEffect_Start_asm2c public
+
+        Call_Asm_Stack3 IDirectInputEffect_Start_c
+
+        Call_Asm_Return 3
+
+endp ; end procedure IDirectInputEffect_Start_asm2c
+
+func IDirectInputEffect_Stop_c a0
+proc IDirectInputEffect_Stop_asm2c public
+
+        Call_Asm_Stack1 IDirectInputEffect_Stop_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputEffect_Stop_asm2c
+
+func IDirectInputEffect_GetEffectStatus_c a0, a1
+proc IDirectInputEffect_GetEffectStatus_asm2c public
+
+        Call_Asm_Stack2 IDirectInputEffect_GetEffectStatus_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputEffect_GetEffectStatus_asm2c
+
+func IDirectInputEffect_Download_c a0
+proc IDirectInputEffect_Download_asm2c public
+
+        Call_Asm_Stack1 IDirectInputEffect_Download_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputEffect_Download_asm2c
+
+func IDirectInputEffect_Unload_c a0
+proc IDirectInputEffect_Unload_asm2c public
+
+        Call_Asm_Stack1 IDirectInputEffect_Unload_c
+
+        Call_Asm_Return 1
+
+endp ; end procedure IDirectInputEffect_Unload_asm2c
+
+func IDirectInputEffect_Escape_c a0, a1
+proc IDirectInputEffect_Escape_asm2c public
+
+        Call_Asm_Stack2 IDirectInputEffect_Escape_c
+
+        Call_Asm_Return 2
+
+endp ; end procedure IDirectInputEffect_Escape_asm2c
+
+
 datasegment dinput_data constant
 
 dlabel IDirectInputVtbl_asm2c global
@@ -293,5 +494,29 @@ daddr IDirectInputDevice_GetObjectInfo_asm2c
 daddr IDirectInputDevice_GetDeviceInfo_asm2c
 daddr IDirectInputDevice_RunControlPanel_asm2c
 daddr IDirectInputDevice_Initialize_asm2c
+daddr IDirectInputDevice2_CreateEffect_asm2c
+daddr IDirectInputDevice2_EnumEffects_asm2c
+daddr IDirectInputDevice2_GetEffectInfo_asm2c
+daddr IDirectInputDevice2_GetForceFeedbackState_asm2c
+daddr IDirectInputDevice2_SendForceFeedbackCommand_asm2c
+daddr IDirectInputDevice2_EnumCreatedEffectObjects_asm2c
+daddr IDirectInputDevice2_Escape_asm2c
+daddr IDirectInputDevice2_Poll_asm2c
+daddr IDirectInputDevice2_SendDeviceData_asm2c
+
+dlabel IDirectInputEffectVtbl_asm2c global
+daddr IDirectInputEffect_QueryInterface_asm2c
+daddr IDirectInputEffect_AddRef_asm2c
+daddr IDirectInputEffect_Release_asm2c
+daddr IDirectInputEffect_Initialize_asm2c
+daddr IDirectInputEffect_GetEffectGuid_asm2c
+daddr IDirectInputEffect_GetParameters_asm2c
+daddr IDirectInputEffect_SetParameters_asm2c
+daddr IDirectInputEffect_Start_asm2c
+daddr IDirectInputEffect_Stop_asm2c
+daddr IDirectInputEffect_GetEffectStatus_asm2c
+daddr IDirectInputEffect_Download_asm2c
+daddr IDirectInputEffect_Unload_asm2c
+daddr IDirectInputEffect_Escape_asm2c
 
 endd
