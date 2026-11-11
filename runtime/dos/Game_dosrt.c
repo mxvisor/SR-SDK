@@ -39,6 +39,7 @@
 #include "Game_dosmem.h"
 #include "Game_dosfile.h"
 #include "Game_doskbd.h"
+#include "Game_dosjoy.h"
 #include "Game_dospit.h"
 #include "Game_dosvga.h"
 #include "Game_hooks.h"
@@ -76,10 +77,10 @@ static uint32_t port_in(uint16_t port)
 #endif
     if (port == 0x40) return Game_DosPitIn(port);
     if (port == 0x60 || port == 0x64) return Game_DosKbdPort(port);
-    /* the game port with no joystick: the bus floats high, so the axes never
-     * time out (bits 0-3) and no button is pressed (bits 4-7, active low);
-     * zero would be a joystick whose four buttons are all held down */
-    if (port == 0x201) return 0xff;
+    /* the game port: FFh without a pad (the bus floats high, so the axes never
+     * time out and no button is pressed; zero would be a joystick whose four
+     * buttons are all held down) */
+    if (port == 0x201) return Game_DosJoyIn();
     if (Game_DosVgaIn(port, &value)) return value;
     return 0;
 }
@@ -123,7 +124,8 @@ extern "C" void CCALL X86_OutPortProcedure(uint16_t port, uint32_t size, uint32_
 #ifdef GAME_DOS_SOUNDBLASTER
     if (Game_DosSbOut(port, value)) return;
 #endif
-    if (port == 0x40 || port == 0x43) Game_DosPitOut(port, (uint8_t)value);
+    if (port == 0x201) Game_DosJoyOut();
+    else if (port == 0x40 || port == 0x43) Game_DosPitOut(port, (uint8_t)value);
     else Game_DosVgaOut(port, (uint8_t)value);
 }
 
