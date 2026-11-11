@@ -62,17 +62,34 @@
 #define GAME_CLOSE_REQUEST() 0
 #endif
 
-/* Who takes keyboard and mouse events out of SDL's queue: on win32 with the
- * winapi layer its message pump (find_event in WinApi-user32.c), which runs
- * on the guest's thread; two readers would split the events between them.
- * The loop below then leaves everything from SDL_KEYDOWN up to the user events
- * (keys, mouse, joystick, controller, finger, text, drops) alone. */
+/* Who takes keyboard and mouse events out of SDL's queue: the loop below, except
+ * on win32 with the winapi layer.  There the loop reads the whole queue too and
+ * hands what is the game's (keys, mouse, touch, the window's events, the user
+ * events of the winapi layer) to the input queue of the window's thread
+ * (Winapi_RouteEvent, WinApi-user32.c), whose message pump makes window messages
+ * of them; the port's panel takes its own first.  On Android the game's thread
+ * pumps and reads SDL's queue itself (GAME_WINAPI_GUEST_PUMP): the loop then
+ * leaves everything from SDL_KEYDOWN up to the user events alone. */
 #ifndef GAME_CORE_CONSUMES_INPUT
 #ifdef GAME_WINAPI
 #define GAME_CORE_CONSUMES_INPUT 0
 #else
 #define GAME_CORE_CONSUMES_INPUT 1
 #endif
+#endif
+#if defined(GAME_WINAPI) && !GAME_WINAPI_GUEST_PUMP
+#define WINAPI_ROUTES_INPUT 1
+#ifdef __cplusplus
+extern "C" {
+#endif
+int Winapi_RouteEvent(const SDL_Event *event);
+int Winapi_DialogOpen(void);
+int Winapi_MenuBarOpen(void);
+#ifdef __cplusplus
+}
+#endif
+#else
+#define WINAPI_ROUTES_INPUT 0
 #endif
 
 int Game_QueueKeyboardEvent(const SDL_Event *event)
@@ -481,7 +498,7 @@ void Game_Event_Loop(void)
     while (!Thread_Exited || !Thread_Exit)
     {
         run_requests(1);
-#if GAME_CORE_CONSUMES_INPUT
+#if GAME_CORE_CONSUMES_INPUT || WINAPI_ROUTES_INPUT
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
 #else
         /* SDL_FIRSTEVENT..SDL_WINDOWEVENT-1: quit, app.  The window events go to the
@@ -526,8 +543,15 @@ void Game_Event_Loop(void)
 #if GAME_CORE_CONSUMES_INPUT
         /* the port's panel first: its key, and all input while it is open */
         if (Game_OsdEvent(&event)) continue;
+#elif WINAPI_ROUTES_INPUT
+        /* the panel first, unless a dialog or the window menu of the game is open:
+         * those keep their input (they run on the window's thread) */
+        if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen() && Game_OsdEvent(&event)) continue;
 #endif
         if (Handle_Input_Event(&event)) continue;
+#if WINAPI_ROUTES_INPUT
+        if (Winapi_RouteEvent(&event)) continue;
+#endif
 
         switch (event.type)
         {

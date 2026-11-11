@@ -616,6 +616,7 @@ static winapi_posted_message posted_queue[WINAPI_MSG_QUEUE_SIZE];
 static int posted_head;
 static int posted_count;
 static SDL_mutex *posted_lock;
+static SDL_cond *queue_cond;        /* a posted message or an input event has come */
 static SDL_atomic_t posted_lock_state = { 0 };
 
 static SDL_mutex *posted_get_lock(void)
@@ -628,6 +629,7 @@ static SDL_mutex *posted_get_lock(void)
         if ((state == 0) && SDL_AtomicCAS(&posted_lock_state, 0, 1))
         {
             posted_lock = SDL_CreateMutex();
+            queue_cond = SDL_CreateCond();
             SDL_AtomicSet(&posted_lock_state, 2);
             return posted_lock;
         }
@@ -646,12 +648,16 @@ static uint32_t message_time_now(void)
 
 static void posted_wake(void)
 {
+#if !GAME_WINAPI_GUEST_PUMP
+    SDL_CondBroadcast(queue_cond);
+#else
     SDL_Event event;
 
     SDL_zero(event);
     event.type = SDL_USEREVENT;
     event.user.code = EC_WINAPI_WAKE;
     SDL_PushEvent(&event);
+#endif
 }
 
 static int posted_put(uint32_t target, const msg *m)
@@ -719,17 +725,113 @@ void Winapi_StopMainIfExiting(void)
 extern SDL_sem *Game_FlipSem;
 
 #if !GAME_WINAPI_GUEST_PUMP
-/* sleeps until an event is queued (at most ms): Game_Event_Loop, on the host's main
- * thread, is the one that pumps; a pump from a game thread races its window calls */
-static void wait_queue(unsigned int ms)
-{
-    SDL_Event ev;
+/* The input queue of the window's thread, as the system input thread of Windows
+ * fills it.  Game_Event_Loop, on the host's main thread, is the only one that
+ * pumps and reads SDL's queue: what is the game's it puts here as it came
+ * (Winapi_RouteEvent), and the timer of timeSetEvent puts its ticks here too.
+ * The message pump (find_event) makes window messages of them on the thread
+ * that made the window; another thread of the game gets none (before there is
+ * a window, any thread that asks).  The waits are on queue_cond, with the
+ * posted messages. */
+#define INPUT_QUEUE_SIZE 1024
 
-    while (ms-- != 0)
+static SDL_Event input_queue[INPUT_QUEUE_SIZE];
+static int input_head;
+static int input_count;
+
+static int input_reader(void)
+{
+    return (window_thread_id == 0) || (GetCurrentThreadId_c() == window_thread_id);
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_InputPut(const SDL_Event *event)
+{
+    SDL_mutex *lock = posted_get_lock();
+
+    SDL_LockMutex(lock);
+    if (input_count < INPUT_QUEUE_SIZE)
     {
-        if (SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) != 0) return;
-        SDL_Delay(1);
+        input_queue[(input_head + input_count) % INPUT_QUEUE_SIZE] = *event;
+        input_count++;
     }
+    SDL_CondBroadcast(queue_cond);
+    SDL_UnlockMutex(lock);
+}
+
+/* remove = 0 peeks: 1 and the first event, or 0 */
+static int input_take(SDL_Event *event, int remove)
+{
+    SDL_mutex *lock = posted_get_lock();
+    int found = 0;
+
+    if (!input_reader()) return 0;
+    SDL_LockMutex(lock);
+    if (input_count != 0)
+    {
+        *event = input_queue[input_head];
+        if (remove)
+        {
+            input_head = (input_head + 1) % INPUT_QUEUE_SIZE;
+            input_count--;
+        }
+        found = 1;
+    }
+    SDL_UnlockMutex(lock);
+    return found;
+}
+
+/* sleeps until there is an input event or a posted message for this thread, at most
+ * ms; 1 when a posted message is waiting */
+static int queue_wait(unsigned int ms)
+{
+    SDL_mutex *lock = posted_get_lock();
+    uint32_t thread_id = GetCurrentThreadId_c();
+    int reader = input_reader();
+    int j, posted = 0;
+
+    SDL_LockMutex(lock);
+    for (;;)
+    {
+        for (j = 0; j < posted_count; j++)
+        {
+            if (posted_queue[(posted_head + j) % WINAPI_MSG_QUEUE_SIZE].target == thread_id)
+            {
+                posted = 1;
+                break;
+            }
+        }
+        if (posted || (reader && input_count != 0) || Thread_Exit) break;
+        if (SDL_CondWaitTimeout(queue_cond, lock, ms) != 0) break;
+    }
+    SDL_UnlockMutex(lock);
+    return posted;
+}
+
+/* an event of SDL that Game_Event_Loop does not keep: 1 when it is the game's
+ * (put in the input queue), 0 for the loop's own (the close of the program,
+ * its frames) */
+#ifdef __cplusplus
+extern "C"
+#endif
+int Winapi_RouteEvent(const SDL_Event *event)
+{
+    switch (event->type)
+    {
+        case SDL_QUIT:
+            return 0;
+        case SDL_WINDOWEVENT:
+            if (event->window.event == SDL_WINDOWEVENT_CLOSE) return 0;
+            break;
+        case SDL_USEREVENT:
+            if ((event->user.code == EC_DISPLAY_FLIP_START) || (event->user.code == EC_DISPLAY_FLIP_FINISH)
+                || (event->user.code == EC_PROGRAM_QUIT)) return 0;
+            break;
+    }
+    Winapi_InputPut(event);
+    return 1;
 }
 #endif
 
@@ -754,6 +856,16 @@ int Winapi_CloseRequest(void)
         return 1;
     }
     return (SDL_GetTicks() - asked_at < 1000) ? 1 : 0;
+}
+
+/* takes out the event a peek has looked at */
+static int drop_event(SDL_Event *event)
+{
+#if !GAME_WINAPI_GUEST_PUMP
+    return input_take(event, 1);
+#else
+    return SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) > 0;
+#endif
 }
 
 static int find_event(SDL_Event *event, int remove, int wait)
@@ -787,6 +899,10 @@ static int find_event(SDL_Event *event, int remove, int wait)
         SDL_Window *window;
 
 
+#if !GAME_WINAPI_GUEST_PUMP
+        /* the panel of the port took its events on the host's main thread */
+        num_events = input_take(event, remove);
+#else
         num_events = SDL_PeepEvents(event, 1, (remove)?SDL_GETEVENT:SDL_PEEKEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
         if (num_events < 0) return 0; // error
         if ((num_events > 0) && (event->type == SDL_USEREVENT) && (event->user.code == EC_WINAPI_WAKE))
@@ -804,11 +920,12 @@ static int find_event(SDL_Event *event, int remove, int wait)
             if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
             continue;
         }
+#endif
         if ((num_events > 0) && (Winapi_DialogEvent(event) || Winapi_MenuBarEvent(event)))
         {
             /* a dialog or the window menu took it (WinApi-ui.h); when it has closed,
              * the caller looks at its queue again */
-            if (!remove) SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+            if (!remove) drop_event(event);
             if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen()) return FIND_EVENT_WAKE;
             continue;
         }
@@ -822,7 +939,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
                 /* not for ever: a close of the window sets Thread_Exit and may send no
                  * further event to wake this thread (under Wine it does not) */
 #if !GAME_WINAPI_GUEST_PUMP
-                wait_queue(100);
+                if (queue_wait(100)) return FIND_EVENT_WAKE;
 #else
                 SDL_WaitEventTimeout(NULL, 100);
 #endif
@@ -1170,8 +1287,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
 
         if (!remove)
         {
-            num_events = SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
-            if (num_events <= 0) return 0; // error or no events
+            if (!drop_event(event)) return 0; // error or no events
         }
     };
 }
@@ -2904,7 +3020,7 @@ uint32_t CCALL WaitMessage_c(void)
      * message queue of its own: the program is woken up regularly and finds
      * the repaint request (the port's own WM_PAINT) in PeekMessage. */
 #if !GAME_WINAPI_GUEST_PUMP
-    wait_queue(33);
+    queue_wait(33);
     if (Thread_Exit) Game_StopMain();
 #else
     while (!SDL_WaitEventTimeout(NULL, 33))
