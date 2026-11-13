@@ -27,14 +27,17 @@
  * runs in the SDL_mixer music hook, so it needs the audio device
  * (Game_AudioInit) and costs nothing while no MIDI is playing. */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <SDL.h>
 #include <SDL_mixer.h>
 
 #include "Game_midi.h"
+#include "Game_osd.h"
 #include "Game_vars.h"
 #include "Game_vfs.h"
 #include "tsf.h"
@@ -43,6 +46,9 @@
 extern "C" int Game_TsfChannelNoteOn(tsf *f, int channel, int key, float vel);
 extern "C" void Game_TsfLevelRegions(tsf *f);
 extern "C" int Game_TsfChannelMidiControl(tsf *f, int channel, int controller, int value);
+extern "C" void Game_TsfRenderSends(tsf *f, float *out, float *reverb, float *chorus, int samples,
+                                    const float *reverb_level, const float *chorus_level);
+#define GAME_TSF_SEND_FRAMES 256
 
 #define MIDI_LOG(...) do { if (getenv("GAME_MIDI_LOG") != NULL) fprintf(stderr, "midi: " __VA_ARGS__); } while (0)
 
@@ -298,6 +304,230 @@ done:
     return file.data;
 }
 
+/* --- the effects: reverb and chorus (the mod Midi_Effects) ---
+ *
+ * TinySoundFont has none.  The General MIDI synthesizers have both, and the
+ * MIDI driver of the originals played on one of them (or on the synthesizer
+ * of the sound card); fluidsynth has them on by default, and they are made
+ * here to sound as its own (2.x, its default settings): the reverb is Freeverb
+ * with no damping, its decay, level and width fitted to fluidsynth's (whose
+ * reverb is no Freeverb any more); the chorus has 3 voices, 0.3 Hz and 8 ms
+ * deep, and fluidsynth's width 10 (each side less much of the other).  Each
+ * channel sends to them as the default modulators of SoundFont 2 have it:
+ * 20 % at the controller 127, of CC91 (reverb, 40 by default, as fluidsynth
+ * and the GM synthesizers start it) and CC93 (chorus, 0 by default).  The
+ * send generators of the regions are not taken: TinySoundFont drops them. */
+
+#define FX_COMBS 8
+#define FX_ALLPASSES 4
+#define FX_SPREAD 23                    /* the right channel's tunings are longer */
+#define FX_CHORUS_VOICES 3
+/* fitted to fluidsynth 2.6 on the same music: one note dies away to -60 dB
+ * in 2.7 s (the feedback of the combs; Freeverb's room 0.2 has 0.8 s); on a
+ * song the reverb alone is 23.5 dB under the dry part with its sides
+ * correlated 0.3 (the width), and the chorus at CC93 127 8 dB under it */
+#define FX_FEEDBACK 0.92f
+#define FX_WIDTH 0.65f
+#define FX_REVERB_GAIN 0.33f
+#define FX_CHORUS_GAIN 0.48f
+
+static const int fx_comb_tuning[FX_COMBS] = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 };
+static const int fx_allpass_tuning[FX_ALLPASSES] = { 556, 441, 341, 225 };
+
+typedef struct {
+    float *buffer;
+    int size, index;
+    float store;
+} fx_comb;
+
+typedef struct {
+    float *buffer;
+    int size, index;
+} fx_allpass;
+
+static SDL_atomic_t midi_effects;       /* Midi_Effects: 1 on */
+static int fx_running;                  /* the audio thread's: the effects were on at the last block */
+static int fx_ready;
+static fx_comb fx_combs[2][FX_COMBS];
+static fx_allpass fx_allpasses[2][FX_ALLPASSES];
+static float fx_feedback, fx_damp, fx_wet1, fx_wet2;
+static float *fx_chorus_line;
+static int fx_chorus_size, fx_chorus_index;
+static double fx_chorus_phase, fx_chorus_step;
+static float fx_chorus_base, fx_chorus_depth;
+static const float fx_chorus_wet1 = (10.0f / 2.0f + 0.5f) / (1.0f + 10.0f * 0.2f);
+static const float fx_chorus_wet2 = ((1.0f - 10.0f) / 2.0f) / (1.0f + 10.0f * 0.2f);
+static float midi_reverb_send[16], midi_chorus_send[16];   /* the channels' sends */
+
+static void fx_set_send(int ch, int controller, int value)
+{
+    if (controller == 91) midi_reverb_send[ch] = 0.2f * value / 127.0f;
+    else midi_chorus_send[ch] = 0.2f * value / 127.0f;
+}
+
+/* the sends as a synthesizer starts (and as a reset leaves them) */
+static void fx_reset_sends(void)
+{
+    int ch;
+
+    for (ch = 0; ch < 16; ch++)
+    {
+        fx_set_send(ch, 91, 40);
+        fx_set_send(ch, 93, 0);
+    }
+}
+
+static void fx_clear(void)
+{
+    int c, i;
+
+    for (c = 0; c < 2; c++)
+    {
+        for (i = 0; i < FX_COMBS; i++)
+        {
+            memset(fx_combs[c][i].buffer, 0, sizeof(float) * fx_combs[c][i].size);
+            fx_combs[c][i].store = 0.0f;
+        }
+        for (i = 0; i < FX_ALLPASSES; i++) memset(fx_allpasses[c][i].buffer, 0, sizeof(float) * fx_allpasses[c][i].size);
+    }
+    memset(fx_chorus_line, 0, sizeof(float) * fx_chorus_size);
+}
+
+static int fx_init(int rate)
+{
+    double scale = rate / 44100.0;
+    int c, i;
+    float wet = 0.9f * 3.0f * FX_REVERB_GAIN;   /* the level times Freeverb's scale of the wet */
+    float width = FX_WIDTH;
+
+    if (fx_ready) return 1;
+    for (c = 0; c < 2; c++)
+    {
+        for (i = 0; i < FX_COMBS; i++)
+        {
+            int size = (int)((fx_comb_tuning[i] + c * FX_SPREAD) * scale);
+            if (size < 1) size = 1;
+            fx_combs[c][i].buffer = (float *)calloc(size, sizeof(float));
+            fx_combs[c][i].size = size;
+            if (fx_combs[c][i].buffer == NULL) return 0;
+        }
+        for (i = 0; i < FX_ALLPASSES; i++)
+        {
+            int size = (int)((fx_allpass_tuning[i] + c * FX_SPREAD) * scale);
+            if (size < 1) size = 1;
+            fx_allpasses[c][i].buffer = (float *)calloc(size, sizeof(float));
+            fx_allpasses[c][i].size = size;
+            if (fx_allpasses[c][i].buffer == NULL) return 0;
+        }
+    }
+    fx_feedback = FX_FEEDBACK;
+    fx_damp = 0.0f;
+    fx_wet1 = wet * (width / 2.0f + 0.5f);
+    fx_wet2 = wet * ((1.0f - width) / 2.0f);
+
+    /* the chorus: a line of 2 + 8 ms, the voices 1/3 of a cycle apart */
+    fx_chorus_base = (float)(0.002 * rate);
+    fx_chorus_depth = (float)(0.008 * rate);
+    fx_chorus_size = (int)(fx_chorus_base + fx_chorus_depth) + 4;
+    fx_chorus_line = (float *)calloc(fx_chorus_size, sizeof(float));
+    if (fx_chorus_line == NULL) return 0;
+    fx_chorus_step = 2.0 * M_PI * 0.3 / rate;
+    fx_ready = 1;
+    return 1;
+}
+
+static void fx_free(void)
+{
+    int c, i;
+
+    for (c = 0; c < 2; c++)
+    {
+        for (i = 0; i < FX_COMBS; i++) { free(fx_combs[c][i].buffer); fx_combs[c][i].buffer = NULL; }
+        for (i = 0; i < FX_ALLPASSES; i++) { free(fx_allpasses[c][i].buffer); fx_allpasses[c][i].buffer = NULL; }
+    }
+    free(fx_chorus_line);
+    fx_chorus_line = NULL;
+    fx_ready = 0;
+}
+
+static inline float fx_flush(float x)
+{
+    return (x > -1e-20f && x < 1e-20f) ? 0.0f : x;
+}
+
+/* one frame of the reverb: the mono send in, the two sides out */
+static void fx_reverb(float in, float *left, float *right)
+{
+    float input = in * 2.0f * 0.015f;   /* fluidsynth's 2 * in times Freeverb's fixed gain */
+    float out[2];
+    int c, i;
+
+    for (c = 0; c < 2; c++)
+    {
+        float sum = 0.0f;
+
+        for (i = 0; i < FX_COMBS; i++)
+        {
+            fx_comb *comb = &fx_combs[c][i];
+            float y = comb->buffer[comb->index];
+
+            comb->store = fx_flush(y * (1.0f - fx_damp) + comb->store * fx_damp);
+            comb->buffer[comb->index] = input + comb->store * fx_feedback;
+            if (++comb->index >= comb->size) comb->index = 0;
+            sum += y;
+        }
+        for (i = 0; i < FX_ALLPASSES; i++)
+        {
+            fx_allpass *ap = &fx_allpasses[c][i];
+            float b = ap->buffer[ap->index];
+
+            ap->buffer[ap->index] = fx_flush(sum + b * 0.5f);
+            if (++ap->index >= ap->size) ap->index = 0;
+            sum = b - sum;
+        }
+        out[c] = sum;
+    }
+    *left = out[0] * fx_wet1 + out[1] * fx_wet2;
+    *right = out[1] * fx_wet1 + out[0] * fx_wet2;
+}
+
+/* one frame of the chorus: the voices alternate between the sides */
+static void fx_chorus(float in, float *left, float *right)
+{
+    float side[2] = { 0.0f, 0.0f };
+    int v;
+
+    fx_chorus_line[fx_chorus_index] = in;
+    for (v = 0; v < FX_CHORUS_VOICES; v++)
+    {
+        double phase = fx_chorus_phase + v * (2.0 * M_PI / FX_CHORUS_VOICES);
+        float delay = fx_chorus_base + fx_chorus_depth * 0.5f * (1.0f + (float)sin(phase));
+        float pos = (float)fx_chorus_index - delay;
+        int i0, i1;
+        float frac;
+
+        while (pos < 0.0f) pos += (float)fx_chorus_size;
+        i0 = (int)pos;
+        frac = pos - (float)i0;
+        i1 = i0 + 1;
+        if (i1 >= fx_chorus_size) i1 = 0;
+        side[v & 1] += fx_chorus_line[i0] + (fx_chorus_line[i1] - fx_chorus_line[i0]) * frac;
+    }
+    if (++fx_chorus_index >= fx_chorus_size) fx_chorus_index = 0;
+    fx_chorus_phase += fx_chorus_step;
+    if (fx_chorus_phase >= 2.0 * M_PI) fx_chorus_phase -= 2.0 * M_PI;
+    /* the width 10: each side less much of the other */
+    side[0] *= FX_CHORUS_GAIN;
+    side[1] *= FX_CHORUS_GAIN;
+    *left = side[0] * fx_chorus_wet1 + side[1] * fx_chorus_wet2;
+    *right = side[1] * fx_chorus_wet1 + side[0] * fx_chorus_wet2;
+}
+
+static inline short fx_to_short(float v)
+{
+    return (v < -1.00004566f ? (short)-32768 : (v > 1.00001514f ? (short)32767 : (short)(v * 32767.5f)));
+}
+
 /* --- the synthesizer --- */
 
 static tsf *midi_synth = NULL;
@@ -308,6 +538,53 @@ static int midi_loop = 0;
 static SDL_atomic_t midi_paused;
 static SDL_atomic_t midi_finished;
 static char midi_soundfont_path_buf[1024];
+
+/* the synthesizer's output for frames frames, with the effects when they are on */
+static void midi_render(short *out, int frames)
+{
+    float dry[GAME_TSF_SEND_FRAMES * 2], reverb[GAME_TSF_SEND_FRAMES], chorus[GAME_TSF_SEND_FRAMES];
+    int channels = Game_AudioChannels == 2 ? 2 : 1;
+    int on = SDL_AtomicGet(&midi_effects) && fx_ready;
+
+    if (on && !fx_running) fx_clear();  /* no tail of the last time they were on */
+    fx_running = on;
+    if (!on)
+    {
+        tsf_render_short(midi_synth, out, frames, 0);
+        return;
+    }
+    while (frames > 0)
+    {
+        int n = frames < GAME_TSF_SEND_FRAMES ? frames : GAME_TSF_SEND_FRAMES, i;
+
+        Game_TsfRenderSends(midi_synth, dry, reverb, chorus, n, midi_reverb_send, midi_chorus_send);
+        for (i = 0; i < n; i++)
+        {
+            float rl, rr, cl, cr;
+
+            fx_reverb(reverb[i], &rl, &rr);
+            fx_chorus(chorus[i], &cl, &cr);
+            if (channels == 2)
+            {
+                out[2 * i] = fx_to_short(dry[2 * i] + rl + cl);
+                out[2 * i + 1] = fx_to_short(dry[2 * i + 1] + rr + cr);
+            }
+            else
+            {
+                out[i] = fx_to_short(dry[i] + 0.5f * (rl + rr + cl + cr));
+            }
+        }
+        out += n * channels;
+        frames -= n;
+    }
+}
+
+/* a controller: the sends are the effects', the rest TinySoundFont's */
+static void midi_control(int ch, int controller, int value)
+{
+    if (controller == 91 || controller == 93) fx_set_send(ch & 15, controller, value);
+    else Game_TsfChannelMidiControl(midi_synth, ch, controller, value);
+}
 
 static void midi_dispatch(double until_ms)
 {
@@ -331,7 +608,7 @@ static void midi_dispatch(double until_ms)
             tsf_channel_set_presetnumber(midi_synth, ch, m->program, ch == 9);
             break;
         case TML_CONTROL_CHANGE:
-            Game_TsfChannelMidiControl(midi_synth, ch, m->control, m->control_value);
+            midi_control(ch, m->control, m->control_value);
             break;
         case TML_PITCH_BEND:
             tsf_channel_set_pitchwheel(midi_synth, ch, m->pitch_bend);
@@ -374,7 +651,7 @@ static void midi_mix(void *udata, Uint8 *stream, int len)
         }
     }
 
-    tsf_render_short(midi_synth, (short *)stream, frames, 0);
+    midi_render((short *)stream, frames);
     midi_time_ms += block_ms;
 }
 
@@ -390,6 +667,7 @@ void Game_MidiStop(void)
     tml_free(midi_first);
     midi_first = NULL;
     midi_msg = NULL;
+    fx_reset_sends();
     SDL_AtomicSet(&midi_paused, 0);
     SDL_AtomicSet(&midi_finished, 0);
 }
@@ -426,6 +704,8 @@ static int midi_load_synth(void)
         tsf_channel_set_presetnumber(midi_synth, ch, 0, ch == 9);
 
     tsf_set_volume(midi_synth, 0.5f);   /* as the old Mix_VolumeMusic(MIX_MAX_VOLUME / 2) */
+    if (!fx_init(Game_AudioRate)) { MIDI_LOG("no memory for the effects\n"); fx_free(); }
+    fx_reset_sends();
     MIDI_LOG("soundfont %s\n", path);
     return 1;
 }
@@ -506,7 +786,7 @@ void Game_MidiShortMsg(uint32_t msg)
             tsf_channel_note_off(midi_synth, ch, d1);
         break;
     case 0xb0:
-        Game_TsfChannelMidiControl(midi_synth, ch, d1, d2);
+        midi_control(ch, d1, d2);
         break;
     case 0xc0:
         tsf_channel_set_presetnumber(midi_synth, ch, d1, ch == 9);
@@ -532,6 +812,7 @@ void Game_MidiReset(void)
         Game_TsfChannelMidiControl(midi_synth, ch, 121, 0);  /* reset all controllers */
         tsf_channel_set_presetnumber(midi_synth, ch, 0, ch == 9);
     }
+    fx_reset_sends();
     Game_MidiUnlock();
 }
 
@@ -551,7 +832,7 @@ static void midi_stream_mix(void *udata, Uint8 *stream, int len)
         int n = (frames < slice) ? frames : slice;
 
         if (midi_pump != NULL) midi_pump(midi_pump_user, n * 1000.0 / Game_AudioRate);
-        tsf_render_short(midi_synth, out, n, 0);
+        midi_render(out, n);
         out += n * Game_AudioChannels;
         frames -= n;
     }
@@ -600,4 +881,33 @@ void Game_MidiShutdown(void)
         tsf_close(midi_synth);
         midi_synth = NULL;
     }
+    fx_free();
+}
+
+/* --- the settings --- */
+
+int Game_MidiConfig(const char *key, const char *value)
+{
+    if (strcasecmp(key, "Midi_Effects") != 0) return 0;
+    if (strcasecmp(value, "on") == 0) SDL_AtomicSet(&midi_effects, 1);
+    else if (strcasecmp(value, "off") == 0) SDL_AtomicSet(&midi_effects, 0);
+    else fprintf(stderr, "midi: unknown Midi_Effects: %s\n", value);
+    return 1;
+}
+
+static void effects_press(void)
+{
+    SDL_AtomicSet(&midi_effects, !SDL_AtomicGet(&midi_effects));
+}
+
+static const char *effects_state(void)
+{
+    return SDL_AtomicGet(&midi_effects) ? "on" : "off";
+}
+
+static const Game_OsdItem effects_item = { "MIDI reverb and chorus", NULL, effects_press, effects_state, "Midi_Effects", NULL };
+
+void Game_MidiAddEffectsItem(void)
+{
+    Game_OsdAddItem(&effects_item);
 }

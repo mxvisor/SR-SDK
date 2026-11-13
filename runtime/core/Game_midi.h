@@ -72,6 +72,14 @@ void Game_MidiReset(void);
 void Game_MidiLock(void);
 void Game_MidiUnlock(void);
 
+/* The mod Midi_Effects (off by default): reverb and chorus on the synthesizer's
+ * output, as a General MIDI synthesizer has them.  Game_MidiConfig takes the
+ * key of the settings file (nonzero if it was this one);
+ * Game_MidiAddEffectsItem is the panel's item, for the GAME_OSD_ITEMS() of a
+ * game with MIDI music. */
+int Game_MidiConfig(const char *key, const char *value);
+void Game_MidiAddEffectsItem(void);
+
 #ifdef __cplusplus
 }
 #endif

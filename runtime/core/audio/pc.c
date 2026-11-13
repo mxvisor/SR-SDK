@@ -30,6 +30,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "audio.h"
+#include "Game_midi.h"
 #include <SDL.h>
 
 void Init_Audio(void)
@@ -46,10 +47,7 @@ void Init_Audio2(void)
 
 int Config_Audio(char *str, char *param)
 {
-    (void)str;
-    (void)param;
-
-    return 0;
+    return Game_MidiConfig(str, param);
 }
 
 void Cleanup_Audio(void)

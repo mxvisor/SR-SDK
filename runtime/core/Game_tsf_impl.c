@@ -157,3 +157,60 @@ int Game_TsfChannelMidiControl(tsf *f, int channel, int controller, int value)
     }
     return result;
 }
+
+/* tsf_render_float (not mixing) with the effect sends: the voices go into out
+ * as there, and each voice also into reverb and chorus (mono, one value a
+ * frame), at the send level of its channel (reverb_level[channel],
+ * chorus_level[channel], 16 of each) times the voice's level before the pan.
+ * At most GAME_TSF_SEND_FRAMES frames. */
+#define GAME_TSF_SEND_FRAMES 256
+
+void Game_TsfRenderSends(tsf *f, float *out, float *reverb, float *chorus, int samples,
+                         const float *reverb_level, const float *chorus_level)
+{
+    float voice[GAME_TSF_SEND_FRAMES * 2];
+    struct tsf_voice *v, *vend;
+    int channels = (f->outputmode == TSF_MONO ? 1 : 2), i;
+    /* the voice's level before the pan from its output: mono, or L+R, which
+     * is sqrt(2) times it at the centre */
+    float mono = (channels == 1 ? 1.0f : 0.70710678f);
+
+    if (samples > GAME_TSF_SEND_FRAMES) samples = GAME_TSF_SEND_FRAMES;
+    memset(out, 0, sizeof(float) * channels * samples);
+    memset(reverb, 0, sizeof(float) * samples);
+    memset(chorus, 0, sizeof(float) * samples);
+
+    for (v = f->voices, vend = v + f->voiceNum; v != vend; v++)
+    {
+        float r, c;
+
+        if (v->playingPreset == -1) continue;
+        r = reverb_level[v->playingChannel & 15] * mono;
+        c = chorus_level[v->playingChannel & 15] * mono;
+        if (r == 0.0f && c == 0.0f)
+        {
+            tsf_voice_render(f, v, out, samples);
+            continue;
+        }
+        memset(voice, 0, sizeof(float) * channels * samples);
+        tsf_voice_render(f, v, voice, samples);
+        for (i = 0; i < samples; i++)
+        {
+            float s;
+
+            if (channels == 1)
+            {
+                s = voice[i];
+                out[i] += s;
+            }
+            else
+            {
+                s = voice[2 * i] + voice[2 * i + 1];
+                out[2 * i] += voice[2 * i];
+                out[2 * i + 1] += voice[2 * i + 1];
+            }
+            reverb[i] += s * r;
+            chorus[i] += s * c;
+        }
+    }
+}
