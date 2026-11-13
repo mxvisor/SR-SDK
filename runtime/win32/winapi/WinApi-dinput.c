@@ -29,6 +29,7 @@
  *  (llasm/WinApi-dinput-asm.llasm); the objects live in guest memory.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -384,8 +385,12 @@ static void key_queue_init(void)
  * GetDeviceState fills the game's data format (SetDataFormat: c_dfDIJoystick,
  * ...2 or the game's own), matched to the objects as DirectInput does.  A pad
  * that goes away reads centred.  Force feedback: the effects are made, played
- * and timed here, and the strongest of those playing drives the pad's motors
- * (constant and ramp forces the low-frequency one, periodic ones the high);
+ * and timed here, and the strongest of those playing drives the pad's motors.
+ * A constant or ramp force for a time (a hit, a shot) runs the low-frequency
+ * motor; one that runs until stopped is a wheel's steady load, felt on a pad
+ * only as the jolt of its changes; a periodic force runs both motors, the
+ * low-frequency one first for long periods.  The strength is taken through
+ * a square root, as a motor is not felt below about a tenth of its range;
  * the conditions (spring, damper, inertia, friction) and custom forces are
  * made and stay silent, as they do on a pad without motors.  EnumDevices lists
  * the joysticks only, never the keyboard and the mouse. */
@@ -755,9 +760,20 @@ typedef struct {
     int type;
     uint32_t duration, gain, start_delay;   /* µs, 0..10000, µs */
     int32_t magnitude, ramp_end;        /* constant: magnitude; ramp: start, end; periodic: magnitude, offset */
+    uint32_t period;                    /* periodic, µs */
     int playing;
     uint32_t start, end;                /* the guest's ms; end 0: until stopped */
+    int32_t kick;                       /* a steady force's last jolt, 0..10000, ... */
+    uint32_t kick_time;                 /* ... from this ms */
 } di_effect;
+
+#define EFFECT_KICK_MS 250
+
+/* a force that runs until stopped and pushes one way: a wheel's load */
+static int effect_steady(const di_effect *e)
+{
+    return (e->type == EFF_CONSTANT || e->type == EFF_RAMP) && e->end == 0;
+}
 
 /* the effect GUIDs are 13541C2x-8E33-11D0-9AD0-00A0C9A06E35 */
 static int effect_guid_number(const uint8_t *g)
@@ -834,13 +850,28 @@ static void joy_rumble_update(struct joy_device *j)
         if (!e->playing) continue;
         if (e->end != 0 && (int32_t)(now - e->end) >= 0) { e->playing = 0; continue; }
         if ((int32_t)(now - e->start) < 0) continue;    /* the start delay */
+        if (effect_steady(e))
+        {
+            uint32_t age = now - e->kick_time;
+            level = (e->kick > 0 && age < EFFECT_KICK_MS) ? (int32_t)((int64_t)e->kick * (EFFECT_KICK_MS - age) / EFFECT_KICK_MS) : 0;
+            if (level > low) low = level;
+            continue;
+        }
         level = effect_level(e, now);
-        if (e->type == EFF_PERIODIC) { if (level > high) high = level; }
+        if (e->type == EFF_PERIODIC)
+        {
+            int32_t main = level, other = level / 2;
+            if (e->period >= 50000) { if (main > low) low = main; if (other > high) high = other; }
+            else { if (main > high) high = main; if (other > low) low = other; }
+        }
         else if (level > low) low = level;
     }
     if (j->actuators_off || j->paused) low = high = 0;
-    want_low = (uint16_t)((int64_t)low * j->gain / 10000 * 65535 / 10000);
-    want_high = (uint16_t)((int64_t)high * j->gain / 10000 * 65535 / 10000);
+    low = (int32_t)((int64_t)low * j->gain / 10000);
+    high = (int32_t)((int64_t)high * j->gain / 10000);
+    /* felt strength; steps of 1/64, so that a fading jolt is not sent at every poll */
+    want_low = low > 0 ? (uint16_t)(((uint32_t)(sqrt(low / 10000.0) * 64.0 + 0.5) * 65535u) / 64u) : 0;
+    want_high = high > 0 ? (uint16_t)(((uint32_t)(sqrt(high / 10000.0) * 64.0 + 0.5) * 65535u) / 64u) : 0;
 
     slot = joy_slot(j->index);
     if (slot < 0) { j->rumbling = 0; return; }
@@ -1356,9 +1387,25 @@ static struct joy_device *device_joy(uint32_t device)
 
 static uint32_t effect_start(di_effect *e, uint32_t iterations, uint32_t flags);
 
+/* a steady force that changes by a tenth of the range or more jolts the pad */
+static void effect_kick(di_effect *e, int32_t before)
+{
+    uint32_t now = Winapi_GetTicks();
+    int32_t change = effect_level(e, now) - before, left = 0;
+
+    if (change < 0) change = -change;
+    if (change < 1000) return;
+    if (e->kick > 0 && now - e->kick_time < EFFECT_KICK_MS)
+        left = (int32_t)((int64_t)e->kick * (EFFECT_KICK_MS - (now - e->kick_time)) / EFFECT_KICK_MS);
+    e->kick = (change > left) ? change : left;
+    e->kick_time = now;
+    if (joy_debug()) fprintf(stderr, "[dinput effect %02x jolt %d]\n", e->guid[0], e->kick);
+}
+
 static uint32_t effect_set(di_effect *e, uint32_t params, uint32_t flags)
 {
     const uint32_t *p = (const uint32_t *)GUEST_MEM(params);
+    int32_t before = effect_level(e, Winapi_GetTicks());
 
     if (p == NULL || p[0] < 52) return DIERR_INVALIDPARAM;
     if (flags & DIEP_DURATION) e->duration = p[2];
@@ -1370,8 +1417,9 @@ static uint32_t effect_set(di_effect *e, uint32_t params, uint32_t flags)
         uint32_t size = p[11];
         if (e->type == EFF_CONSTANT && size >= 4) e->magnitude = t[0];
         else if (e->type == EFF_RAMP && size >= 8) { e->magnitude = t[0]; e->ramp_end = t[1]; }
-        else if (e->type == EFF_PERIODIC && size >= 16) { e->magnitude = t[0]; e->ramp_end = t[1]; }
+        else if (e->type == EFF_PERIODIC && size >= 16) { e->magnitude = t[0]; e->ramp_end = t[1]; e->period = (uint32_t)t[3]; }
     }
+    if (e->playing && effect_steady(e)) effect_kick(e, before);
     if (flags & DIEP_START) return effect_start(e, 1, 0);
     if (device_joy(e->device) != NULL) joy_rumble_update(device_joy(e->device));
     return DI_OK;
@@ -1381,7 +1429,7 @@ static uint32_t effect_start(di_effect *e, uint32_t iterations, uint32_t flags)
 {
     struct joy_device *j = device_joy(e->device);
     uint32_t now = Winapi_GetTicks(), delay = e->start_delay / 1000;
-    int i;
+    int i, steady_before = e->playing && effect_steady(e);
 
     if (j == NULL) return DIERR_NOTINITIALIZED;
     if (flags & DIES_SOLO)
@@ -1395,9 +1443,10 @@ static uint32_t effect_start(di_effect *e, uint32_t iterations, uint32_t flags)
         e->end = e->start + (uint32_t)((ms > 0x7FFFFFFF) ? 0x7FFFFFFF : (ms ? ms : 1));
         if (e->end == 0) e->end = 1;
     }
+    if (effect_steady(e) && !steady_before) { e->kick = 0; effect_kick(e, 0); }   /* (re)started: from nothing */
     if (joy_debug())
-        fprintf(stderr, "[dinput joystick %d effect %02x start: magnitude %d..%d gain %u, %u ms]\n", j->index, e->guid[0],
-                e->magnitude, e->ramp_end, e->gain, e->end ? e->end - e->start : 0);
+        fprintf(stderr, "[dinput joystick %d effect %02x start: magnitude %d..%d period %u gain %u, %s %u ms]\n", j->index, e->guid[0],
+                e->magnitude, e->ramp_end, e->period, e->gain, e->end ? "for" : "until stopped", e->end ? e->end - e->start : 0);
     joy_rumble_update(j);
     return DI_OK;
 }
