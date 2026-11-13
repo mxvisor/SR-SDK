@@ -210,14 +210,25 @@ run_orig_wine() {
     echo "Creating the Wine prefix: $WINEPREFIX"
     WINEDLLOVERRIDES="$ovr" wineboot -u >/dev/null 2>&1 || true
   fi
+  # D: is a directory: dosdevices/d: is the drive's root, dosdevices/d:: its Unix
+  # device (a directory there gives no drive).  The type is mountmgr's, from
+  # HKLM\Software\Wine\Drives, read when it starts; "d:"="cdrom" makes the directory
+  # a CD-ROM for GetDriveTypeA (a new prefix has no entry, i.e. a hard disk).
   if [ -n "$CD" ]; then
-    ln -sfn "$(realpath "$CD")" "$WINEPREFIX/dosdevices/d::"
-    echo "D: = $CD"
+    rm -f "$WINEPREFIX/dosdevices/d::"
+    ln -sfn "$(realpath "$CD")" "$WINEPREFIX/dosdevices/d:"
+    if ! WINEDLLOVERRIDES="$ovr" wine reg query 'HKLM\Software\Wine\Drives' /v 'd:' 2>/dev/null | grep -qi cdrom; then
+      WINEDLLOVERRIDES="$ovr" wine reg add 'HKLM\Software\Wine\Drives' /v 'd:' /t REG_SZ /d cdrom /f >/dev/null 2>&1 || true
+    fi
+    echo "D: = $CD (cdrom)"
     _orig_cdaudio "$(ls "$GAME_REPO"/build/cd/*.cue 2>/dev/null | head -1)"
   else
-    rm -f "$WINEPREFIX/dosdevices/d::"
+    rm -f "$WINEPREFIX/dosdevices/d:" "$WINEPREFIX/dosdevices/d::"
     _orig_cdaudio ""
   fi
+  # mountmgr reads the drives (and winmm the MCI driver) when it starts: a server
+  # left from wineboot or a previous run may not have seen d: or the new type.
+  wineserver -k 2>/dev/null || true
 
   # the game's files under an overlay: the original never writes into them
   base="$WRITE_ROOT/orig-wine"; mounted=0
