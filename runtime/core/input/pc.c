@@ -45,7 +45,8 @@ void EmulateKey(int type, int key)
     pump_event.key.repeat = 0;
     pump_event.key.keysym.sym = (SDL_Keycode) key;
     pump_event.key.keysym.scancode = SDL_GetScancodeFromKey((SDL_Keycode) key);
-    pump_event.key.keysym.mod = KMOD_NONE;
+    /* a button of the keypad is its number (WM_KEYDOWN reads NumLock) */
+    pump_event.key.keysym.mod = (key >= SDLK_KP_1 && key <= SDLK_KP_PERIOD) ? KMOD_NUM : KMOD_NONE;
 
     SDL_PushEvent(&pump_event);
 }

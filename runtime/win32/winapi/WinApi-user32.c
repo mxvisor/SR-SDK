@@ -1339,31 +1339,409 @@ static void translate_mouse_button(lpmsg lpMsg, int pressed, int mouse_button, i
     lpMsg->lParam = (mouse_x & 0xffff) | ((mouse_y & 0xffff) << 16);
 }
 
+/* The Windows virtual key (and the PC scan code) of an SDL key, as a US
+ * keyboard gives them; the keypad by NumLock (mod) as Windows does.  0: none. */
+static const uint8_t sdl_vkey_table[128] = {
+       0,    0,    0,    0,    0,    0,    0,    0, 0x08, 0x09,    0,    0, 0x0c, 0x0d,    0,    0, /*   0- 15 */
+       0,    0,    0, 0x13,    0,    0,    0,    0,    0,    0,    0, 0x1b,    0,    0,    0,    0, /*  16- 31 */
+    0x20, 0x31, 0xde, 0x33, 0x34, 0x35, 0x37, 0xde, 0x39, 0x30, 0x38, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, /*  32- 47 */
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xba, 0xba, 0xbc, 0xbb, 0xbe, 0xbf, /*  48- 63 */
+    0x32, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  64- 79 */
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0xdb, 0xdc, 0xdd, 0x36, 0xbd, /*  80- 95 */
+    0xc0, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  96-111 */
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0xdb, 0xdc, 0xdd, 0xc0, 0x2e, /* 112-127 */
+};
+
+static const uint8_t sdl_scancode_table[128] = {
+       0,    0,    0,    0,    0,    0,    0,    0, 0x0e, 0x0f,    0,    0,    0, 0x1c,    0,    0, /*   0- 15 */
+       0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0x01,    0,    0,    0,    0, /*  16- 31 */
+    0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28, 0x0a, 0x0b, 0x09, 0x0d, 0x33, 0x0c, 0x34, 0x35, /*  32- 47 */
+    0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x27, 0x27, 0x33, 0x0d, 0x34, 0x35, /*  48- 63 */
+    0x03, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  64- 79 */
+    0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x07, 0x0c, /*  80- 95 */
+    0x29, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  96-111 */
+    0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x29, 0x53, /* 112-127 */
+};
+
+static int sdl_key_vk(SDL_Keycode sym, uint16_t mod, int *scancode_out)
+{
+    int vkey = 0, scancode = 0;
+
+    if (sym >= 0 && sym < 128)
+    {
+        vkey = sdl_vkey_table[sym];
+        scancode = sdl_scancode_table[sym];
+    }
+    else
+    {
+        switch((int) sym)
+        {
+        case SDLK_KP_PERIOD:
+            vkey = (mod & KMOD_NUM)?VK_DECIMAL:VK_DELETE;
+            scancode = 0x53;
+            break;
+
+        case SDLK_KP_DIVIDE:
+            vkey = VK_DIVIDE;
+            scancode = 0x35;
+            break;
+
+        case SDLK_KP_MULTIPLY:
+            vkey = VK_MULTIPLY;
+            scancode = 0x37;
+            break;
+
+        case SDLK_KP_MINUS:
+            vkey = VK_SUBTRACT;
+            scancode = 0x4a;
+            break;
+
+        case SDLK_KP_PLUS:
+            vkey = VK_ADD;
+            scancode = 0x4e;
+            break;
+
+        case SDLK_KP_ENTER:
+            vkey = VK_RETURN;
+            scancode = 0x1c;
+            break;
+
+        case SDLK_KP_EQUALS:
+            vkey = 0xbd;
+            scancode = 0x0d;
+            break;
+
+
+        case SDLK_UP:
+            if (Keys_SwitchArrowKeys)
+            {
+                vkey = sdl_vkey_table[(unsigned char)'W'];
+                scancode = sdl_scancode_table[(unsigned char)'W'];
+            }
+            else
+            {
+                vkey = VK_UP;
+                scancode = 0x48;
+            }
+            break;
+
+        case SDLK_DOWN:
+            if (Keys_SwitchArrowKeys)
+            {
+                vkey = sdl_vkey_table[(unsigned char)'S'];
+                scancode = sdl_scancode_table[(unsigned char)'S'];
+            }
+            else
+            {
+                vkey = VK_DOWN;
+                scancode = 0x50;
+            }
+            break;
+
+        case SDLK_RIGHT:
+            if (Keys_SwitchArrowKeys)
+            {
+                vkey = sdl_vkey_table[(unsigned char)'D'];
+                scancode = sdl_scancode_table[(unsigned char)'D'];
+            }
+            else
+            {
+                vkey = VK_RIGHT;
+                scancode = 0x4d;
+            }
+            break;
+
+        case SDLK_LEFT:
+            if (Keys_SwitchArrowKeys)
+            {
+                vkey = sdl_vkey_table[(unsigned char)'A'];
+                scancode = sdl_scancode_table[(unsigned char)'A'];
+            }
+            else
+            {
+                vkey = VK_LEFT;
+                scancode = 0x4b;
+            }
+            break;
+
+        case SDLK_INSERT:
+            vkey = VK_INSERT;
+            scancode = 0x52;
+            break;
+
+        case SDLK_HOME:
+            vkey = VK_HOME;
+            scancode = 0x47;
+            break;
+
+        case SDLK_END:
+            vkey = VK_END;
+            scancode = 0x4f;
+            break;
+
+        case SDLK_PAGEUP:
+            vkey = VK_PRIOR;
+            scancode = 0x49;
+            break;
+
+        case SDLK_PAGEDOWN:
+            vkey = VK_NEXT;
+            scancode = 0x51;
+            break;
+
+
+        case SDLK_F1:
+            vkey = VK_F1;
+            scancode = 0x3b;
+            break;
+
+        case SDLK_F2:
+            vkey = VK_F2;
+            scancode = 0x3c;
+            break;
+
+        case SDLK_F3:
+            vkey = VK_F3;
+            scancode = 0x3d;
+            break;
+
+        case SDLK_F4:
+            vkey = VK_F4;
+            scancode = 0x3e;
+            break;
+
+        case SDLK_F5:
+            vkey = VK_F5;
+            scancode = 0x3f;
+            break;
+
+        case SDLK_F6:
+            vkey = VK_F6;
+            scancode = 0x40;
+            break;
+
+        case SDLK_F7:
+            vkey = VK_F7;
+            scancode = 0x41;
+            break;
+
+        case SDLK_F8:
+            vkey = VK_F8;
+            scancode = 0x42;
+            break;
+
+        case SDLK_F9:
+            vkey = VK_F9;
+            scancode = 0x43;
+            break;
+
+        case SDLK_F10:
+            vkey = VK_F10;
+            scancode = 0x44;
+            break;
+
+        case SDLK_F11:
+            vkey = VK_F11;
+            scancode = 0x57;
+            break;
+
+        case SDLK_F12:
+            vkey = VK_F12;
+            scancode = 0x58;
+            break;
+
+        case SDLK_F13:
+            vkey = VK_F13;
+            break;
+
+        case SDLK_F14:
+            vkey = VK_F14;
+            break;
+
+        case SDLK_F15:
+            vkey = VK_F15;
+            break;
+
+
+        case SDLK_CAPSLOCK:
+            vkey = VK_CAPITAL;
+            scancode = 0x3a;
+            break;
+
+        case SDLK_RSHIFT:
+            vkey = VK_SHIFT;
+            scancode = 0x36;
+            break;
+
+        case SDLK_LSHIFT:
+            vkey = VK_SHIFT;
+            scancode = 0x2a;
+            break;
+
+        case SDLK_RCTRL:
+            vkey = VK_CONTROL;
+            scancode = 0x1d;
+            break;
+
+        case SDLK_LCTRL:
+            vkey = VK_CONTROL;
+            scancode = 0x1d;
+            break;
+
+        case SDLK_RALT:
+            vkey = VK_MENU;
+            scancode = 0x38;
+            break;
+
+        case SDLK_LALT:
+            vkey = VK_MENU;
+            scancode = 0x38;
+            break;
+
+        case SDLK_MODE:
+            vkey = 0xa5;
+            scancode = 0x5d;
+            break;
+
+        case SDLK_MENU:
+            vkey = VK_APPS;
+            scancode = 0x38;
+            break;
+
+
+        case SDLK_PAUSE:
+            vkey = 0x13;
+            break;
+
+        case SDLK_DELETE:
+            vkey = VK_DELETE;
+            scancode = 0x53;
+            break;
+
+
+        case SDLK_KP_1:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD1:VK_END;
+            scancode = 0x4f;
+            break;
+
+        case SDLK_KP_2:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD2:VK_DOWN;
+            scancode = 0x50;
+            break;
+
+        case SDLK_KP_3:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD3:VK_NEXT;
+            scancode = 0x51;
+            break;
+
+        case SDLK_KP_4:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD4:VK_LEFT;
+            scancode = 0x4b;
+            break;
+
+        case SDLK_KP_5:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD5:VK_CLEAR;
+            scancode = 0x4c;
+            break;
+
+        case SDLK_KP_6:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD6:VK_RIGHT;
+            scancode = 0x4d;
+            break;
+
+        case SDLK_KP_7:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD7:VK_HOME;
+            scancode = 0x47;
+            break;
+
+        case SDLK_KP_8:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD8:VK_UP;
+            scancode = 0x48;
+            break;
+
+        case SDLK_KP_9:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD9:VK_PRIOR;
+            scancode = 0x49;
+            break;
+
+        case SDLK_KP_0:
+            vkey = (mod & KMOD_NUM)?VK_NUMPAD0:VK_INSERT;
+            scancode = 0x52;
+            break;
+
+
+        case SDLK_NUMLOCKCLEAR:
+            vkey = VK_NUMLOCK;
+            scancode = 0x45;
+            break;
+
+        case SDLK_SCROLLLOCK:
+            vkey = VK_SCROLL;
+            scancode = 0x46;
+            break;
+
+        case SDLK_LGUI:
+            vkey = VK_LWIN;
+            scancode = 0x5b;
+            break;
+
+        case SDLK_RGUI:
+            vkey = VK_RWIN;
+            scancode = 0x5c;
+            break;
+
+
+        case SDLK_F16:
+            vkey = VK_F16;
+            break;
+
+        case SDLK_F17:
+            vkey = VK_F17;
+            break;
+
+        case SDLK_F18:
+            vkey = VK_F18;
+            break;
+
+        case SDLK_F19:
+            vkey = VK_F19;
+            break;
+
+        case SDLK_F20:
+            vkey = VK_F20;
+            break;
+
+        case SDLK_F21:
+            vkey = VK_F21;
+            break;
+
+        case SDLK_F22:
+            vkey = VK_F22;
+            break;
+
+        case SDLK_F23:
+            vkey = VK_F23;
+            break;
+
+        case SDLK_F24:
+            vkey = VK_F24;
+            break;
+
+
+        case SDLK_RETURN2:
+            vkey = VK_RETURN;
+            scancode = 0x1c;
+            break;
+
+        }
+    }
+    if (scancode_out != NULL) *scancode_out = scancode;
+    return vkey;
+}
+
 static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
 {
     int doubleclick, mouse_button, vkey, scancode;
-
-    const static uint8_t vkey_table[128] = {
-           0,    0,    0,    0,    0,    0,    0,    0, 0x08, 0x09,    0,    0, 0x0c, 0x0d,    0,    0, /*   0- 15 */
-           0,    0,    0, 0x13,    0,    0,    0,    0,    0,    0,    0, 0x1b,    0,    0,    0,    0, /*  16- 31 */
-        0x20, 0x31, 0xde, 0x33, 0x34, 0x35, 0x37, 0xde, 0x39, 0x30, 0x38, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, /*  32- 47 */
-        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xba, 0xba, 0xbc, 0xbb, 0xbe, 0xbf, /*  48- 63 */
-        0x32, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  64- 79 */
-        0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0xdb, 0xdc, 0xdd, 0x36, 0xbd, /*  80- 95 */
-        0xc0, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  96-111 */
-        0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0xdb, 0xdc, 0xdd, 0xc0, 0x2e, /* 112-127 */
-    };
-
-    const static uint8_t scancode_table[128] = {
-           0,    0,    0,    0,    0,    0,    0,    0, 0x0e, 0x0f,    0,    0,    0, 0x1c,    0,    0, /*   0- 15 */
-           0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0x01,    0,    0,    0,    0, /*  16- 31 */
-        0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28, 0x0a, 0x0b, 0x09, 0x0d, 0x33, 0x0c, 0x34, 0x35, /*  32- 47 */
-        0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x27, 0x27, 0x33, 0x0d, 0x34, 0x35, /*  48- 63 */
-        0x03, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  64- 79 */
-        0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x07, 0x0c, /*  80- 95 */
-        0x29, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  96-111 */
-        0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x29, 0x53, /* 112-127 */
-    };
 
     memset((void *)lpMsg, 0, sizeof(msg));
     switch (event->type)
@@ -1371,11 +1749,9 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
         case SDL_KEYDOWN:
         case SDL_KEYUP:
             // key events
+            vkey = sdl_key_vk(event->key.keysym.sym, event->key.keysym.mod, &scancode);
             if (event->key.keysym.sym < 128)
             {
-                vkey = vkey_table[event->key.keysym.sym];
-                scancode = scancode_table[event->key.keysym.sym];
-
                 if (Keys_SwitchWSAD)
                 {
                     switch((int) event->key.keysym.sym)
@@ -1399,372 +1775,6 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
                     default:
                         break;
                     }
-                }
-            }
-            else
-            {
-                vkey = 0;
-                scancode = 0;
-
-                switch((int) event->key.keysym.sym)
-                {
-                case SDLK_KP_PERIOD:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_DECIMAL:VK_DELETE;
-                    scancode = 0x53;
-                    break;
-
-                case SDLK_KP_DIVIDE:
-                    vkey = VK_DIVIDE;
-                    scancode = 0x35;
-                    break;
-
-                case SDLK_KP_MULTIPLY:
-                    vkey = VK_MULTIPLY;
-                    scancode = 0x37;
-                    break;
-
-                case SDLK_KP_MINUS:
-                    vkey = VK_SUBTRACT;
-                    scancode = 0x4a;
-                    break;
-
-                case SDLK_KP_PLUS:
-                    vkey = VK_ADD;
-                    scancode = 0x4e;
-                    break;
-
-                case SDLK_KP_ENTER:
-                    vkey = VK_RETURN;
-                    scancode = 0x1c;
-                    break;
-
-                case SDLK_KP_EQUALS:
-                    vkey = 0xbd;
-                    scancode = 0x0d;
-                    break;
-
-
-                case SDLK_UP:
-                    if (Keys_SwitchArrowKeys)
-                    {
-                        vkey = vkey_table[(unsigned char)'W'];
-                        scancode = scancode_table[(unsigned char)'W'];
-                    }
-                    else
-                    {
-                        vkey = VK_UP;
-                        scancode = 0x48;
-                    }
-                    break;
-
-                case SDLK_DOWN:
-                    if (Keys_SwitchArrowKeys)
-                    {
-                        vkey = vkey_table[(unsigned char)'S'];
-                        scancode = scancode_table[(unsigned char)'S'];
-                    }
-                    else
-                    {
-                        vkey = VK_DOWN;
-                        scancode = 0x50;
-                    }
-                    break;
-
-                case SDLK_RIGHT:
-                    if (Keys_SwitchArrowKeys)
-                    {
-                        vkey = vkey_table[(unsigned char)'D'];
-                        scancode = scancode_table[(unsigned char)'D'];
-                    }
-                    else
-                    {
-                        vkey = VK_RIGHT;
-                        scancode = 0x4d;
-                    }
-                    break;
-
-                case SDLK_LEFT:
-                    if (Keys_SwitchArrowKeys)
-                    {
-                        vkey = vkey_table[(unsigned char)'A'];
-                        scancode = scancode_table[(unsigned char)'A'];
-                    }
-                    else
-                    {
-                        vkey = VK_LEFT;
-                        scancode = 0x4b;
-                    }
-                    break;
-
-                case SDLK_INSERT:
-                    vkey = VK_INSERT;
-                    scancode = 0x52;
-                    break;
-
-                case SDLK_HOME:
-                    vkey = VK_HOME;
-                    scancode = 0x47;
-                    break;
-
-                case SDLK_END:
-                    vkey = VK_END;
-                    scancode = 0x4f;
-                    break;
-
-                case SDLK_PAGEUP:
-                    vkey = VK_PRIOR;
-                    scancode = 0x49;
-                    break;
-
-                case SDLK_PAGEDOWN:
-                    vkey = VK_NEXT;
-                    scancode = 0x51;
-                    break;
-
-
-                case SDLK_F1:
-                    vkey = VK_F1;
-                    scancode = 0x3b;
-                    break;
-
-                case SDLK_F2:
-                    vkey = VK_F2;
-                    scancode = 0x3c;
-                    break;
-
-                case SDLK_F3:
-                    vkey = VK_F3;
-                    scancode = 0x3d;
-                    break;
-
-                case SDLK_F4:
-                    vkey = VK_F4;
-                    scancode = 0x3e;
-                    break;
-
-                case SDLK_F5:
-                    vkey = VK_F5;
-                    scancode = 0x3f;
-                    break;
-
-                case SDLK_F6:
-                    vkey = VK_F6;
-                    scancode = 0x40;
-                    break;
-
-                case SDLK_F7:
-                    vkey = VK_F7;
-                    scancode = 0x41;
-                    break;
-
-                case SDLK_F8:
-                    vkey = VK_F8;
-                    scancode = 0x42;
-                    break;
-
-                case SDLK_F9:
-                    vkey = VK_F9;
-                    scancode = 0x43;
-                    break;
-
-                case SDLK_F10:
-                    vkey = VK_F10;
-                    scancode = 0x44;
-                    break;
-
-                case SDLK_F11:
-                    vkey = VK_F11;
-                    scancode = 0x57;
-                    break;
-
-                case SDLK_F12:
-                    vkey = VK_F12;
-                    scancode = 0x58;
-                    break;
-
-                case SDLK_F13:
-                    vkey = VK_F13;
-                    break;
-
-                case SDLK_F14:
-                    vkey = VK_F14;
-                    break;
-
-                case SDLK_F15:
-                    vkey = VK_F15;
-                    break;
-
-
-                case SDLK_CAPSLOCK:
-                    vkey = VK_CAPITAL;
-                    scancode = 0x3a;
-                    break;
-
-                case SDLK_RSHIFT:
-                    vkey = VK_SHIFT;
-                    scancode = 0x36;
-                    break;
-
-                case SDLK_LSHIFT:
-                    vkey = VK_SHIFT;
-                    scancode = 0x2a;
-                    break;
-
-                case SDLK_RCTRL:
-                    vkey = VK_CONTROL;
-                    scancode = 0x1d;
-                    break;
-
-                case SDLK_LCTRL:
-                    vkey = VK_CONTROL;
-                    scancode = 0x1d;
-                    break;
-
-                case SDLK_RALT:
-                    vkey = VK_MENU;
-                    scancode = 0x38;
-                    break;
-
-                case SDLK_LALT:
-                    vkey = VK_MENU;
-                    scancode = 0x38;
-                    break;
-
-                case SDLK_MODE:
-                    vkey = 0xa5;
-                    scancode = 0x5d;
-                    break;
-
-                case SDLK_MENU:
-                    vkey = VK_APPS;
-                    scancode = 0x38;
-                    break;
-
-
-                case SDLK_PAUSE:
-                    vkey = 0x13;
-                    break;
-
-                case SDLK_DELETE:
-                    vkey = VK_DELETE;
-                    scancode = 0x53;
-                    break;
-
-
-                case SDLK_KP_1:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD1:VK_END;
-                    scancode = 0x4f;
-                    break;
-
-                case SDLK_KP_2:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD2:VK_DOWN;
-                    scancode = 0x50;
-                    break;
-
-                case SDLK_KP_3:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD3:VK_NEXT;
-                    scancode = 0x51;
-                    break;
-
-                case SDLK_KP_4:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD4:VK_LEFT;
-                    scancode = 0x4b;
-                    break;
-
-                case SDLK_KP_5:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD5:VK_CLEAR;
-                    scancode = 0x4c;
-                    break;
-
-                case SDLK_KP_6:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD6:VK_RIGHT;
-                    scancode = 0x4d;
-                    break;
-
-                case SDLK_KP_7:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD7:VK_HOME;
-                    scancode = 0x47;
-                    break;
-
-                case SDLK_KP_8:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD8:VK_UP;
-                    scancode = 0x48;
-                    break;
-
-                case SDLK_KP_9:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD9:VK_PRIOR;
-                    scancode = 0x49;
-                    break;
-
-                case SDLK_KP_0:
-                    vkey = (event->key.keysym.mod & KMOD_NUM)?VK_NUMPAD0:VK_INSERT;
-                    scancode = 0x52;
-                    break;
-
-
-                case SDLK_NUMLOCKCLEAR:
-                    vkey = VK_NUMLOCK;
-                    scancode = 0x45;
-                    break;
-
-                case SDLK_SCROLLLOCK:
-                    vkey = VK_SCROLL;
-                    scancode = 0x46;
-                    break;
-
-                case SDLK_LGUI:
-                    vkey = VK_LWIN;
-                    scancode = 0x5b;
-                    break;
-
-                case SDLK_RGUI:
-                    vkey = VK_RWIN;
-                    scancode = 0x5c;
-                    break;
-
-
-                case SDLK_F16:
-                    vkey = VK_F16;
-                    break;
-
-                case SDLK_F17:
-                    vkey = VK_F17;
-                    break;
-
-                case SDLK_F18:
-                    vkey = VK_F18;
-                    break;
-
-                case SDLK_F19:
-                    vkey = VK_F19;
-                    break;
-
-                case SDLK_F20:
-                    vkey = VK_F20;
-                    break;
-
-                case SDLK_F21:
-                    vkey = VK_F21;
-                    break;
-
-                case SDLK_F22:
-                    vkey = VK_F22;
-                    break;
-
-                case SDLK_F23:
-                    vkey = VK_F23;
-                    break;
-
-                case SDLK_F24:
-                    vkey = VK_F24;
-                    break;
-
-
-                case SDLK_RETURN2:
-                    vkey = VK_RETURN;
-                    scancode = 0x1c;
-                    break;
-
                 }
             }
 
@@ -2230,19 +2240,13 @@ int16_t CCALL GetKeyState_c(int32_t nVirtKey)
 /* 256 bytes: the high bit of the byte of a virtual key is set while the key is
  * down, the low bit of a toggle key while it is on.  The bytes are never left
  * unwritten, a game may poll them (to cancel a movie, for example). */
-static void key_state_set(uint8_t *state, SDL_Keycode key)
+/* GetKeyboardState's byte of a key that is down: its virtual key, by the same
+ * table as WM_KEYDOWN (the keypad by NumLock in mod) */
+static void key_state_set(uint8_t *state, SDL_Keycode key, uint16_t mod)
 {
-    if (key >= 'a' && key <= 'z') state[key - 'a' + 'A'] = 0x80;
-    else if (key >= '0' && key <= '9') state[key] = 0x80;
-    else if (key == SDLK_SPACE) state[0x20] = 0x80;
-    else if (key == SDLK_RETURN) state[0x0D] = 0x80;
-    else if (key == SDLK_ESCAPE) state[0x1B] = 0x80;
-    else if (key == SDLK_BACKSPACE) state[0x08] = 0x80;
-    else if (key == SDLK_TAB) state[0x09] = 0x80;
-    else if (key == SDLK_LEFT) state[0x25] = 0x80;
-    else if (key == SDLK_UP) state[0x26] = 0x80;
-    else if (key == SDLK_RIGHT) state[0x27] = 0x80;
-    else if (key == SDLK_DOWN) state[0x28] = 0x80;
+    int vk = sdl_key_vk(key, mod, NULL);
+
+    if (vk > 0 && vk < 256) state[vk] = 0x80;
 }
 
 uint32_t CCALL GetKeyboardState_c(void *lpKeyState)
@@ -2261,11 +2265,13 @@ uint32_t CCALL GetKeyboardState_c(void *lpKeyState)
     keys = SDL_GetKeyboardState(&count);
     for (sc = 0; sc < count; sc++)
     {
-        if ((keys[sc] && !Game_OsdKeyHidden((SDL_Scancode)sc)) || Game_AutoKeyDown((SDL_Scancode)sc)) key_state_set(state, SDL_GetKeyFromScancode((SDL_Scancode)sc));
+        if ((keys[sc] && !Game_OsdKeyHidden((SDL_Scancode)sc)) || Game_AutoKeyDown((SDL_Scancode)sc)) key_state_set(state, SDL_GetKeyFromScancode((SDL_Scancode)sc), (uint16_t)mods);
     }
+    /* an on-screen button of the keypad is its number, whatever NumLock is
+     * (Android has it off) */
     for (sc = 0; TouchGamepad_HeldKey(sc, &held); sc++)
     {
-        key_state_set(state, held);
+        key_state_set(state, held, (uint16_t)(mods | KMOD_NUM));
     }
     if (mods & KMOD_SHIFT) state[0x10] = 0x80;
     if (mods & KMOD_CTRL) state[0x11] = 0x80;
