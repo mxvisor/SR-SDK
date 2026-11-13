@@ -228,7 +228,7 @@ int Game_GlFboCreate(GLuint *fbo, GLuint *tex, int width, int height,
     {
         glGenRenderbuffers(1, depth);
         glBindRenderbuffer(GL_RENDERBUFFER, *depth);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        glRenderbufferStorage(GL_RENDERBUFFER, (with_depth == 16) ? GL_DEPTH_COMPONENT16 : GL_DEPTH_COMPONENT24, width, height);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, *depth);
     }
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)

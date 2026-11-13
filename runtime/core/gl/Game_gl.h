@@ -68,8 +68,9 @@ GLuint Game_GlProgram(const char *vs, const char *fs,
                       const char *attr0, const char *attr1, const char *attr2,
                       const char *tag);
 
-/* an FBO with an RGBA8 colour texture; with_depth adds a 24-bit depth render
- * buffer (depth != NULL). 0 and a message if the FBO is incomplete. */
+/* an FBO with an RGBA8 colour texture; with_depth adds a depth render buffer
+ * (depth != NULL) of 16 bits when it is 16, else of 24. 0 and a message if the
+ * FBO is incomplete. */
 int Game_GlFboCreate(GLuint *fbo, GLuint *tex, int width, int height,
                      int with_depth, GLuint *depth);
 void Game_GlFboDelete(GLuint *fbo, GLuint *tex, int with_depth, GLuint *depth);

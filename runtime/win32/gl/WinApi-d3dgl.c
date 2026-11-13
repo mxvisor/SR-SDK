@@ -49,8 +49,12 @@
  * readback resolves it into scene_fbo first; the edges come out smoothed at
  * the resolution of the target.
  *
- * Compromises: the depth attachment is 24 bit, not the guest's 16; the depth
- * of the guest's Z-buffer is neither uploaded nor read back (a scene starts
+ * The depth attachment has the bits of the guest's Z-buffer, 16 (or 24 for a
+ * deeper one): what is drawn on a surface at the same depth (a shadow on the
+ * ground) passes the test as the guest's buffer lets it, and not by finer
+ * differences a 16-bit buffer does not keep.
+ *
+ * Compromises: the depth of the guest's Z-buffer is neither uploaded nor read back (a scene starts
  * with a clear one, the game clears it every frame); a flat primitive takes
  * the first vertex's colour, a specular add is folded into it. */
 
@@ -110,6 +114,7 @@ static SDL_Window *gl_window = NULL;
 
 static GLuint scene_fbo = 0, scene_tex = 0, scene_depth = 0;
 static int scene_w = 0, scene_h = 0;
+static int scene_zbits = 0;   /* the bits of the depth attachments: 16 or 24 */
 /* the multisampled frame buffer of an antialiased scene (ms_samples 0: none) */
 static GLuint ms_fbo = 0, ms_color = 0, ms_depth = 0;
 static int ms_samples = 0;
@@ -416,7 +421,7 @@ static int ms_fbo_create(int samples)
     glBindRenderbuffer(GL_RENDERBUFFER, ms_color);
     glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, scene_w, scene_h);
     glBindRenderbuffer(GL_RENDERBUFFER, ms_depth);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, scene_w, scene_h);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, (scene_zbits == 16) ? GL_DEPTH_COMPONENT16 : GL_DEPTH_COMPONENT24, scene_w, scene_h);
     glBindFramebuffer(GL_FRAMEBUFFER, ms_fbo);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, ms_color);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, ms_depth);
@@ -582,7 +587,7 @@ static void gpu_to_memory(struct IDirectDrawSurface_c *s)
 
 int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
 {
-    int kept, ms_made = 0;
+    int kept, ms_made = 0, zbits;
 
     if ((target == NULL) || (target->pixels == NULL) || (target->dd == NULL)) return 0;
     if ((target->bpp != 16) && (target->bpp != 32)) return 0;
@@ -594,13 +599,15 @@ int Winapi_D3dGLBeginScene(struct IDirectDrawSurface_c *target)
     kept = (gpu_back == target);
     gpu_back = NULL;
 
-    if ((scene_fbo == 0) || (scene_w != (int)target->width) || (scene_h != (int)target->height))
+    zbits = ((target->zsurf != NULL) && (target->zsurf->bpp > 16)) ? 24 : 16;
+    if ((scene_fbo == 0) || (scene_w != (int)target->width) || (scene_h != (int)target->height) || (scene_zbits != zbits))
     {
         kept = 0;
         scene_fbo_delete();
-        if (!Game_GlFboCreate(&scene_fbo, &scene_tex, (int)target->width, (int)target->height, 1, &scene_depth)) return 0;
+        if (!Game_GlFboCreate(&scene_fbo, &scene_tex, (int)target->width, (int)target->height, zbits, &scene_depth)) return 0;
         scene_w = (int)target->width;
         scene_h = (int)target->height;
+        scene_zbits = zbits;
     }
 
     /* the multisampled FBO when the scene wants one (made again when the
