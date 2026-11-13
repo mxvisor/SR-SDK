@@ -38,6 +38,10 @@
  * the dialog's controls to Winapi_DialogMessage.  The dialogs open only in a
  * game with GAME_WINAPI_DIALOGS 1 (Game_hooks.h).
  *
+ * A game may add to its own dialogs (a mod's setting): GAME_WINAPI_DIALOG_CREATED
+ * and GAME_WINAPI_DIALOG_HANDLED of Game_hooks.h, with the Winapi_Dialog*
+ * functions of WinApi-ui.h.
+ *
  * The functions take the guest's raw 32-bit arguments; the game's import shim
  * bridges them (tools/gen_import_shim.py). */
 
@@ -63,6 +67,19 @@
  * returns 0 at once, as its stub did */
 #ifndef GAME_WINAPI_DIALOGS
 #define GAME_WINAPI_DIALOGS 0
+#endif
+
+/* GAME_WINAPI_DIALOG_CREATED(name): the template of a dialog was read, its
+ * procedure has not run; name is the template's name, NULL for a number.  The
+ * game may add controls and move them (Winapi_DialogAddControl, ...). */
+#ifndef GAME_WINAPI_DIALOG_CREATED
+#define GAME_WINAPI_DIALOG_CREATED(name)
+#endif
+/* GAME_WINAPI_DIALOG_HANDLED(hDlg, msg, wParam, lParam): the game's dialog
+ * procedure has returned from msg (WM_INITDIALOG, WM_COMMAND); the controls are
+ * there still, also after EndDialog */
+#ifndef GAME_WINAPI_DIALOG_HANDLED
+#define GAME_WINAPI_DIALOG_HANDLED(hDlg, msg, wParam, lParam)
 #endif
 
 #ifdef __cplusplus
@@ -399,13 +416,15 @@ uint32_t CCALL EndDialog_c(uint32_t hDlg, uint32_t nResult);
 
 static uint32_t call_proc(uint32_t msg, uint32_t wParam, uint32_t lParam)
 {
-    uint32_t args[4];
+    uint32_t args[4], result;
 
     args[0] = DIALOG_HANDLE;
     args[1] = msg;
     args[2] = wParam;
     args[3] = lParam;
-    return Winapi_CallGuest(dlg.proc, 4, args);
+    result = Winapi_CallGuest(dlg.proc, 4, args);
+    GAME_WINAPI_DIALOG_HANDLED(DIALOG_HANDLE, msg, wParam, lParam);
+    return result;
 }
 
 static void notify(int index, uint32_t code)
@@ -1229,20 +1248,110 @@ uint32_t CCALL DialogBoxParamA_c(uint32_t hInstance, uint32_t lpTemplateName, ui
     }
 
     dlg.proc = lpDialogFunc;
+    dlg.open = 1;               /* for the game's additions; run_dialog sets it too */
+    GAME_WINAPI_DIALOG_CREATED((lpTemplateName >= 0x10000) ? (const char *)GUEST_MEM(lpTemplateName) : NULL);
     return run_dialog(dwInitParam);
 }
 
 /* a control of the message box, in dialog units */
-static void add_control(int type, uint32_t style, uint32_t id, int x, int y, int w, int h, const char *text)
+static int add_control(int type, uint32_t style, uint32_t id, int x, int y, int w, int h, const char *text)
 {
-    control *c = &dlg.ctl[dlg.n++];
+    control *c;
 
+    if (dlg.n >= MAX_CONTROLS) return 0;
+    c = &dlg.ctl[dlg.n++];
+    memset(c, 0, sizeof(*c));
     c->type = type;
     c->style = WS_VISIBLE_c | style;
     c->id = id;
     c->x = x; c->y = y; c->w = w; c->h = h;
     c->text = dup_text(text != NULL ? text : "");
     c->sel = -1;
+    return 1;
+}
+
+/* ---- a game's additions to its dialogs (WinApi-ui.h) ---- */
+
+int Winapi_DialogAddControl(const char *cls, uint32_t style, uint32_t id, int x, int y, int w, int h, const char *text)
+{
+    int type = !strcasecmp(cls, "BUTTON") ? CTL_BUTTON : !strcasecmp(cls, "STATIC") ? CTL_STATIC :
+               !strcasecmp(cls, "COMBOBOX") ? CTL_COMBO : CTL_OTHER;
+
+    if (!dlg.open) return 0;
+    return add_control(type, style, id, x, y, w, h, text);
+}
+
+int Winapi_DialogGetControl(uint32_t id, int *x, int *y, int *w, int *h, const char **text)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    if (index < 0) return 0;
+    if (x != NULL) *x = dlg.ctl[index].x;
+    if (y != NULL) *y = dlg.ctl[index].y;
+    if (w != NULL) *w = dlg.ctl[index].w;
+    if (h != NULL) *h = dlg.ctl[index].h;
+    if (text != NULL) *text = dlg.ctl[index].text;
+    return 1;
+}
+
+void Winapi_DialogMoveControl(uint32_t id, int dx, int dy)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    if (index < 0) return;
+    dlg.ctl[index].x += dx;
+    dlg.ctl[index].y += dy;
+}
+
+void Winapi_DialogGrow(int dcx, int dcy)
+{
+    if (!dlg.open) return;
+    dlg.cx += dcx;
+    dlg.cy += dcy;
+}
+
+const char *Winapi_DialogListItem(uint32_t id, int item)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    if (index < 0 || item < 0 || item >= dlg.ctl[index].count) return NULL;
+    return dlg.ctl[index].items[item];
+}
+
+int Winapi_DialogListAdd(uint32_t id, const char *text)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    if (index < 0 || dlg.ctl[index].type != CTL_COMBO) return -1;
+    return (int)list_insert(&dlg.ctl[index], -1, text);
+}
+
+int Winapi_DialogListSetItem(uint32_t id, int item, const char *text)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+    char *copy;
+
+    if (index < 0 || item < 0 || item >= dlg.ctl[index].count || (copy = dup_text(text)) == NULL) return 0;
+    free(dlg.ctl[index].items[item]);
+    dlg.ctl[index].items[item] = copy;
+    Game_UiChanged();
+    return 1;
+}
+
+int Winapi_DialogListSelection(uint32_t id)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    return (index < 0) ? -1 : dlg.ctl[index].sel;
+}
+
+void Winapi_DialogListSelect(uint32_t id, int item)
+{
+    int index = dlg.open ? index_of_id(id) : -1;
+
+    if (index < 0 || item < -1 || item >= dlg.ctl[index].count) return;
+    dlg.ctl[index].sel = item;
+    Game_UiChanged();
 }
 
 /* MessageBoxA with the window of the game, as a dialog of the same kind: the text

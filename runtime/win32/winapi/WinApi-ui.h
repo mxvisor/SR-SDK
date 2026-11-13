@@ -43,6 +43,24 @@ int Winapi_DialogOpen(void);
 /* a message to a control of the open dialog (SendMessageA): 1 and its result, or 0 */
 int Winapi_DialogMessage(uint32_t hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam, uint32_t *result);
 
+/* A game's additions to its own dialogs, from GAME_WINAPI_DIALOG_CREATED and
+ * GAME_WINAPI_DIALOG_HANDLED (WinApi-dialog.c); positions in dialog units, a
+ * control by its ID (the first with it).  cls: "BUTTON", "STATIC", "COMBOBOX";
+ * style: the template's (WS_VISIBLE, WS_TABSTOP, CBS_DROPDOWNLIST, ...). */
+int Winapi_DialogAddControl(const char *cls, uint32_t style, uint32_t id, int x, int y, int w, int h, const char *text);
+/* 1 and the control's place and text, 0 when there is none */
+int Winapi_DialogGetControl(uint32_t id, int *x, int *y, int *w, int *h, const char **text);
+void Winapi_DialogMoveControl(uint32_t id, int dx, int dy);
+/* the dialog's width and height grow by dcx, dcy */
+void Winapi_DialogGrow(int dcx, int dcy);
+/* a list: its item (NULL past the end), a new item at the end (its index, -1),
+ * the new text of an item (1, or 0), the selection (-1 none) */
+const char *Winapi_DialogListItem(uint32_t id, int item);
+int Winapi_DialogListAdd(uint32_t id, const char *text);
+int Winapi_DialogListSetItem(uint32_t id, int item, const char *text);
+int Winapi_DialogListSelection(uint32_t id);
+void Winapi_DialogListSelect(uint32_t id, int item);
+
 /* MessageBoxA as a dialog of the port: the button pressed (IDOK, IDYES, ...) */
 uint32_t Winapi_MessageBoxDialog(const char *text, const char *caption, uint32_t type);
 
