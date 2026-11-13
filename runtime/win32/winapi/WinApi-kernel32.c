@@ -500,6 +500,25 @@ static FILE *open_d_drive_image_file(const char *path)
 #endif
 static char current_directory[MAX_PATH] = GAME_WINAPI_START_DIRECTORY;
 
+#ifdef _WIN32
+/* whether the disc's files are a directory, the process's current one */
+static int disc_dir_is_current_directory(void)
+{
+    char disc[MAX_PATH], cwd[MAX_PATH];
+    const char *disc_dir = Game_CdDiscDir();
+    size_t i;
+
+    if (disc_dir[0] == 0 || GetCurrentDirectoryA(sizeof(cwd), cwd) == 0) return 0;
+    if (disc_dir[0] == '/') snprintf(disc, sizeof(disc), "Z:%s", disc_dir);   /* Wine */
+    else if (_fullpath(disc, disc_dir, sizeof(disc)) == NULL) return 0;
+    for (i = 0; disc[i] != 0; i++) if (disc[i] == '/') disc[i] = '\\';
+    for (i = 0; cwd[i] != 0; i++) if (cwd[i] == '/') cwd[i] = '\\';
+    for (i = strlen(disc); i > 3 && disc[i - 1] == '\\'; i--) disc[i - 1] = 0;
+    for (i = strlen(cwd); i > 3 && cwd[i - 1] == '\\'; i--) cwd[i - 1] = 0;
+    return _stricmp(disc, cwd) == 0;
+}
+#endif
+
 /* src as the host file system sees it: a path on D: or relative to the
  * current directory when that is on D: */
 static void resolve_path(const char *src, char *dst)
@@ -524,9 +543,16 @@ static void resolve_path(const char *src, char *dst)
     if (is_d_drive_path(current_directory))
     {
 #ifdef _WIN32
-        /* the process does not change its directory: a full path */
+        /* the process does not change its directory: a full path, but a
+         * relative one when D:\ is that directory (the disc's files are the
+         * game directory), as below, so that the write root's overlay sees it */
         char *p;
 
+        if (current_directory[3] == 0 && disc_dir_is_current_directory())
+        {
+            snprintf(dst, MAX_PATH, "%s", (src[0] == '\\' || src[0] == '/') ? src + 1 : src);
+            return;
+        }
         redirect_d_drive(current_directory, temp);
         if (src[0] == '\\' || src[0] == '/')
             snprintf(dst, MAX_PATH, "%s%s", temp, src);
