@@ -173,7 +173,24 @@ static const char *aa_item_state(void)
     return name;
 }
 
-static const Game_OsdItem aa_item = { "Antialiasing", aa_item_active, aa_item_press, aa_item_state, "Display_Antialiasing", aa_item_step };
+static int aa_item_count(void)
+{
+    return AA_VALUES;
+}
+
+static const char *aa_item_value(int index)
+{
+    static const char *const names[] = { "off", "2", "4", "8" };
+    return names[index];
+}
+
+static void aa_item_choose(int index)
+{
+    d3d_cfg_antialiasing = aa_values[index];
+}
+
+static const Game_OsdItem aa_item = { "Antialiasing", aa_item_active, aa_item_press, aa_item_state, "Display_Antialiasing", aa_item_step,
+                                      aa_item_count, aa_item_value, aa_item_choose };
 
 void Winapi_Direct3DOsdItems(void)
 {

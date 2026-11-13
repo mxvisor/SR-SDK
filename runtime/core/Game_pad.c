@@ -97,7 +97,7 @@ static const char *right_stick_dpad_state(void)
 }
 
 static const Game_OsdItem right_stick_dpad_item = {
-    "Right stick as D-pad", NULL, right_stick_dpad_press, right_stick_dpad_state, "Gamepad_RightStickDpad", NULL
+    "Right stick as D-pad", NULL, right_stick_dpad_press, right_stick_dpad_state, "Gamepad_RightStickDpad", NULL, NULL, NULL, NULL
 };
 
 void Game_PadAddRightStickDpadItem(void)

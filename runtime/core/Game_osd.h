@@ -30,8 +30,11 @@
  * and what it is now ("Filter: crt").  While the panel is open it takes every
  * key, click, touch and gamepad button, the game goes on without them: the
  * arrows (the wheel, the pointer) choose an item, Enter, Space, the left and
- * right arrows, a click or a touch switch it to its next value, Esc or the
- * panel's key close it.  An item with a key of the settings file is written
+ * right arrows, a click or a touch switch it to its next value, or open the
+ * list of its values under it (Up and Down, Enter to choose, Esc to close the
+ * list), Esc or the panel's key close it.  The rows do not all fit: the panel
+ * scrolls (with the chosen row, or a finger drawn over it).  On a touch screen
+ * the rows are about 7 mm high, for a finger.  An item with a key of the settings file is written
  * there at once (Game_ConfigSave), so the next start has it too.
  *
  * The items are registered once the settings are read: the runtime's own (the
@@ -63,6 +66,13 @@ typedef struct {
      * next (+1) value, stopping at the ends; Left and Right, while press goes
      * round (NULL: Left and Right press) */
     void (*step)(int dir);
+    /* of an item of a list of values (the filters, the sizes): how many there
+     * are, the name of one (as state shows it), and to one of them; Enter, a
+     * click, a touch or the pad's A open the list under the item, and a value of
+     * it is chosen there (NULL, all three: press, as before) */
+    int (*count)(void);
+    const char *(*value)(int index);
+    void (*choose)(int index);
 } Game_OsdItem;
 
 /* registers an item; the entry must stay */

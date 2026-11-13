@@ -905,7 +905,7 @@ static const char *effects_state(void)
     return SDL_AtomicGet(&midi_effects) ? "on" : "off";
 }
 
-static const Game_OsdItem effects_item = { "MIDI reverb and chorus", NULL, effects_press, effects_state, "Midi_Effects", NULL };
+static const Game_OsdItem effects_item = { "MIDI reverb and chorus", NULL, effects_press, effects_state, "Midi_Effects", NULL, NULL, NULL, NULL };
 
 void Game_MidiAddEffectsItem(void)
 {

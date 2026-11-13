@@ -823,7 +823,7 @@ static const char *additional_item_state(void)
     return Game_AdditionalResolutions ? "on" : "off";
 }
 
-static const Game_OsdItem additional_item = { "More resolutions (next start)", NULL, additional_item_press, additional_item_state, "Display_Additional_Resolutions", NULL };
+static const Game_OsdItem additional_item = { "More resolutions (next start)", NULL, additional_item_press, additional_item_state, "Display_Additional_Resolutions", NULL, NULL, NULL, NULL };
 
 void Winapi_DirectDrawOsdItems(void)
 {

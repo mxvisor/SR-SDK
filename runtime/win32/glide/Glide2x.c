@@ -974,7 +974,34 @@ static const char *resolution_item_state(void)
     return name;
 }
 
-static const Game_OsdItem resolution_item = { "3D resolution", resolution_item_active, resolution_item_press, resolution_item_state, "Display_3D_Resolution", resolution_item_step };
+/* the list: off, then the sizes */
+static int resolution_item_count(void)
+{
+    return SIZES_3D + 1;
+}
+
+static const char *resolution_item_value(int index)
+{
+    static char name[24];
+
+    if (index == 0) return "off";
+    snprintf(name, sizeof(name), "%dx%d", sizes_3d[index - 1][0], sizes_3d[index - 1][1]);
+    return name;
+}
+
+static void resolution_item_choose(int index)
+{
+    if (index == 0)
+    {
+        Game_3DWidth = Game_3DHeight = 0;
+        return;
+    }
+    Game_3DHeight = sizes_3d[index - 1][1];
+    Game_3DWidth = sizes_3d[index - 1][0];
+}
+
+static const Game_OsdItem resolution_item = { "3D resolution", resolution_item_active, resolution_item_press, resolution_item_state, "Display_3D_Resolution", resolution_item_step,
+                                              resolution_item_count, resolution_item_value, resolution_item_choose };
 
 void Glide_OsdItems(void)
 {

@@ -433,7 +433,13 @@ static const char *filter_item_state(void)
     return Game_GlShaderName(Game_GlFilter());
 }
 
-static const Game_OsdItem filter_item = { "Filter", filter_item_active, filter_item_press, filter_item_state, "Display_Shader", filter_item_step };
+static int filter_item_count(void)
+{
+    return GAME_GL_SHADERS;
+}
+
+static const Game_OsdItem filter_item = { "Filter", filter_item_active, filter_item_press, filter_item_state, "Display_Shader", filter_item_step,
+                                          filter_item_count, Game_GlShaderName, Game_GlSetFilter };
 
 void Game_GlOsdItems(void)
 {

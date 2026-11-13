@@ -454,7 +454,7 @@ static const char *fullscreen_item_state(void)
     return Game_Fullscreen ? "on" : "off";
 }
 
-static const Game_OsdItem fullscreen_item = { "Fullscreen", fullscreen_item_active, fullscreen_item_press, fullscreen_item_state, "Display_Fullscreen", NULL };
+static const Game_OsdItem fullscreen_item = { "Fullscreen", fullscreen_item_active, fullscreen_item_press, fullscreen_item_state, "Display_Fullscreen", NULL, NULL, NULL, NULL };
 #endif
 
 void Game_WindowOsdItems(void)
