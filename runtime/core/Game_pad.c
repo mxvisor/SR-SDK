@@ -67,6 +67,7 @@ typedef struct {
 static pad_slot slots[GAME_PAD_MAX];
 static SDL_mutex *pad_lock = NULL;
 static int pad_enabled = 1;
+static int pad_right_stick_dpad = 0;    /* the mod Gamepad_RightStickDpad */
 static int pad_started = 0;
 static int pad_debug = 0;
 static uint32_t pad_debug_time = 0;
@@ -74,10 +75,34 @@ static uint16_t pad_osd_buttons = 0;    /* the timer thread's: the buttons held 
 
 int Game_PadConfig(const char *key, const char *value)
 {
-    if (strcasecmp(key, "Gamepad") != 0) return 0;
-    if (strcasecmp(value, "off") == 0) pad_enabled = 0;
-    else if (strcasecmp(value, "on") == 0) pad_enabled = 1;
+    int *flag;
+
+    if (strcasecmp(key, "Gamepad") == 0) flag = &pad_enabled;
+    else if (strcasecmp(key, "Gamepad_RightStickDpad") == 0) flag = &pad_right_stick_dpad;
+    else return 0;
+    if (strcasecmp(value, "off") == 0) *flag = 0;
+    else if (strcasecmp(value, "on") == 0) *flag = 1;
     return 1;
+}
+
+/* the item of the port's panel for Gamepad_RightStickDpad */
+static void right_stick_dpad_press(void)
+{
+    pad_right_stick_dpad = !pad_right_stick_dpad;
+}
+
+static const char *right_stick_dpad_state(void)
+{
+    return pad_right_stick_dpad ? "on" : "off";
+}
+
+static const Game_OsdItem right_stick_dpad_item = {
+    "Right stick as D-pad", NULL, right_stick_dpad_press, right_stick_dpad_state, "Gamepad_RightStickDpad", NULL
+};
+
+void Game_PadAddRightStickDpadItem(void)
+{
+    Game_OsdAddItem(&right_stick_dpad_item);
 }
 
 /* sdl2-compat, not SDL2: it numbers its versions from 2.x.50 */
@@ -377,6 +402,19 @@ int Game_PadGetState(int pad, Game_PadState *state)
     stick_deadzone(&state->right_x, &state->right_y, GAME_PAD_RIGHT_DEADZONE);
     state->left_trigger = trigger_deadzone(state->left_trigger);
     state->right_trigger = trigger_deadzone(state->right_trigger);
+    if (pad_right_stick_dpad && !(state->buttons & (GAME_PAD_DPAD_UP | GAME_PAD_DPAD_DOWN | GAME_PAD_DPAD_LEFT | GAME_PAD_DPAD_RIGHT)))
+    {
+        /* past half its way the stick is the D-pad: the direction of the nearest
+         * of the eight, each a sector of 45 degrees (sin 22.5 = 0.3827) */
+        double x = state->right_x, y = state->right_y, edge = 0.3827 * sqrt(x * x + y * y);
+        if (edge >= 0.3827 * 16384)
+        {
+            if (y > edge) state->buttons |= GAME_PAD_DPAD_UP;
+            else if (y < -edge) state->buttons |= GAME_PAD_DPAD_DOWN;
+            if (x > edge) state->buttons |= GAME_PAD_DPAD_RIGHT;
+            else if (x < -edge) state->buttons |= GAME_PAD_DPAD_LEFT;
+        }
+    }
     return 1;
 }
 

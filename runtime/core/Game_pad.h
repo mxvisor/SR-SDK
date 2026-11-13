@@ -80,8 +80,14 @@ extern "C" {
 /* opens the pads there are and watches for others (Init_Input2, after SDL_Init) */
 void Game_PadInit(void);
 void Game_PadQuit(void);
-/* the cfg key Gamepad=on/off (on by default); nonzero if it is that key */
+/* the cfg keys Gamepad=on/off (on by default) and the mod Gamepad_RightStickDpad=on/off
+ * (off by default: the right stick, past half its way, is also the D-pad while the
+ * D-pad is not pressed, for a game that has a POV but no right stick); nonzero if
+ * it is one of them */
 int  Game_PadConfig(const char *key, const char *value);
+/* the panel's item of Gamepad_RightStickDpad, for the GAME_OSD_ITEMS() of a game
+ * that has the mod */
+void Game_PadAddRightStickDpadItem(void);
 /* the timer thread's 10 ms: the panel's keys of the pad, and <GAME>_DEBUG_PAD */
 void Game_PadTick(void);
 /* the host's main thread, for each event it takes out of the queue: a pad that
