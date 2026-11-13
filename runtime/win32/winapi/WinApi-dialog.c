@@ -1010,7 +1010,12 @@ static void text_in(SDL_Renderer *renderer, const char *text, int x, int y, int 
         line[n++] = *text;
     }
     line[n] = 0;
-    while (n > 0 && Game_UiTextWidth(line, dl.th) > w) line[--n] = 0;
+    while (n > 0 && Game_UiTextWidth(line, dl.th) > w)
+    {
+        /* a whole character of UTF-8 */
+        while (n > 1 && ((unsigned char)line[n - 1] & 0xC0) == 0x80) line[--n] = 0;
+        line[--n] = 0;
+    }
     tw = Game_UiTextWidth(line, dl.th);
     if (align == 1) x += (w - tw) / 2;
     else if (align == 2) x += w - tw;

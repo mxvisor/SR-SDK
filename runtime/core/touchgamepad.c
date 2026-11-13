@@ -36,7 +36,7 @@
 #include "Game_vars.h"
 #include "input.h"
 #include "touchgamepad.h"
-#include "VKfont2.h"
+#include "Game_ui.h"
 
 #if defined(__ANDROID__)
 
@@ -68,7 +68,7 @@ static SDL_Renderer *gp_renderer;
 #include "touchlayout_default.h"
 #endif
 
-static SDL_Texture *gp_glyph[128];
+static SDL_Texture *gp_glyph[GAME_UI_GLYPHS];
 static int gp_stamp;
 
 /* A pad is a cross of four arrow buttons (up, down, left, right around an empty
@@ -172,51 +172,36 @@ static void gp_ensure_layout(void)
     gp_find_pads();
 }
 
-static SDL_Texture *gp_glyph_texture(int chr)
+static SDL_Texture *gp_glyph_texture(uint32_t code)
 {
     SDL_Surface *surf;
     SDL_Texture *tex;
     const uint8_t *src;
-    uint8_t *dst;
-    int idx, x, y, byte, bit;
+    int slot, x, y;
 
-    if (chr < 0 || chr >= 128) return NULL;
-    if (gp_glyph[chr] != NULL) return gp_glyph[chr];
+    slot = Game_UiGlyph(code, &src);
+    if (slot < 0) return NULL;
+    if (gp_glyph[slot] != NULL) return gp_glyph[slot];
 
-    idx = vkfont_chr_index[chr];
-    if (idx < 0) return NULL;
-
-    surf = SDL_CreateRGBSurface(0, vkfont_chr_width_pixels, vkfont_chr_height,
+    surf = SDL_CreateRGBSurface(0, GAME_UI_GLYPH_W, GAME_UI_GLYPH_H,
                                 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     if (surf == NULL) return NULL;
 
-    src = vkfont_chr_data + vkfont_chr_size * idx;
-    for (y = 0; y < vkfont_chr_height; y++)
+    for (y = 0; y < GAME_UI_GLYPH_H; y++)
     {
-        dst = (uint8_t *)surf->pixels + y * surf->pitch;
-        for (byte = 0; byte < vkfont_chr_width_bytes; byte++)
+        uint32_t *dst = (uint32_t *)((uint8_t *)surf->pixels + y * surf->pitch);
+
+        for (x = 0; x < GAME_UI_GLYPH_W; x++)
         {
-            for (bit = 0; bit < 8; bit++)
-            {
-                x = byte * 8 + bit;
-                if (x >= vkfont_chr_width_pixels) break;
-                if (src[byte] & (0x80 >> bit))
-                {
-                    ((uint32_t *)dst)[x] = 0xFFFFFFFF;
-                }
-                else
-                {
-                    ((uint32_t *)dst)[x] = 0x00000000;
-                }
-            }
+            dst[x] = (src[x >> 3] & (0x80 >> (x & 7))) ? 0xFFFFFFFFu : 0;
         }
-        src += vkfont_chr_width_bytes;
+        src += GAME_UI_GLYPH_PITCH;
     }
 
     tex = SDL_CreateTextureFromSurface(gp_renderer, surf);
     SDL_FreeSurface(surf);
     if (tex != NULL) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-    gp_glyph[chr] = tex;
+    gp_glyph[slot] = tex;
     return tex;
 }
 
@@ -225,11 +210,15 @@ static void gp_draw_text(const char *str, int cx, int cy, int maxw, int maxh)
     float scale, gw, gh, total, cw, chh, x0, y0;
     int i, n;
 
-    n = (int)strlen(str);
+    {
+        const char *p = str;
+
+        for (n = 0; Game_UiNextChar(&p) != 0; n++) {}
+    }
     if (n <= 0) return;
 
-    gw = (float)vkfont_chr_width_pixels;
-    gh = (float)vkfont_chr_height;
+    gw = (float)GAME_UI_GLYPH_W;
+    gh = (float)GAME_UI_GLYPH_H;
     scale = (float)maxh / gh;
     if (gw * scale * n > (float)maxw) scale = ((float)maxw / gw) / (float)n;
     if (scale <= 0.0f) return;
@@ -242,7 +231,7 @@ static void gp_draw_text(const char *str, int cx, int cy, int maxw, int maxh)
 
     for (i = 0; i < n; i++)
     {
-        SDL_Texture *tex = gp_glyph_texture((unsigned char)str[i]);
+        SDL_Texture *tex = gp_glyph_texture(Game_UiNextChar(&str));
         SDL_Rect dst;
 
         if (tex == NULL) continue;

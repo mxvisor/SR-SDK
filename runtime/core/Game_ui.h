@@ -67,8 +67,23 @@ void Game_UiPictureRect(int window_w, int window_h, int width, int height, SDL_R
 void Game_UiSetRepaint(void (*repaint)(void));
 void Game_UiRepaint(void);
 
-/* Text in the bitmap font of VKfont2.h (ASCII; Latin-1 letters lose their
- * accents), h pixels high */
+/* Text, h pixels high, in UTF-8 (a byte that does not start a UTF-8 character
+ * is one of Windows-1252, the games' own strings), in the bitmap font of
+ * VKfont2.h and Game_font_cyr.h: ASCII, the Cyrillic letters (А-я, Ёё),
+ * Latin-1 letters without their accents; another character is '?'. */
+/* the glyphs: GAME_UI_GLYPH_W x GAME_UI_GLYPH_H bits, a row of
+ * GAME_UI_GLYPH_PITCH bytes, the highest bit on the left */
+#define GAME_UI_GLYPH_W 38
+#define GAME_UI_GLYPH_H 56
+#define GAME_UI_GLYPH_PITCH 5
+#define GAME_UI_GLYPHS (128 + 66)
+/* the next character of the text (0 at its end) */
+uint32_t Game_UiNextChar(const char **text);
+/* the glyph of a character: its number (below GAME_UI_GLYPHS, one per glyph)
+ * and its bits; -1 if the font has none */
+int Game_UiGlyph(uint32_t code, const uint8_t **bits);
+/* non-zero if the font has every character of the first length bytes */
+int Game_UiTextDrawable(const char *text, size_t length);
 int Game_UiTextWidth(const char *text, int h);
 void Game_UiText(SDL_Renderer *renderer, const char *text, int x, int y, int h);
 void Game_UiFillRect(SDL_Renderer *renderer, int x, int y, int w, int h);

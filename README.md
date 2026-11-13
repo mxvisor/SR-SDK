@@ -482,6 +482,7 @@ tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/distrib_cd.py    a distrib copy of a game's disc (game/distrib.cfg)
+tools/font_cyrillic.py  the Cyrillic letters of the OSD font (runtime/core/Game_font_cyr.h)
 tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
 tools/run_common.sh     the common part of a game's run-sdl.sh / run-sdl-wine.sh
 tools/analysis/         tools for the work on a game's SR input (LE/PE, coverage)

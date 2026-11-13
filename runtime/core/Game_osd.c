@@ -720,10 +720,10 @@ int Game_OsdStamp(void)
 
 /* ---- the panel ---- */
 
-/* The panel's font has ASCII only: the words of a pad's name with other characters
- * (UTF-8; Steam names its pad in the user's language: "Контроллер Steam Deck") are
- * left out; "gamepad" when none is left. */
-static void ascii_words(char *out, size_t size, const char *name)
+/* A pad's name is UTF-8 (Steam names its pad in the user's language: "Контроллер
+ * Steam Deck"); its words with a character the panel's font has not got (Game_ui.h)
+ * are left out, "gamepad" when none is left. */
+static void drawable_words(char *out, size_t size, const char *name)
 {
     size_t length = 0;
 
@@ -732,17 +732,12 @@ static void ascii_words(char *out, size_t size, const char *name)
     {
         const char *word = name;
         size_t word_length = 0;
-        int ascii = 1;
 
         while (*name == ' ') name++;
         word = name;
-        while (*name != 0 && *name != ' ')
-        {
-            if ((unsigned char)*name >= 0x80 || (unsigned char)*name < 0x20) ascii = 0;
-            name++;
-        }
+        while (*name != 0 && *name != ' ') name++;
         word_length = (size_t)(name - word);
-        if (!ascii || word_length == 0) continue;
+        if (word_length == 0 || !Game_UiTextDrawable(word, word_length)) continue;
         if (length + (length != 0) + word_length + 1 > size) break;
         if (length != 0) out[length++] = ' ';
         memcpy(out + length, word, word_length);
@@ -770,7 +765,7 @@ static void gamepad_text(char *text, size_t size)
         snprintf(text, size, "Gamepad: none");
         return;
     }
-    ascii_words(name, sizeof(name), Game_PadName(first));
+    drawable_words(name, sizeof(name), Game_PadName(first));
     snprintf(text, size, "Gamepad: %s", name);
     if (count > 1) snprintf(text + strlen(text), size - strlen(text), " (+%d)", count - 1);
 }
