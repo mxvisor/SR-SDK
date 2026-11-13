@@ -34,7 +34,8 @@
 #
 # 1. SDL2 and SDL2_mixer for arm64, by tools/android_sdl.sh, unless there;
 # 2. libmain.so, by scons device=arm64-android (libgameloader.so, which loads it, here);
-# 3. <build>/android/jniLibs/ and assets/game/: the .so files and the data;
+# 3. <build>/android/jniLibs/, assets/game/ and assets/NOTICE.txt: the .so files,
+#    the data, SR-SDK's LICENSE and NOTICE.md;
 # 4. <build>/android/project/: SDL's android-project of the same SDL release,
 #    with android/app.gradle, android/GameActivity.java, the game's name from
 #    game.cfg and the game's game/android/res/ over it;
@@ -167,6 +168,10 @@ def main():
     assets = os.path.join(android, 'assets')
     shutil.rmtree(assets, ignore_errors=True)
     shutil.copytree(data, os.path.join(assets, 'game'), copy_function=link_or_copy)
+    # the licenses of the code and the font in libmain.so and of SDL
+    with open(os.path.join(assets, 'NOTICE.txt'), 'wb') as stream:
+        stream.write(b'\n\n'.join(open(os.path.join(SDK_ROOT, name), 'rb').read().rstrip()
+                                   for name in ('LICENSE', 'NOTICE.md')) + b'\n')
 
     # 4. the gradle project
     project = os.path.join(android, 'project')

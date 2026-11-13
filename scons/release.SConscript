@@ -36,7 +36,9 @@
 # DLLs, the native binary with its libSDL2_mixer (the binary's RPATH is $ORIGIN:
 # SteamOS has SDL2, not SDL2_mixer), every file of game/release/{linux,windows}/
 # and their x64/ (configs, readmes; @GLIBC_MAX@ in a .txt is the binary's
-# glibc_max, scons/glibc_max.py), and build/distrib/data.  There is no launcher script: the program
+# glibc_max, scons/glibc_max.py), <program>-NOTICE.txt (SR-SDK's LICENSE and
+# NOTICE.md: the licenses of the code and the font in the programs and the SDL
+# libraries beside them), and build/distrib/data.  There is no launcher script: the program
 # is started as it is, and finds the game beside itself
 # (runtime/core/Game_gamedir.c).
 #
@@ -70,6 +72,8 @@ LINUX_DEVICE = 'arm64-linux' if platform.machine().lower() in ('aarch64', 'arm64
 WINDOWS_BIN_DIR = os.path.join(BUILD, 'bin', 'x64-windows')
 LINUX_BIN_DIR = os.path.join(BUILD, 'bin', LINUX_DEVICE)
 LINUX_SOS = ('libSDL2_mixer-2.0.so.0', )
+NOTICE_SOURCES = (os.path.join(SDK_ROOT, 'LICENSE'), os.path.join(SDK_ROOT, 'NOTICE.md'))
+NOTICE_NAME = PROGRAM + '-NOTICE.txt'
 
 
 # -------------------------------------------------------- linux, windows --
@@ -161,6 +165,7 @@ def port_names(binaries, dlls, release_oses):
     game's) the runtime names after the program (scons/game.py's GAME_PROGRAM_NAME)."""
     names = [os.path.basename(binary) for binary in binaries]
     names += [os.path.basename(dll) for dll in dlls]
+    names.append(NOTICE_NAME)
     for release_os in release_oses:
         names += [os.path.basename(source) for source in release_files(release_os)]
     for program in [PROGRAM] + TARGET_PROGRAMS:
@@ -203,6 +208,8 @@ def stage_directory(name, binaries, dlls, release_oses):
                     text = stream.read()
                 with open(path, 'wb') as stream:
                     stream.write(text.replace(b'@GLIBC_MAX@', env['GLIBC_MAX'].encode()))
+    with open(os.path.join(directory, NOTICE_NAME), 'wb') as stream:
+        stream.write(b'\n\n'.join(open(path, 'rb').read().rstrip() for path in NOTICE_SOURCES) + b'\n')
     for dll in dlls:
         shutil.copy2(dll, directory)
     for binary in binaries:
@@ -263,6 +270,7 @@ names = env.Value(' '.join(os.path.relpath(path, RELEASE_DIR) for path in releas
                   + ' glibc_max=' + env['GLIBC_MAX'])
 archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
                       linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
-                      + target_binaries[len(TARGET_PROGRAMS):] + dlls + data + release + [names],
+                      + target_binaries[len(TARGET_PROGRAMS):] + dlls + data + release
+                      + [File(path) for path in NOTICE_SOURCES] + [names],
                       pack_archive)
 env.Alias('distrib', archive)
