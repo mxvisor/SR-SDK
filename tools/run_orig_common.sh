@@ -31,6 +31,14 @@
 #   DOS_CONF               DOSBox: optional lines for [dosbox]/[cpu] sections (a full text)
 #   WIN_EXE        Wine: the exe, relative to the data directory
 #   WINE_NAME      Wine, optional: the prefix under ~/.cache (default dos-recomp-wine)
+#   WINE_DESKTOP   Wine, optional: WxH, the game runs in a virtual desktop of that size (a
+#                  game that changes the display mode: Xvfb has no other mode).  The prefix's
+#                  setting: every run sets it or removes it (the per-exe AppDefaults one
+#                  is not honoured by Wine 11)
+#   WINE_CPUS      Wine, optional: the CPUs for taskset -c (a game that hangs on many cores)
+#   WINE_REG       Wine, optional: an array of 'KEY|NAME|TYPE|DATA', registry values set
+#                  before the start, in the 32-bit view (a 32-bit game's), e.g. the
+#                  settings the port writes itself
 #
 # The game's files are build/distrib/data, the game directory as the distrib copy
 # has it (make distrib-data, made here when it is not there yet): C: of DOSBox, the
@@ -226,6 +234,18 @@ run_orig_wine() {
     rm -f "$WINEPREFIX/dosdevices/d:" "$WINEPREFIX/dosdevices/d::"
     _orig_cdaudio ""
   fi
+  local entry rkey rname rtype rdata
+  for entry in ${WINE_REG[@]+"${WINE_REG[@]}"}; do
+    IFS='|' read -r rkey rname rtype rdata <<< "$entry"
+    WINEDLLOVERRIDES="$ovr" wine reg add "$rkey" /v "$rname" /t "$rtype" /d "$rdata" /f /reg:32 >/dev/null 2>&1 ||
+      echo "wine reg add $rkey $rname failed" >&2
+  done
+  if [ -n "${WINE_DESKTOP:-}" ]; then
+    WINEDLLOVERRIDES="$ovr" wine reg add 'HKCU\Software\Wine\Explorer' /v Desktop /d "$ENVP" /f >/dev/null 2>&1
+    WINEDLLOVERRIDES="$ovr" wine reg add 'HKCU\Software\Wine\Explorer\Desktops' /v "$ENVP" /d "$WINE_DESKTOP" /f >/dev/null 2>&1
+  elif WINEDLLOVERRIDES="$ovr" wine reg query 'HKCU\Software\Wine\Explorer' /v Desktop >/dev/null 2>&1; then
+    WINEDLLOVERRIDES="$ovr" wine reg delete 'HKCU\Software\Wine\Explorer' /v Desktop /f >/dev/null 2>&1 || true
+  fi
   # mountmgr reads the drives (and winmm the MCI driver) when it starts: a server
   # left from wineboot or a previous run may not have seen d: or the new type.
   wineserver -k 2>/dev/null || true
@@ -248,17 +268,19 @@ run_orig_wine() {
         [ -z "${XFILE:-}" ] || rm -f "$XFILE"' EXIT
 
   local exe_dir="$merged/$(dirname "$WIN_EXE")" exe="$(basename "$WIN_EXE")"
+  local -a run=(wine)
+  [ -z "${WINE_CPUS:-}" ] || run=(taskset -c "$WINE_CPUS" wine)
   cd "$exe_dir"
   if [ "$HEADLESS" -eq 0 ]; then
-    echo "wine $WIN_EXE (WINEPREFIX=$WINEPREFIX)"
-    env -u WAYLAND_DISPLAY WINEDLLOVERRIDES="$ovr" wine "$exe"
+    echo "${run[*]} $WIN_EXE (WINEPREFIX=$WINEPREFIX)"
+    env -u WAYLAND_DISPLAY WINEDLLOVERRIDES="$ovr" "${run[@]}" "$exe"
     return
   fi
   _orig_need xdotool
   _orig_xvfb
   env -u WAYLAND_DISPLAY DISPLAY="$XDISPLAY" SDL_AUDIODRIVER=dummy \
     WINEDLLOVERRIDES="$ovr;winepulse.drv=d;winealsa.drv=d;wineoss.drv=d" \
-    wine "$exe" >"$base/wine.log" 2>&1 &
+    "${run[@]}" "$exe" >"$base/wine.log" 2>&1 &
   GAME_PID=$!
   echo "$exe (pid $GAME_PID) under Wine on Xvfb $XDISPLAY, log $base/wine.log"
   _orig_shots "$GAME_REPO/build/shots/orig-wine"
