@@ -88,7 +88,7 @@ def read_pe(path):
 
 
 def label(address):
-    return 'loc_%08X' % address
+    return 'loc_%X' % address          # as SR_get_label of SRW: no leading zeros
 
 
 def alias(_module, dll, sci):

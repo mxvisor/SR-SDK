@@ -102,6 +102,7 @@ struct IDirectSound_c {
     PTR32(void) lpVtbl;
     uint32_t RefCount;
     struct IDirectSoundBuffer_c *PrimaryBuffer;
+    uint8_t write_primary;  /* DSSCL_WRITEPRIMARY (GAME_DSOUND_HARDWARE) */
     float listener_position[3], listener_velocity[3], listener_front[3], listener_top[3];
     float distance_factor, rolloff_factor, doppler_factor;
 };
@@ -136,6 +137,8 @@ struct IDirectSoundBuffer_c {
             int16_t *conv_data;
             int32_t *accum_data;
             Game_AudioSource *source;  /* the speakers (Game_audiostream.h) */
+            unsigned int mix_samples;  /* what one mix of the speakers takes, in samples */
+            struct IDirectSoundBuffer_c *written;  /* DSSCL_WRITEPRIMARY: what the program writes, played as it is */
         };
         struct {
             struct IDirectSoundBuffer_c *next;
@@ -1011,6 +1014,7 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *p
     lpDS_c->lpVtbl = &IDirectSoundVtbl_asm2c;
     lpDS_c->RefCount = 1;
     lpDS_c->PrimaryBuffer = NULL;
+    lpDS_c->write_primary = 0;
     memset(lpDS_c->listener_position, 0, sizeof(lpDS_c->listener_position));
     memset(lpDS_c->listener_velocity, 0, sizeof(lpDS_c->listener_velocity));
     memset(lpDS_c->listener_front, 0, sizeof(lpDS_c->listener_front));
@@ -1150,6 +1154,105 @@ static void RecalculateConvFormat(struct IDirectSoundBuffer_c *lpThis)
     }
 }
 
+/* A secondary buffer of that format, stopped and empty */
+static uint32_t new_secondary(struct IDirectSound_c *ds, uint32_t flags, uint32_t bytes, int freq, int bits, int channels, struct IDirectSoundBuffer_c **out)
+{
+    struct IDirectSoundBuffer_c *lpDSB_c;
+
+    lpDSB_c = (struct IDirectSoundBuffer_c *) x86_malloc(sizeof(struct IDirectSoundBuffer_c));
+
+    if (lpDSB_c == NULL)
+    {
+#ifdef DEBUG_DSOUND
+        eprintf("error\n");
+#endif
+        return DSERR_OUTOFMEMORY;
+    }
+
+    lpDSB_c->lpVtbl = &IDirectSoundBufferVtbl_asm2c;
+    lpDSB_c->RefCount = 1;
+    lpDSB_c->DirectSound = ds;
+
+    lpDSB_c->primary = 0;
+    lpDSB_c->status = SDL_AUDIO_STOPPED;
+    lpDSB_c->looping = 0;
+
+    lpDSB_c->freq = freq;
+    lpDSB_c->format = (bits == 16)?AUDIO_S16LSB:AUDIO_U8;
+    lpDSB_c->channels = (uint8_t)channels;
+    lpDSB_c->silence = (bits == 16)?0:0x80;
+    lpDSB_c->attenuation = 0;
+    lpDSB_c->pan = 0;
+    lpDSB_c->left_volume = 0x10000;
+    lpDSB_c->right_volume = 0x10000;
+    Init3D(lpDSB_c, flags);
+
+    lpDSB_c->next = NULL;
+    lpDSB_c->prev = NULL;
+
+    RecalculateConvFormat(lpDSB_c);
+
+    lpDSB_c->data = (uint8_t *)x86_malloc(bytes + 4); // allocate 4 more bytes to allow reading past the end of buffer
+    if (lpDSB_c->data == NULL)
+    {
+        x86_free(lpDSB_c);
+#ifdef DEBUG_DSOUND
+        eprintf("error\n");
+#endif
+        return DSERR_OUTOFMEMORY;
+    }
+    memset(lpDSB_c->data + bytes, lpDSB_c->silence, 4); // what is read past the end is silence
+
+    lpDSB_c->size = bytes;
+    lpDSB_c->read_offset = 0;
+    lpDSB_c->write_offset = 0;
+    lpDSB_c->last_conv_sample[0] = 0;
+    lpDSB_c->last_conv_sample[1] = 0;
+
+    lpDSB_c->resample_freq = 0;
+    lpDSB_c->resample_buffer = NULL;
+    lpDSB_c->resample_position = 0;
+    lpDSB_c->resample_remaining = 0;
+
+    *out = lpDSB_c;
+    return DS_OK;
+}
+
+#ifdef GAME_DSOUND_HARDWARE
+uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwReserved1, uint32_t dwReserved2, uint32_t dwFlags);
+uint32_t CCALL IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis);
+uint32_t CCALL IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis);
+
+/* the samples of the primary buffer a program writes (DSSCL_WRITEPRIMARY), a multiple of 16 */
+#define WRITTEN_PRIMARY_SAMPLES 4096
+
+/* DSSCL_WRITEPRIMARY: the memory of the primary buffer is a secondary buffer of the
+ * primary's format, which the mixer plays as it is; it is made at its first use, after
+ * the program has set the format.  NULL: not that level, or not a buffer of it. */
+static struct IDirectSoundBuffer_c *primary_written(struct IDirectSoundBuffer_c *primary)
+{
+    if ((primary == NULL) || !primary->primary || (primary->DirectSound == NULL) || !primary->DirectSound->write_primary) return NULL;
+    if ((primary->written == NULL) && ((primary->format == AUDIO_S16LSB) || (primary->format == AUDIO_U8)))
+    {
+        const int bits = (primary->format == AUDIO_S16LSB) ? 16 : 8;
+        const uint32_t bytes = WRITTEN_PRIMARY_SAMPLES * primary->channels * (bits / 8);
+        struct IDirectSoundBuffer_c *written;
+
+        if (new_secondary(primary->DirectSound, 0, bytes, primary->freq, bits, primary->channels, &written) == DS_OK)
+        {
+            memset(written->data, written->silence, bytes);
+            primary->written = written;
+        }
+    }
+    return primary->written;
+}
+
+/* the buffer a method of the primary one works on: the memory the program writes */
+#define WRITTEN_OR_SELF(buffer) do { if (((buffer) != NULL) && (buffer)->primary && (primary_written(buffer) != NULL)) (buffer) = (buffer)->written; } while (0)
+#else
+#define WRITTEN_OR_SELF(buffer) do { } while (0)
+#endif
+
 uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const struct _dsbufferdesc * pcDSBufferDesc, PTR32(struct IDirectSoundBuffer_c)* ppDSBuffer, void * pUnkOuter)
 {
     struct IDirectSoundBuffer_c *lpDSB_c;
@@ -1202,6 +1305,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
 
         lpDSB_c->first = NULL;
         lpDSB_c->num_channels = 0;
+        lpDSB_c->written = NULL;
 
         desired.freq = (Audio_SampleRate) ? Audio_SampleRate : 44100;
         desired.format = AUDIO_S16LSB;
@@ -1253,6 +1357,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
 
         RecalculateConvFormat(lpDSB_c);
 
+        lpDSB_c->mix_samples = obtained.samples;
         lpDSB_c->conv_data = (int16_t *) malloc(obtained.samples * 2 * sizeof(int16_t));
         lpDSB_c->accum_data = (int32_t *) malloc(obtained.samples * 2 * sizeof(int32_t));
         if ((lpDSB_c->conv_data == NULL) || (lpDSB_c->accum_data == NULL))
@@ -1288,6 +1393,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
        )
     {
         lpwaveformatex lpwfxFormat;
+        uint32_t result;
 
         lpwfxFormat = pcDSBufferDesc->lpwfxFormat;
 
@@ -1309,60 +1415,11 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
         }
 
 
-        lpDSB_c = (struct IDirectSoundBuffer_c *) x86_malloc(sizeof(struct IDirectSoundBuffer_c));
-
-        if (lpDSB_c == NULL)
+        result = new_secondary(lpThis, pcDSBufferDesc->dwFlags, pcDSBufferDesc->dwBufferBytes, (int)lpwfxFormat->nSamplesPerSec, lpwfxFormat->wBitsPerSample, lpwfxFormat->nChannels, &lpDSB_c);
+        if (result != DS_OK)
         {
-#ifdef DEBUG_DSOUND
-            eprintf("error\n");
-#endif
-            return DSERR_OUTOFMEMORY;
+            return result;
         }
-
-        lpDSB_c->lpVtbl = &IDirectSoundBufferVtbl_asm2c;
-        lpDSB_c->RefCount = 1;
-        lpDSB_c->DirectSound = lpThis;
-
-        lpDSB_c->primary = 0;
-        lpDSB_c->status = SDL_AUDIO_STOPPED;
-        lpDSB_c->looping = 0;
-
-        lpDSB_c->freq = lpwfxFormat->nSamplesPerSec;
-        lpDSB_c->format = (lpwfxFormat->wBitsPerSample == 16)?AUDIO_S16LSB:AUDIO_U8;
-        lpDSB_c->channels = (uint8_t)lpwfxFormat->nChannels;
-        lpDSB_c->silence = (lpwfxFormat->wBitsPerSample == 16)?0:0x80;
-        lpDSB_c->attenuation = 0;
-        lpDSB_c->pan = 0;
-        lpDSB_c->left_volume = 0x10000;
-        lpDSB_c->right_volume = 0x10000;
-        Init3D(lpDSB_c, pcDSBufferDesc->dwFlags);
-
-        lpDSB_c->next = NULL;
-        lpDSB_c->prev = NULL;
-
-        RecalculateConvFormat(lpDSB_c);
-
-        lpDSB_c->data = (uint8_t *)x86_malloc(pcDSBufferDesc->dwBufferBytes + 4); // allocate 4 more bytes to allow reading past the end of buffer
-        if (lpDSB_c->data == NULL)
-        {
-            x86_free(lpDSB_c);
-#ifdef DEBUG_DSOUND
-            eprintf("error\n");
-#endif
-            return DSERR_OUTOFMEMORY;
-        }
-        memset(lpDSB_c->data + pcDSBufferDesc->dwBufferBytes, lpDSB_c->silence, 4); // what is read past the end is silence
-
-        lpDSB_c->size = pcDSBufferDesc->dwBufferBytes;
-        lpDSB_c->read_offset = 0;
-        lpDSB_c->write_offset = 0;
-        lpDSB_c->last_conv_sample[0] = 0;
-        lpDSB_c->last_conv_sample[1] = 0;
-
-        lpDSB_c->resample_freq = 0;
-        lpDSB_c->resample_buffer = NULL;
-        lpDSB_c->resample_position = 0;
-        lpDSB_c->resample_remaining = 0;
 
         *ppDSBuffer = lpDSB_c;
 
@@ -1386,6 +1443,11 @@ uint32_t CCALL IDirectSound_GetCaps_c(struct IDirectSound_c *lpThis, void * pDSC
     memset(caps + 1, 0, caps[0] - sizeof(uint32_t));
     /* mono/stereo, 8/16 bit, primary and secondary; software emulated, continuous rate */
     caps[1] = 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0100 | 0x0200 | 0x0400 | 0x0800;
+#ifdef GAME_DSOUND_HARDWARE
+    /* with the hardware's cursors it is a driver, not the emulation: a program that keeps
+     * the emulation's long way ahead of the write cursor (a third of a second) plays late */
+    caps[1] &= ~(uint32_t)DSCAPS_EMULDRIVER;
+#endif
     caps[2] = 100;      /* dwMinSecondarySampleRate */
     caps[3] = 100000;   /* dwMaxSecondarySampleRate */
     caps[4] = 1;        /* dwPrimaryBuffers */
@@ -1452,6 +1514,14 @@ uint32_t CCALL IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis,
 
     /* The primary buffer cannot be written directly: the program is told so
      * and falls back to a level that lets it play through secondary buffers. */
+#ifdef GAME_DSOUND_HARDWARE
+    /* a sound card's driver lets the program write the primary buffer itself */
+    lpThis->write_primary = (dwLevel == DSSCL_WRITEPRIMARY) ? 1 : 0;
+    if (dwLevel == DSSCL_WRITEPRIMARY)
+    {
+        return DS_OK;
+    }
+#endif
     if (dwLevel == DSSCL_WRITEPRIMARY)
     {
 #ifdef DEBUG_DSOUND
@@ -1582,6 +1652,13 @@ uint32_t CCALL IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
     {
         if (lpThis->primary)
         {
+#ifdef GAME_DSOUND_HARDWARE
+            if (lpThis->written != NULL)
+            {
+                IDirectSoundBuffer_Release_c(lpThis->written);
+                lpThis->written = NULL;
+            }
+#endif
             StopPrimaryBuffer(lpThis);
 
             if (lpThis->conv_data != NULL)
@@ -1635,10 +1712,33 @@ uint32_t CCALL IDirectSoundBuffer_GetCaps_c(struct IDirectSoundBuffer_c *lpThis,
 
     caps[1] = DSBCAPS_LOCSOFTWARE | DSBCAPS_CTRLFREQUENCY | DSBCAPS_CTRLPAN | DSBCAPS_CTRLVOLUME;
     if (lpThis->primary) caps[1] |= DSBCAPS_PRIMARYBUFFER;
+    WRITTEN_OR_SELF(lpThis);
     caps[2] = lpThis->primary ? 0 : (uint32_t)lpThis->size;
     caps[3] = 0;
     caps[4] = 0;
     return DS_OK;
+}
+
+/* The write cursor: where the program may write from.  By default the end of what it
+ * has written, the buffer being a queue the mixer plays on to that end.  With
+ * GAME_DSOUND_HARDWARE it is the hardware's: the play cursor and the
+ * part of the buffer the next mix takes (the hardware has it already), whatever
+ * the program wrote; a game that writes from there to a little way ahead
+ * otherwise writes on from its own end of the data, ever further ahead. */
+static uint32_t write_cursor(const struct IDirectSoundBuffer_c *lpThis)
+{
+#ifdef GAME_DSOUND_HARDWARE
+    const struct IDirectSoundBuffer_c *primary = lpThis->DirectSound->PrimaryBuffer;
+    uint64_t ahead = 0;
+
+    if ((primary != NULL) && (primary->freq > 0))
+    {
+        ahead = (((uint64_t)primary->mix_samples * (uint32_t)lpThis->freq + (uint32_t)primary->freq - 1) / (uint32_t)primary->freq) << lpThis->sample_size_shift;
+    }
+    return (uint32_t)((lpThis->read_offset + ahead) % lpThis->size);
+#else
+    return lpThis->write_offset;
+#endif
 }
 
 uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwCurrentPlayCursor, uint32_t * pdwCurrentWriteCursor)
@@ -1646,6 +1746,8 @@ uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_GetCurrentPosition: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR " - ", (uintptr_t) lpThis, (uintptr_t) pdwCurrentPlayCursor, (uintptr_t) pdwCurrentWriteCursor);
 #endif
+
+    WRITTEN_OR_SELF(lpThis);
 
     if (lpThis == NULL)
     {
@@ -1676,7 +1778,7 @@ uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer
 
     if (pdwCurrentWriteCursor != NULL)
     {
-        *pdwCurrentWriteCursor = lpThis->write_offset;
+        *pdwCurrentWriteCursor = write_cursor(lpThis);
     }
 
 #ifdef DEBUG_DSOUND
@@ -1741,6 +1843,8 @@ uint32_t CCALL IDirectSoundBuffer_Lock_c(struct IDirectSoundBuffer_c *lpThis, ui
     eprintf("IDirectSoundBuffer_Lock: 0x%" PRIxPTR ", %i, %i, 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x - ", (uintptr_t) lpThis, dwOffset, dwBytes, (uintptr_t) ppvAudioPtr1, (uintptr_t) pdwAudioBytes1, (uintptr_t) ppvAudioPtr2, (uintptr_t) pdwAudioBytes2, dwFlags);
 #endif
 
+    WRITTEN_OR_SELF(lpThis);
+
     if ((lpThis == NULL) || (ppvAudioPtr1 == NULL) || (pdwAudioBytes1 == NULL))
     {
 #ifdef DEBUG_DSOUND
@@ -1751,7 +1855,7 @@ uint32_t CCALL IDirectSoundBuffer_Lock_c(struct IDirectSoundBuffer_c *lpThis, ui
 
     if (dwFlags & DSBLOCK_FROMWRITECURSOR)
     {
-        dwOffset = lpThis->write_offset;
+        dwOffset = write_cursor(lpThis);
     }
     if (dwFlags & DSBLOCK_ENTIREBUFFER)
     {
@@ -1838,6 +1942,12 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
         lpThis->status = SDL_AUDIO_PLAYING;
         lpThis->looping = 1;
         Game_AudioSourcePause(lpThis->source, 0);
+#ifdef GAME_DSOUND_HARDWARE
+        if (primary_written(lpThis) != NULL)
+        {
+            IDirectSoundBuffer_Play_c(lpThis->written, 0, 0, DSBPLAY_LOOPING);
+        }
+#endif
 
 #ifdef DEBUG_DSOUND
         eprintf("OK\n");
@@ -1982,6 +2092,15 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
     desired.callback = &fill_audio;
     desired.userdata = lpThis;
 
+#ifdef GAME_DSOUND_HARDWARE
+    /* the memory the program writes has the old format: a new one at its next use */
+    if (lpThis->written != NULL)
+    {
+        IDirectSoundBuffer_Release_c(lpThis->written);
+        lpThis->written = NULL;
+    }
+#endif
+
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
         Game_AudioSourceLock(lpThis->source);
@@ -2039,6 +2158,7 @@ uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThi
 
     RecalculateConvFormat(lpThis);
 
+    lpThis->mix_samples = obtained.samples;
     lpThis->conv_data = (int16_t *) malloc(obtained.samples * 2 * sizeof(int16_t));
     lpThis->accum_data = (int32_t *) malloc(obtained.samples * 2 * sizeof(int32_t));
     if ((lpThis->conv_data == NULL) || (lpThis->accum_data == NULL))
@@ -2191,6 +2311,12 @@ uint32_t CCALL IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
         Game_AudioSourcePause(lpThis->source, 1);
         Game_AudioSourceUnlock(lpThis->source);
         lpThis->status = SDL_AUDIO_PAUSED;
+#ifdef GAME_DSOUND_HARDWARE
+        if (lpThis->written != NULL)
+        {
+            IDirectSoundBuffer_Stop_c(lpThis->written);
+        }
+#endif
 
 #ifdef DEBUG_DSOUND
         eprintf("OK\n");
@@ -2220,6 +2346,8 @@ uint32_t CCALL IDirectSoundBuffer_Unlock_c(struct IDirectSoundBuffer_c *lpThis, 
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_Unlock: 0x%" PRIxPTR ", 0x%" PRIxPTR ", %i, 0x%" PRIxPTR ", %i - ", (uintptr_t) lpThis, (uintptr_t) pvAudioPtr1, dwAudioBytes1, (uintptr_t) pvAudioPtr2, dwAudioBytes2);
 #endif
+
+    WRITTEN_OR_SELF(lpThis);
 
     if (lpThis == NULL)
     {
