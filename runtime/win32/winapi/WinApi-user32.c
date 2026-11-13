@@ -723,6 +723,11 @@ void Winapi_StopMainIfExiting(void)
  * it pumps when it finds no message and every 10 ms of a wait. */
 #define INPUT_QUEUE_SIZE 1024
 
+#ifdef __cplusplus
+extern "C"
+#endif
+void Winapi_MidiCallbackArgs(const SDL_UserEvent *event, uint32_t *args);   /* WinApi-midi.c */
+
 static SDL_Event input_queue[INPUT_QUEUE_SIZE];
 static int input_head;
 static int input_count;
@@ -1109,7 +1114,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
             }
             else
 #endif
-            if ((event->user.code >= 0) && (event->user.code <= 3))
+            if (((event->user.code >= 0) && (event->user.code <= 3)) || (event->user.code == EC_WINAPI_MIDI))
             {
                 keep_event = 1;
             }
@@ -1847,6 +1852,16 @@ static void translate_event(lpmsg lpMsg, SDL_Event *event, int remove)
                 args[4] = 0;
                 Winapi_CallGuest((uint32_t)(uintptr_t)event->user.data1, 5, args);
             }
+            break;
+        case EC_WINAPI_MIDI:
+            /* a MIDI stream's callback (WinApi-midi.c): data1 = the guest function */
+            {
+                uint32_t args[5];
+
+                Winapi_MidiCallbackArgs(&event->user, args);
+                Winapi_CallGuest((uint32_t)(uintptr_t)event->user.data1, 5, args);
+            }
+            lpMsg->message = WM_NULL;
             break;
         }
 

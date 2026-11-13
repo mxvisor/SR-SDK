@@ -469,8 +469,131 @@ int Game_MidiFinished(void)
     return SDL_AtomicGet(&midi_finished);
 }
 
+/* --- a stream of messages --- */
+
+static Game_MidiPump midi_pump = NULL;
+static void *midi_pump_user = NULL;
+static SDL_mutex *midi_lock = NULL;
+
+void Game_MidiLock(void)
+{
+    if (midi_lock == NULL) midi_lock = SDL_CreateMutex();
+    SDL_LockMutex(midi_lock);
+}
+
+void Game_MidiUnlock(void)
+{
+    SDL_UnlockMutex(midi_lock);
+}
+
+void Game_MidiShortMsg(uint32_t msg)
+{
+    int ch = msg & 0x0f;
+    int d1 = (msg >> 8) & 0x7f;
+    int d2 = (msg >> 16) & 0x7f;
+
+    if (midi_synth == NULL) return;
+    Game_MidiLock();
+    switch (msg & 0xf0)
+    {
+    case 0x80:
+        tsf_channel_note_off(midi_synth, ch, d1);
+        break;
+    case 0x90:
+        if (d2 > 0)
+            Game_TsfChannelNoteOn(midi_synth, ch, d1, d2 / 127.0f);
+        else
+            tsf_channel_note_off(midi_synth, ch, d1);
+        break;
+    case 0xb0:
+        Game_TsfChannelMidiControl(midi_synth, ch, d1, d2);
+        break;
+    case 0xc0:
+        tsf_channel_set_presetnumber(midi_synth, ch, d1, ch == 9);
+        break;
+    case 0xe0:
+        tsf_channel_set_pitchwheel(midi_synth, ch, d1 | (d2 << 7));
+        break;
+    default:    /* aftertouch and the system messages: TinySoundFont has no use for them */
+        break;
+    }
+    Game_MidiUnlock();
+}
+
+void Game_MidiReset(void)
+{
+    int ch;
+
+    if (midi_synth == NULL) return;
+    Game_MidiLock();
+    for (ch = 0; ch < 16; ch++)
+    {
+        tsf_channel_sounds_off_all(midi_synth, ch);
+        Game_TsfChannelMidiControl(midi_synth, ch, 121, 0);  /* reset all controllers */
+        tsf_channel_set_presetnumber(midi_synth, ch, 0, ch == 9);
+    }
+    Game_MidiUnlock();
+}
+
+static int midi_stream_hooked;   /* midi_stream_mix is SDL_mixer's music */
+
+static void midi_stream_mix(void *udata, Uint8 *stream, int len)
+{
+    short *out = (short *)stream;
+    int frames = len / (int)(sizeof(short) * Game_AudioChannels);
+    int slice = Game_AudioRate * 3 / 2000;   /* 1.5 ms: the timing of the messages */
+
+    (void)udata;
+    if (slice < 1) slice = 1;
+    Game_MidiLock();
+    while (frames > 0)
+    {
+        int n = (frames < slice) ? frames : slice;
+
+        if (midi_pump != NULL) midi_pump(midi_pump_user, n * 1000.0 / Game_AudioRate);
+        tsf_render_short(midi_synth, out, n, 0);
+        out += n * Game_AudioChannels;
+        frames -= n;
+    }
+    Game_MidiUnlock();
+}
+
+int Game_MidiStreamOpen(Game_MidiPump pump, void *user)
+{
+    if (midi_synth == NULL && !midi_load_synth()) return 0;
+    Game_MidiStop();
+    Game_MidiLock();
+    midi_pump = pump;
+    midi_pump_user = user;
+    Game_MidiUnlock();
+    Game_MidiReset();
+    MIDI_LOG("stream open\n");
+    return 1;
+}
+
+void Game_MidiStreamPlay(int playing)
+{
+    playing = playing && (midi_pump != NULL);
+    if (playing == midi_stream_hooked) return;
+    midi_stream_hooked = playing;
+    Mix_HookMusic(playing ? midi_stream_mix : NULL, NULL);
+}
+
+void Game_MidiStreamClose(void)
+{
+    if (midi_pump == NULL) return;
+    Game_MidiStreamPlay(0);
+    Game_MidiLock();
+    midi_pump = NULL;
+    midi_pump_user = NULL;
+    Game_MidiUnlock();
+    Game_MidiReset();
+    MIDI_LOG("stream closed\n");
+}
+
 void Game_MidiShutdown(void)
 {
+    Game_MidiStreamClose();
     Game_MidiStop();
     if (midi_synth != NULL)
     {

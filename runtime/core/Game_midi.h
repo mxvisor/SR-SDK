@@ -52,6 +52,26 @@ int Game_MidiFinished(void);
 /* stops the song and frees the synthesizer */
 void Game_MidiShutdown(void);
 
+/* A stream of MIDI messages instead of a song (the winmm MIDI stream of the
+ * Win32 games).  While the stream is open, the audio thread calls pump before
+ * each slice of at most 1.5 ms it renders, with the slice's length in ms; pump
+ * sends the messages due by then with Game_MidiShortMsg.  Game_MidiLock keeps
+ * the audio thread out (it is held around pump too, and it nests).
+ * Game_MidiStreamOpen stops the song; it returns 0 without a soundfont.
+ * The stream takes SDL_mixer's music (the CD music too) only between
+ * Game_MidiStreamPlay(1) and Game_MidiStreamPlay(0): a game may stop its stream
+ * and play the CD with the stream still open.  Not under Game_MidiLock. */
+typedef void (*Game_MidiPump)(void *user, double ms);
+int Game_MidiStreamOpen(Game_MidiPump pump, void *user);
+void Game_MidiStreamPlay(int playing);
+void Game_MidiStreamClose(void);
+/* a short message: status in the low byte, then the two data bytes */
+void Game_MidiShortMsg(uint32_t msg);
+/* all notes off at once, the controllers and the programs reset */
+void Game_MidiReset(void);
+void Game_MidiLock(void);
+void Game_MidiUnlock(void);
+
 #ifdef __cplusplus
 }
 #endif
