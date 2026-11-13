@@ -203,6 +203,7 @@ static int paint_pending = 0;
 #define MK_XBUTTON2 0x0040
 
 
+#define VK_BACK 0x08
 #define VK_TAB 0x09
 #define VK_CLEAR 0x0C
 #define VK_RETURN 0x0D
@@ -210,6 +211,7 @@ static int paint_pending = 0;
 #define VK_CONTROL 0x11
 #define VK_MENU 0x12
 #define VK_CAPITAL 0x14
+#define VK_ESCAPE 0x1B
 #define VK_SPACE 0x20
 #define VK_PRIOR 0x21
 #define VK_NEXT 0x22
@@ -871,6 +873,7 @@ static int find_event(SDL_Event *event, int remove, int wait)
     int can_sleep;
 
     if (Thread_Exit) Game_StopMain();
+    Game_AutoKeysStart();   /* a game that reads its keys from the messages only polls no key state */
 
     if (priority_event.type)
     {
@@ -1272,23 +1275,17 @@ static void translate_key(lpmsg lpMsg, int released, int vkey, int scancode, int
     if (getenv(GAME_ENV("DEBUG_INPUT"))) fprintf(stderr, "[message key %s vkey=%d]\n", released ? "up" : "down", vkey);
     lpMsg->message = (released)?WM_KEYUP:WM_KEYDOWN;
     lpMsg->wParam = vkey;
-    lpMsg->lParam = scancode << 16;
+    /* bits 0-15: the repeat count, 1 for every message, as Windows sends them
+     * (a game may queue the key that many times); bit 30: the key was down
+     * before; bit 31: released.  Not set: bit 24, the extended keys. */
+    lpMsg->lParam = (scancode << 16) | 1;
     if (released)
     {
-        lpMsg->lParam |= 1 | (1 << 30) | (1 << 31);
-        // missing bits (unused by the original):
-        // bit 24 - Indicates whether the key is an extended key, such as the right-hand ALT and CTRL keys that appear on an enhanced 101- or 102-key keyboard. The value is 1 if it is an extended key; otherwise, it is 0.
+        lpMsg->lParam |= (1 << 30) | (1 << 31);
     }
-    else
+    else if (repeat)
     {
-        // missing bits (unused by the original):
-        // bits 0-15 - The repeat count for the current message.
-        // bit 24 - Indicates whether the key is an extended key, such as the right-hand ALT and CTRL keys that appear on an enhanced 101- or 102-key keyboard. The value is 1 if it is an extended key; otherwise, it is 0.
-        // bit 30 - The previous key state.
-        if (repeat)
-        {
-            lpMsg->lParam |= 1 | (1 << 30);
-        }
+        lpMsg->lParam |= (1 << 30);
     }
 }
 
@@ -2916,8 +2913,9 @@ uint32_t CCALL TranslateMessage_c(void *pMsg)
 #endif
 
     // As in Windows, WM_KEYDOWN of a character key posts WM_CHAR to the same window
-    // (letters by Shift/Caps Lock, digits without Shift, Space).  Keys with Ctrl or Alt
-    // give no character.
+    // (letters by Shift/Caps Lock, digits without Shift, Space; Return, Escape,
+    // Backspace and Tab their control characters).  Keys with Ctrl or Alt give no
+    // character.
     lpmsg m = (lpmsg)pMsg;
     if ((m != NULL) && (m->message == WM_KEYDOWN))
     {
@@ -2937,6 +2935,10 @@ uint32_t CCALL TranslateMessage_c(void *pMsg)
         else if (!(mod & KMOD_SHIFT) && (((vkey >= '0') && (vkey <= '9')) || (vkey == VK_SPACE)))
         {
             ch = vkey;
+        }
+        else if ((vkey == VK_RETURN) || (vkey == VK_ESCAPE) || (vkey == VK_BACK) || (vkey == VK_TAB))
+        {
+            ch = vkey;  /* 13, 27, 8, 9: the virtual keys are the characters */
         }
 
         if (ch != 0) PostMessageA_c(m->hwnd.get_value() ? (void *)GAME_GUEST32_TO_PTR(m->hwnd.get_value()) : NULL, WM_CHAR, ch, m->lParam);
