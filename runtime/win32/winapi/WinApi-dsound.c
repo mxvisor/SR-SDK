@@ -274,6 +274,16 @@ static void remove_from_list(struct IDirectSoundBuffer_c *PrimaryBuffer, struct 
     }
 }
 
+/* playback starts afresh: nothing of the samples converted before carries over
+ * (DirectSound starts a stopped buffer, or one moved, from its new position) */
+static void forget_converted(struct IDirectSoundBuffer_c *buf)
+{
+    buf->last_conv_sample[0] = 0;
+    buf->last_conv_sample[1] = 0;
+    buf->resample_position = 0;
+    buf->resample_remaining = 0;
+}
+
 #include "WinApi-dsound-conv.h"
 
 // callback procedure for filling audio data
@@ -368,8 +378,12 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
     // clear accumulator data
     SDL_memset(PrimaryBuffer->accum_data, 0, num_samples * 2 * sizeof(int32_t));
 
+    /* num_playing buffers, counted and not by coming back to the first one: a
+     * buffer that has played to its end leaves the list in the loop, and when it
+     * was the first (or the only) one the list no longer leads back to it */
     current = PrimaryBuffer->first;
-    do {
+    for (; num_playing != 0; num_playing--, current = next)
+    {
         next = current->next;
 
         if (current->freq == PrimaryBuffer->freq)
@@ -923,9 +937,7 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
             remaining1 = remaining2;
             remaining2 = 0;
         }
-
-        current = next;
-    } while (current != PrimaryBuffer->first);
+    }
 
 
     switch (PrimaryBuffer->conv_format)
@@ -1339,6 +1351,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, c
 #endif
             return DSERR_OUTOFMEMORY;
         }
+        memset(lpDSB_c->data + pcDSBufferDesc->dwBufferBytes, lpDSB_c->silence, 4); // what is read past the end is silence
 
         lpDSB_c->size = pcDSBufferDesc->dwBufferBytes;
         lpDSB_c->read_offset = 0;
@@ -1844,6 +1857,7 @@ uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, ui
         struct IDirectSoundBuffer_c *first, *last;
 
         lpThis->status = SDL_AUDIO_PLAYING;
+        forget_converted(lpThis);
 
         if (PrimaryBuffer->num_channels == 0)
         {
@@ -1888,11 +1902,13 @@ uint32_t CCALL IDirectSoundBuffer_SetCurrentPosition_c(struct IDirectSoundBuffer
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
         Game_AudioSourceLock(lpThis->DirectSound->PrimaryBuffer->source);
+        if (lpThis->read_offset != dwNewPosition) forget_converted(lpThis);
         lpThis->read_offset = dwNewPosition;
         Game_AudioSourceUnlock(lpThis->DirectSound->PrimaryBuffer->source);
     }
     else
     {
+        if (lpThis->read_offset != dwNewPosition) forget_converted(lpThis);
         lpThis->read_offset = dwNewPosition;
     }
     return DS_OK;
