@@ -830,7 +830,9 @@ void Winapi_DirectDrawOsdItems(void)
     Game_OsdAddItem(&additional_item);
 }
 
-/* Calls the guest callback `BOOL FAR PASCAL cb(LPGUID, LPSTR, LPSTR, LPVOID)` once, for the primary display */
+/* Calls the guest callback `BOOL FAR PASCAL cb(LPGUID lpGUID, LPSTR lpDriverDescription,
+ * LPSTR lpDriverName, LPVOID)` once, for the primary display, with Windows' strings:
+ * a game may tell the primary display by its name "display" */
 uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context)
 {
     static char *strings = NULL;
@@ -842,13 +844,13 @@ uint32_t Winapi_DirectDrawEnumerate(uint32_t callback, uint32_t context)
     {
         strings = (char *)x86_malloc(32);
         if (strings == NULL) return DDERR_OUTOFMEMORY;
-        strcpy(strings, "display");
-        strcpy(strings + 16, "primary");
+        strcpy(strings, "Primary Display Driver");
+        strcpy(strings + 24, "display");
     }
 
     args[0] = 0;
     args[1] = GUEST_ADDR(strings);
-    args[2] = GUEST_ADDR(strings + 16);
+    args[2] = GUEST_ADDR(strings + 24);
     args[3] = context;
     Winapi_CallGuest(callback, 4, args);
 
