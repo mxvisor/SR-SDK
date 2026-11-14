@@ -58,6 +58,8 @@ void Game_DosRuntimeDeinit(void);
 
 /* Any thread: asks the flip thread to show a frame (Game_RequestFlip). */
 void Game_DosRequestPresent(void);
+/* The milliseconds since the last Game_DosRequestPresent */
+uint32_t Game_DosSincePresent(void);
 
 #ifdef __cplusplus
 }

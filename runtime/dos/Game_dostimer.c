@@ -41,7 +41,9 @@
  * every ACTION_* macro (at backward jumps and calls), so it is where the host
  * gets a turn: the window may have been closed, the keyboard is drained and its
  * interrupt delivered, the PIT's channel 0 interrupt (INT 8) is due, and the
- * screen is presented about 30 times a second, and the IRQ of the Sound
+ * screen is presented when nothing else (the retrace, Game_dosvga.c; a
+ * game's own frame) has presented it for 16 ms (about 60 a second, the
+ * host's vsync), and the IRQ of the Sound
  * Blaster is due (GAME_DOS_SOUNDBLASTER).  A game that has to do something
  * else at INT 8 (a sound driver's timer) says what in GAME_DOS_TIMER_TICK()
  * of Game_hooks.h, in place of Game_DosTimerTick (the guest's INT 8 and
@@ -59,13 +61,9 @@ static void pit_irq(void)
 
 extern "C" void SR_CheckTimer(void)
 {
-    static uint32_t last_present;
-    uint32_t now;
-
     if (Thread_Exit) Game_StopMain();
 
     Game_DosKbdDrain();
-    now = SDL_GetTicks();
 
     Game_DosPitRun(pit_irq);
 
@@ -75,9 +73,11 @@ extern "C" void SR_CheckTimer(void)
     Game_DosSbDeliverIrq();
 #endif
 
-    if (now - last_present >= 33)
+    /* after the interrupts, which run the guest's code and may come back
+     * here: the time is read now, and the present of a call inside them
+     * counts */
+    if (Game_DosSincePresent() >= 16)
     {
         Game_DosRequestPresent();
-        last_present = now;
     }
 }

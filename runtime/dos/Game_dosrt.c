@@ -157,9 +157,19 @@ extern "C" void CCALL X86_WriteMemProcedure(uint32_t address, uint32_t size, uin
     if (pointer != NULL) memcpy(pointer, &value, size);
 }
 
+/* The time of the last present (SDL_GetTicks), for the timer's (SR_CheckTimer) */
+static SDL_atomic_t present_at;
+
 void Game_DosRequestPresent(void)
 {
+    SDL_AtomicSet(&present_at, (int)SDL_GetTicks());
     Game_RequestFlip();
+}
+
+uint32_t Game_DosSincePresent(void)
+{
+    const int32_t since = (int32_t)(SDL_GetTicks() - (uint32_t)SDL_AtomicGet(&present_at));
+    return since > 0 ? (uint32_t)since : 0;
 }
 
 /* The shadows of the privileged registers and the descriptor table that the

@@ -27,6 +27,7 @@
 
 #include "display.h"
 #include "Game_dosvga.h"
+#include "Game_dosrt.h"
 
 /* The DAC as the game programs it: 6-bit R, G, B per entry.  Kept apart from
  * the display's 8-bit copy (Set_Palette_Value) because a game reads colours
@@ -53,10 +54,20 @@ static uint32_t dac_level_to_8bit(uint8_t level)
  * start, and then to end, both finish. */
 static uint8_t input_status1(void)
 {
-    static uint64_t frame;
+    static uint64_t frame, shown = UINT64_MAX;
     if (frame == 0) frame = SDL_GetPerformanceFrequency() * (449u * 800u) / 25175000u;
-    const uint64_t position = SDL_GetPerformanceCounter() % frame;
-    return (position >= frame * 412u / 449u && position < frame * 414u / 449u) ? 0x08 : 0x00;
+    const uint64_t now = SDL_GetPerformanceCounter(), position = now % frame;
+    if (position >= frame * 412u / 449u && position < frame * 414u / 449u) {
+        /* A game that waits for the retrace has finished the frame before
+         * (it shows the next one at the retrace): present it, once a
+         * retrace, not by the timer (SR_CheckTimer) */
+        if (now / frame != shown) {
+            shown = now / frame;
+            Game_DosRequestPresent();
+        }
+        return 0x08;
+    }
+    return 0x00;
 }
 
 int Game_DosVgaIn(uint16_t port, uint32_t *value)
