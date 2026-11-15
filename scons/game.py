@@ -820,6 +820,17 @@ if want('obj'):
                 stream.write(dll_header)
         env.Append(CPPDEFINES=['GAME_HAVE_DLL_MODULES'], CPPPATH=[dll_header_dir])
 
+    if CFG.get('icon') and device != 'arm64-android':
+        # icon= of game.cfg: the window's icon, game_icon.h (tools/game_icon.py) for
+        # Game_eventloop.c; the APK has it as the launcher's (tools/android_apk.py)
+        icon_header_dir = os.path.join(obj_device, 'include')
+        icon_tool = os.path.join(SDK_ROOT, 'tools', 'game_icon.py')
+        env.Command(os.path.join(icon_header_dir, 'game_icon.h'),
+                    [File(icon_tool), env.Value('icon=' + CFG['icon'])],
+                    '"%s" -I "%s" --root "%s" --build "%s" "%s" --header "$TARGET"'
+                    % (sys.executable, icon_tool, ROOT, BUILD, CFG['icon']))
+        env.Append(CPPDEFINES=['GAME_HAVE_ICON'], CPPPATH=[icon_header_dir])
+
     env.Append(CPPPATH=[GAME_DIR] + RUNTIME_DIRS
                + [os.path.join(SDK_ROOT, 'extern', 'tsf')]
                + ([os.path.join(RUNTIME_CORE, 'gl'),
@@ -918,6 +929,20 @@ if want('bin'):
         defaults += env.SharedLibrary(os.path.join(STAGE_BUILD, 'bin', device, 'main'),
                                       game_objs)
     else:
+        if device == 'x64-windows' and CFG.get('icon'):
+            # icon= of game.cfg: the game's icon with the port's badge (tools/game_icon.py),
+            # the exe's first icon resource, which Explorer and SDL's window show
+            icon_dir = os.path.join(STAGE_BUILD, 'obj', device, 'icon')
+            windres = 'windres' if env['PLATFORM'] == 'win32' else env['toolprefix'] + 'windres'
+            icon_tool = os.path.join(SDK_ROOT, 'tools', 'game_icon.py')
+            game_objs += env.Command(
+                os.path.join(icon_dir, 'icon.o'),
+                [File(icon_tool), env.Value('icon=' + CFG['icon'])],
+                ['"%s" -I "%s" --root "%s" --build "%s" "%s" --ico "%s"'
+                 % (sys.executable, icon_tool, ROOT, BUILD, CFG['icon'], os.path.join(icon_dir, 'icon.ico')),
+                 Action(lambda target, source, env: open(os.path.join(icon_dir, 'icon.rc'), 'wt').write(
+                     '1 ICON "icon.ico"\n') and None, 'icon.rc'),
+                 'cd "%s" && %s -O coff -i icon.rc -o icon.o' % (icon_dir, windres)])
         program_nodes = env.Program(os.path.join(BUILD, 'bin', device, binary_name(PROGRAM, device)),
                                     game_objs)
         defaults += program_nodes

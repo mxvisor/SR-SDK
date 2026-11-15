@@ -37,7 +37,7 @@
 # 3. <build>/android/jniLibs/, assets/game/ and assets/NOTICE.txt: the .so files,
 #    the data, SR-SDK's LICENSE and NOTICE.md;
 # 4. <build>/android/project/: SDL's android-project of the same SDL release,
-#    with android/app.gradle, android/GameActivity.java, the game's name from
+#    with android/app.gradle, android/GameActivity.java, the game's name and icon from
 #    game.cfg and the game's game/android/res/ over it;
 # 5. gradle assembleDebug, all of its output in <build>/android/.
 #
@@ -45,6 +45,9 @@
 #     android_id=io.github.<user>.<game>     the application id (required)
 #     android_name=<Name>                    the launcher's label (default:
 #                                            program)
+#     icon=disc:GAME.EXE                     the launcher's icon: the game's own with
+#                                            the port's badge (tools/game_icon.py;
+#                                            default SDL's)
 #
 # The Android SDK is $ANDROID_HOME (or $ANDROID_SDK_ROOT); the NDK is
 # $ANDROID_NDK_HOME or the newest <sdk>/ndk/*; Java is $JAVA_HOME or <sdk>/jdk.
@@ -215,7 +218,11 @@ def main():
     with open(os.path.join(res, 'values', 'strings.xml'), 'wt') as stream:
         stream.write('<resources>\n    <string name="app_name">%s</string>\n</resources>\n'
                      % escape(app_name))
-    game_res = os.path.join(game_dir, 'android', 'res')
+    if cfg.get('icon'):
+        # the launcher's icon: the game's own with the port's badge, over SDL's
+        run([sys.executable, '-I', os.path.join(SDK_ROOT, 'tools', 'game_icon.py'),
+             '--root', root, '--build', build, cfg['icon'], '--android', res])
+    game_res =os.path.join(game_dir, 'android', 'res')
     if os.path.isdir(game_res):
         shutil.copytree(game_res, res, dirs_exist_ok=True)
 

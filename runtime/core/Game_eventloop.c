@@ -364,6 +364,21 @@ typedef struct {
     unsigned int flags;
 } window_args;
 
+#if defined(GAME_HAVE_ICON)
+/* icon= of game.cfg: the game's icon with the port's badge (SR-SDK/tools/game_icon.py,
+ * made by scons/game.py); the Windows exe has it as a resource too, the APK as the launcher's */
+#include "game_icon.h"
+
+static void window_icon(SDL_Window *window)
+{
+    SDL_Surface *icon = SDL_CreateRGBSurfaceWithFormatFrom((void *)game_icon_rgba, GAME_ICON_SIZE, GAME_ICON_SIZE,
+                                                           32, GAME_ICON_SIZE * 4, SDL_PIXELFORMAT_RGBA32);
+    if (icon == NULL) return;
+    SDL_SetWindowIcon(window, icon);
+    SDL_FreeSurface(icon);
+}
+#endif
+
 static void window_create(void *data)
 {
     window_args *args = (window_args *)data;
@@ -371,6 +386,9 @@ static void window_create(void *data)
     args->window = SDL_CreateWindow(GAME_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, args->width, args->height,
                                     args->flags | SDL_WINDOW_RESIZABLE | fullscreen_flag());
     if (args->window == NULL) return;
+#if defined(GAME_HAVE_ICON)
+    window_icon(args->window);
+#endif
     SDL_SetWindowMinimumSize(args->window, args->width, args->height);
     port_window = args->window;
     port_width = args->width;

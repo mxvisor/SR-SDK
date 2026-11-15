@@ -162,6 +162,10 @@ dist_name=game                     # the name of the release archives (default p
 targets=                           # game/ only: the other programs, game-<name>/ (see "targets" below)
 android_id=io.github.user.game   # for Android: the application id
 android_name=Game                 # and the launcher's label
+icon=disc:GAME.EXE                # the icon of the window, the Windows exe and the APK: the game's own
+                                  # (an exe's first group icon, EXE#NAME for another, or an
+                                  # .ico/.bmp), with "SR" drawn in its bottom right corner
+                                  # (tools/game_icon.py); disc: and paths as input_exe
 ```
 
 The port puts its files into the game's directory, all named after `program`:
