@@ -52,6 +52,12 @@
 #ifndef GAME_WINAPI_TOUCH_GAMEPAD
 #define GAME_WINAPI_TOUCH_GAMEPAD 0
 #endif
+/* GAME_WINAPI_TOUCHPAD_TAP 0 (with GAME_WINAPI_TOUCH_GAMEPAD 1): a tap away from the buttons
+ * is no click, for a game whose mouse button is an action (a tap between the buttons would
+ * fire); a drag still moves the mouse. Default 1: a tap clicks */
+#ifndef GAME_WINAPI_TOUCHPAD_TAP
+#define GAME_WINAPI_TOUCHPAD_TAP 1
+#endif
 
 /* the clock of the guest (timeGetTime, GetTickCount): the time of a data record is read
    against it, not against SDL's */
@@ -189,6 +195,7 @@ static void touchpad_event(const SDL_Event *event)
         case SDL_FINGERUP:
             if (event->tfinger.fingerId != touchpad_finger) return;
             touchpad_finger = TOUCHPAD_NO_FINGER;
+            if (!GAME_WINAPI_TOUCHPAD_TAP) return;
             if ((Winapi_GetTicks() - touchpad_down_time > TOUCHPAD_TAP_MS) || (touchpad_moved > TOUCHPAD_TAP_MOVE)) return;
             SDL_LockMutex(mouse_mutex);
             mouse_buttons_down[0] = 0x80;

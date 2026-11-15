@@ -470,6 +470,13 @@ static double retrace_hz = 60.0;
 static uint64_t retrace_base;
 static uint64_t retrace_shown;   /* the retrace that shows the last flip */
 
+/* A palette change shows at the next retrace, as the flip asked for just after it does: a
+ * game that flips (a movie fading in) gets one frame for both. While the game flips (its last
+ * flip is not older than two refresh periods) the change waits for the next flip; when it
+ * does not, the next SetEntries or wait for the retrace shows it. */
+static int palette_pending;
+static void palette_show(void);
+
 void Winapi_RetraceStart(double hz)
 {
     retrace_hz = (hz >= 1.0) ? hz : 60.0;
@@ -503,15 +510,28 @@ static void retrace_sleep_until(uint64_t when)
     fps_waited += now - start;
 }
 
+/* the game flips: its last flip is shown at most two refresh periods ago */
+static int retrace_flipping(uint64_t now)
+{
+    return (retrace_shown != 0) &&
+           (now < retrace_shown + (uint64_t)(2.0 / retrace_hz * (double)SDL_GetPerformanceFrequency()));
+}
+
 int Winapi_RetraceIn(void)
 {
-    double pos = retrace_position(SDL_GetPerformanceCounter());
+    double pos;
+
+    palette_show();
+    pos = retrace_position(SDL_GetPerformanceCounter());
     return (pos - floor(pos)) < RETRACE_PART;
 }
 
 void Winapi_RetraceWait(void)
 {
-    uint64_t now = SDL_GetPerformanceCounter();
+    uint64_t now;
+
+    palette_show();
+    now = SDL_GetPerformanceCounter();
     double pos = retrace_position(now);
 
     if ((pos - floor(pos)) < RETRACE_PART) return;
@@ -532,6 +552,7 @@ void Winapi_RetraceFlip(void)
 
 static void Present(struct IDirectDraw_c *dd)
 {
+    palette_pending = 0;
     Winapi_CountFrame();
     /* Direct3D's picture too: WinApi-d3dgl.c draws into the primary's mirror */
     if ((dd->Primary != NULL) && (dd->Window != NULL)) Winapi_D3dGLPresent(dd->Primary, dd->Window);
@@ -2158,23 +2179,38 @@ uint32_t CCALL IDirectDrawPalette_Initialize_c(struct IDirectDrawPalette_c */*lp
 uint32_t CCALL IDirectDrawPalette_SetEntries_c(struct IDirectDrawPalette_c *lpThis, uint32_t /*dwFlags*/, uint32_t dwStartingEntry, uint32_t dwCount, void * lpEntries)
 {
     const uint8_t *in = (const uint8_t *)lpEntries;
-    uint32_t i;
+    uint32_t i, argb, changed = 0;
 
     if ((lpThis == NULL) || (in == NULL) || (dwStartingEntry > 256) || (dwCount > 256 - dwStartingEntry)) return DDERR_INVALIDPARAMS;
 
     for (i = 0; i < dwCount; i++)
     {
-        lpThis->argb[dwStartingEntry + i] = 0xff000000u | (in[i * 4] << 16) | (in[i * 4 + 1] << 8) | in[i * 4 + 2];
+        argb = 0xff000000u | (in[i * 4] << 16) | (in[i * 4 + 1] << 8) | in[i * 4 + 2];
+        changed |= lpThis->argb[dwStartingEntry + i] ^ argb;
+        lpThis->argb[dwStartingEntry + i] = argb;
     }
+    /* the same colours again (a movie sets its palette with every frame, then flips): the
+     * screen does not change, and showing it again would show each frame twice */
+    if (changed == 0) return DD_OK;
 
 #ifdef GAME_D3D_GL
     /* the 8-bit textures are read through the palette when they are made */
     if (Winapi_Direct3DGL()) Winapi_D3dGLPaletteChanged(lpThis);
 #endif
 
-    /* a palette change shows at once on the screen */
-    if (winapi_dd_screen != NULL) Present(winapi_dd_screen);
+    /* a palette change shows on the screen at the next retrace, with the next flip if the
+     * game flips */
+    palette_pending = 1;
+    palette_show();
     return DD_OK;
+}
+
+static void palette_show(void)
+{
+    if (palette_pending && (winapi_dd_screen != NULL) && !retrace_flipping(SDL_GetPerformanceCounter()))
+    {
+        Present(winapi_dd_screen);
+    }
 }
 
 
