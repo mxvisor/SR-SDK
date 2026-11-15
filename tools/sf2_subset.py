@@ -24,10 +24,18 @@ use are kept, the rest is dropped (a General MIDI bank of 140 MB for the dozen
 programs a game's music uses).
 
     sf2_subset.py IN.sf2 OUT.sf2 PRESET...      PRESET: bank:program or program (bank 0)
+    sf2_subset.py --fluid DIR PRESET...         DIR/soundfont.sf2 and soundfont.LICENSE
+                                                from the system's FluidR3_GM
 
 Drum kits are bank 128 (128:0 is the Standard kit).  The 24-bit extension
 (sm24) is dropped: the synthesizer of the runtime (TinySoundFont) reads 16 bits.
+
+A game's bank is not kept in its repository: soundfont=<PRESET...> of its
+game/distrib.cfg, and distrib_cd.py (the game directory) and make release cut it
+from FluidR3_GM.sf2 of the build's system, the package fluid-soundfont-gm
+(soundfont-fluid on Arch), or the file $SR_SOUNDFONT.
 """
+import os
 import struct
 import sys
 
@@ -148,14 +156,85 @@ def subset(data, wanted):
     return riff(b'RIFF', body), len(presets), len(instruments), len(samples)
 
 
+FLUID_PATHS = ('/usr/share/soundfonts/FluidR3_GM.sf2',      # Fedora, Arch
+               '/usr/share/sounds/sf2/FluidR3_GM.sf2')     # Debian, Ubuntu
+
+FLUID_LICENSE = """Fluid (R3) SoundFont
+
+Copyright (c) 2000-2002, 2008 Frank Wen <getfrank@gmail.com>
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+soundfont.sf2 is FluidR3_GM.sf2 cut by SR-SDK/tools/sf2_subset.py to the
+presets the game's music uses (bank:program, bank 0 if none): %s.
+"""
+
+
+def fluid_source():
+    """FluidR3_GM.sf2 of the system, or None."""
+    paths = [os.environ['SR_SOUNDFONT']] if os.environ.get('SR_SOUNDFONT') else FLUID_PATHS
+    return next((path for path in paths if os.path.isfile(path)), None)
+
+
+FLUID_MISSING = ('FluidR3_GM.sf2 not found (%s): install the package fluid-soundfont-gm '
+                 '(soundfont-fluid on Arch), or give the file in $SR_SOUNDFONT' % ', '.join(FLUID_PATHS))
+
+
+def parse_presets(specs):
+    wanted = set()
+    for spec in specs:
+        bank, _, program = spec.rpartition(':')
+        wanted.add((int(program), int(bank) if bank else 0))
+    return wanted
+
+
+def fluid_bank(directory, specs):
+    """directory/soundfont.sf2 and soundfont.LICENSE: the system's FluidR3_GM cut
+    to the presets specs (the soundfont= of a game's distrib.cfg)."""
+    source = fluid_source()
+    if source is None:
+        raise SystemExit('sf2_subset: ' + FLUID_MISSING)
+    with open(source, 'rb') as f:
+        data = f.read()
+    if data[:4] != b'RIFF' or data[8:12] != b'sfbk':
+        raise SystemExit('sf2_subset: %s: not a SoundFont 2' % source)
+    out, presets, instruments, samples = subset(data, parse_presets(specs))
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, 'soundfont.sf2'), 'wb') as f:
+        f.write(out)
+    with open(os.path.join(directory, 'soundfont.LICENSE'), 'wt') as f:
+        f.write(FLUID_LICENSE % ' '.join(specs))
+    print('soundfont.sf2: %s cut to %d presets, %d instruments, %d samples, %d bytes'
+          % (source, presets, instruments, samples, len(out)))
+
+
 def main(argv):
+    if len(argv) >= 3 and argv[1] == '--fluid':
+        fluid_bank(argv[2], argv[3:])
+        return 0
     if len(argv) < 4:
         print(__doc__, file=sys.stderr)
         return 2
-    wanted = set()
-    for spec in argv[3:]:
-        bank, _, program = spec.rpartition(':')
-        wanted.add((int(program), int(bank) if bank else 0))
+    wanted = parse_presets(argv[3:])
     with open(argv[1], 'rb') as f:
         data = f.read()
     if data[:4] != b'RIFF' or data[8:12] != b'sfbk':

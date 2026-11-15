@@ -74,6 +74,23 @@ LINUX_BIN_DIR = os.path.join(BUILD, 'bin', LINUX_DEVICE)
 LINUX_SOS = ('libSDL2_mixer-2.0.so.0', )
 NOTICE_SOURCES = (os.path.join(SDK_ROOT, 'LICENSE'), os.path.join(SDK_ROOT, 'NOTICE.md'))
 NOTICE_NAME = PROGRAM + '-NOTICE.txt'
+SF2_SUBSET = os.path.join(SDK_ROOT, 'tools', 'sf2_subset.py')
+SOUNDFONT_DIR = os.path.join(BUILD, 'soundfont')
+
+
+def distrib_soundfont():
+    """soundfont= of game/distrib.cfg (the presets of the port's General MIDI bank), or ''."""
+    if not os.path.isfile(DISTRIB_CFG):
+        return ''
+    with open(DISTRIB_CFG, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if '=' in line and line.split('=', 1)[0].strip() == 'soundfont':
+                return line.split('=', 1)[1].strip()
+    return ''
+
+
+SOUNDFONT = distrib_soundfont()
 
 
 # -------------------------------------------------------- linux, windows --
@@ -128,7 +145,7 @@ if os.path.isfile(DISTRIB_CFG):
 
     def inputs_hash():
         digest = hashlib.sha256()
-        for path in (DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py')):
+        for path in (DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py'), SF2_SUBSET):
             with open(path, 'rb') as stream:
                 digest.update(stream.read())
         return digest.hexdigest()
@@ -154,7 +171,8 @@ if os.path.isfile(DISTRIB_CFG):
     if not os.path.isdir(DISTRIB_DIR) and os.path.exists(DISTRIB_STAMP):
         os.remove(DISTRIB_STAMP)
     # made again when the cfg or the tool that reads it changes
-    env.Alias('distrib-data', env.Command(DISTRIB_STAMP, [DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py')],
+    env.Alias('distrib-data', env.Command(DISTRIB_STAMP, [DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py'),
+                                                          SF2_SUBSET],
                                            make_distrib))
 
 # ------------------------------------------------------------------ distrib --
@@ -201,6 +219,10 @@ def stage_directory(name, binaries, dlls, release_oses, with_data=True):
         check_names(directory, port_names(binaries, dlls, release_oses))
         if with_data:
             shutil.copytree(DISTRIB_DIR, directory, symlinks=True, dirs_exist_ok=True)
+    if not with_data and SOUNDFONT:
+        # the bank of the port's synthesizer, which distrib has in its game directory
+        for file in ('soundfont.sf2', 'soundfont.LICENSE'):
+            shutil.copy2(os.path.join(SOUNDFONT_DIR, file), directory)
     for release_os in release_oses:
         for source in release_files(release_os):
             shutil.copy2(source, directory)
@@ -277,10 +299,17 @@ archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
                       pack_archive)
 env.Alias('distrib', archive)
 # the port alone, for an installed game: the archive of distrib without the game's data,
-# which the player has from the game's own install
+# which the player has from the game's own install; with the port's General MIDI bank
+soundfont = []
+if SOUNDFONT:
+    soundfont = env.Command([os.path.join(SOUNDFONT_DIR, 'soundfont.sf2'), os.path.join(SOUNDFONT_DIR, 'soundfont.LICENSE')],
+                            [SF2_SUBSET, env.Value(SOUNDFONT)],
+                            lambda target, source, env: subprocess.run(
+                                [sys.executable, '-I', SF2_SUBSET, '--fluid', SOUNDFONT_DIR] + SOUNDFONT.split(),
+                                check=True).returncode)
 port_archive = env.Command(os.path.join(DIST, '%s-x64-port.zip' % DIST_NAME),
                            linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
                            + target_binaries[len(TARGET_PROGRAMS):] + dlls + release
-                           + [File(path) for path in NOTICE_SOURCES] + [names],
+                           + [File(path) for path in NOTICE_SOURCES] + soundfont + [names],
                            lambda target, source, env: pack_archive(target, source, env, False))
 env.Alias('release', port_archive)

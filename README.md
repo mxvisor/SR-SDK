@@ -85,6 +85,8 @@ callback; SDL2_mixer's own MIDI backend is then not needed.
   cross-builds from Linux)
 - LLVM's `opt` and `llc`, for the llasm backend
 - SDL2 and SDL2_mixer
+- for a game with MIDI music (`soundfont=` in its `game/distrib.cfg`): FluidR3_GM, the package
+  `fluid-soundfont-gm` (`soundfont-fluid` on Arch), or the file in `$SR_SOUNDFONT`
 - for Android: the Android SDK with an NDK and a JDK, CMake, Ninja and curl
   (SDL itself is downloaded and built by `tools/android_sdl.sh`)
 
@@ -235,7 +237,10 @@ that keeps its files inside itself), and the audio tracks as flac, wav or ogg
 files with a cue sheet. What to skip, move and add is in `game/distrib.cfg`; the
 script's header lists its keys. Its `image=`, the disc image, is the one path outside the repository; its
 cue sheet is made in `build/cd/`. A distrib copy has no launcher script: the
-program finds the game in its own directory.
+program finds the game in its own directory. The General MIDI bank of the port's synthesizer is
+not kept in a repository: `soundfont=` lists the presets the game's music uses, and
+`tools/sf2_subset.py` cuts them from the system's FluidR3_GM into `soundfont.sf2` (and its license) of
+the game directory and of `make release`.
 
 `tools/image/image.py` turns a disc image into what the rest of the SDK takes as
 the disc, a cue sheet: `image.py disc IMAGE [-o DIR] [--iso] [--extract DIR]`
@@ -484,6 +489,7 @@ tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/distrib_cd.py    a distrib copy of a game's disc (game/distrib.cfg)
+tools/sf2_subset.py     a SoundFont cut to some presets: the MIDI bank of a game (soundfont=)
 tools/font_cyrillic.py  the Cyrillic letters of the OSD font (runtime/core/Game_font_cyr.h)
 tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
 tools/run_common.sh     the common part of a game's run-sdl.sh / run-sdl-wine.sh

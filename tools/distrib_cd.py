@@ -40,7 +40,9 @@
 #    still reads there stays at its disc path, so the game directory is the
 #    disc as well;
 # 2. extra_files, the files the installer would have written (files of the
-#    repository, game/install/ by custom), as they are;
+#    repository, game/install/ by custom), as they are, and soundfont=, the
+#    General MIDI bank of the port's synthesizer, cut from the system's
+#    FluidR3_GM (sf2_subset.py);
 # 3. place=<glob> <dest>..., the files the installer copies to another place
 #    than their disc path, relocated from the disc tree to OUT_DIR: <glob> is
 #    either a disc-path glob (case-insensitive fnmatch against the path from
@@ -69,6 +71,8 @@
 #     skip_files=<patterns>            files not to copy, at any depth
 #     skip_dirs=<patterns>             directories not to copy, at any depth
 #     extra_files=<paths>              copied into OUT_DIR as they are
+#     soundfont=<presets>              OUT_DIR/soundfont.sf2 (+ .LICENSE): FluidR3_GM
+#                                      of the system cut to these bank:program
 #     empty_dirs=<paths>               created in OUT_DIR, empty (a directory the
 #                                      game expects but the disc does not have)
 #     place=<glob> <dest>              disc-glob (or disc directory/) +
@@ -95,7 +99,9 @@ import sys
 from typing import NoReturn
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdimage import RAW, Image, parse_cue, records, track_span  # noqa: E402
+import sf2_subset  # noqa: E402
 
 
 def fail(message) -> NoReturn:
@@ -269,6 +275,8 @@ def main():
     for path in extra:
         if not os.path.isfile(path):
             fail('no such file: %s' % path)
+    if cfg.get('soundfont') and sf2_subset.fluid_source() is None:
+        fail(sf2_subset.FLUID_MISSING)
 
     image_path, tracks = parse_cue(cue_path)
     data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
@@ -308,6 +316,8 @@ def main():
     for path in extra:
         shutil.copy(path, args.out)
         print('extra: %s' % os.path.basename(path))
+    if cfg.get('soundfont'):
+        sf2_subset.fluid_bank(args.out, cfg['soundfont'].split())
     for path in cfg.get('empty_dirs', '').split():
         os.makedirs(os.path.join(args.out, path), exist_ok=True)
 
