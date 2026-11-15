@@ -195,7 +195,7 @@ as SteamOS), `make windows` (the MinGW build with the SDL DLLs beside the exe),
 both programs with the Windows DLLs and the Linux `.so`, `game/release/{linux,windows}/` and their `x64/`,
 where `@GLIBC_MAX@` of a `.txt` is the build's `glibc_max`, `<program>-NOTICE.txt` (`LICENSE` and
 `NOTICE.md`; the APK has it as `assets/NOTICE.txt`) and the data), `make release` (`build/distrib/<name>-x64-port.zip`:
-the same without the game's data, the archive to publish; the distrib archive and the APK hold the game's files), `make apk`, `make disc`
+the same without the game's data, the programs for a game already installed; the distrib archive and the APK hold the game's files), `make apk`, `make disc`
 (`build/disc`), `make host|input|recomp|gen|obj` (one stage), `make clean` (everything built; the disc's unpacked files, `build/disc`, `build/cd` and
 `build/distrib/data`, stay, so the tree builds on a machine without the disc image), `make distclean` (those too), `make test`.
 The same names work as `scons <name>`; `MINGW_BIN=` points at the DLLs.

@@ -27,7 +27,7 @@
 #   make [linux windows]   the native binary / the MinGW cross build with the DLLs
 #   make distrib           release archives in build/distrib/ (builds both, and the data)
 #   make release           build/distrib/<name>-x64-port.zip: the archive of distrib
-#                          without the game's data, to publish
+#                          without the game's data, for an installed game
 #   make distrib-data      build/distrib/data: the disc's files and music
 #   make apk               the Android APK in build/distrib/ (tools/android_apk.py)
 #   make disc | host | input | recomp | gen | obj    one stage (scons stage=...)

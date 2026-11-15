@@ -276,7 +276,7 @@ archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
                       + [File(path) for path in NOTICE_SOURCES] + [names],
                       pack_archive)
 env.Alias('distrib', archive)
-# the port alone, for publishing: the archive of distrib without the game's data,
+# the port alone, for an installed game: the archive of distrib without the game's data,
 # which the player has from the game's own install
 port_archive = env.Command(os.path.join(DIST, '%s-x64-port.zip' % DIST_NAME),
                            linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
