@@ -27,7 +27,10 @@
  * layout, meaning the buttons, their keys and where they sit, is a header
  * that defines `gp_buttons[]`, `GP_NBUTTONS` and `gp_layout(W, H)`.  A game
  * with its own layout has game/Game_touchlayout.h; the others get
- * touchlayout_default.h.  The desktop builds get no-ops. */
+ * touchlayout_default.h.  gp_layout may depend on the game's state (a mod
+ * that adds a button): the game calls TouchGamepad_Relayout when that state
+ * changes.  A button of width 0 is hidden: not drawn, never touched.  The
+ * desktop builds get no-ops. */
 
 #include <math.h>
 #include <stdlib.h>
@@ -345,6 +348,7 @@ static void gp_draw_button(GPButton *btn)
     Uint8 r, g, b, a;
     SDL_Rect rect;
 
+    if (btn->w <= 0 || btn->h <= 0) return;
     r = btn->r; g = btn->g; b = btn->b;
     a = active ? 170 : 100;
 
@@ -385,6 +389,14 @@ void TouchGamepad_Draw(SDL_Renderer *renderer)
     {
         gp_draw_button(&gp_buttons[i]);
     }
+}
+
+void TouchGamepad_Relayout(void)
+{
+    TouchGamepad_ReleaseAll();
+    gp_W = 0;
+    gp_H = 0;
+    gp_stamp++;
 }
 
 void TouchGamepad_ForgetRenderer(void)
@@ -600,6 +612,10 @@ int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
 }
 
 #else /* !__ANDROID__ */
+
+void TouchGamepad_Relayout(void)
+{
+}
 
 void TouchGamepad_ForgetRenderer(void)
 {
