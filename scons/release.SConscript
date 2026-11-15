@@ -188,8 +188,9 @@ def check_names(directory, names):
                         % (os.path.basename(directory), ', '.join(sorted(clashes))))
 
 
-def stage_directory(name, binaries, dlls, release_oses):
-    """build/distrib/<name>/: the programs, the release files, the data."""
+def stage_directory(name, binaries, dlls, release_oses, with_data=True):
+    """build/distrib/<name>/: the programs, the release files and, with_data, the
+    game's data."""
     directory = os.path.join(DIST, name)
     shutil.rmtree(directory, ignore_errors=True)
     os.makedirs(directory)
@@ -198,7 +199,8 @@ def stage_directory(name, binaries, dlls, release_oses):
     # be the port's, not covered by it.
     if os.path.isdir(DISTRIB_DIR):
         check_names(directory, port_names(binaries, dlls, release_oses))
-        shutil.copytree(DISTRIB_DIR, directory, symlinks=True, dirs_exist_ok=True)
+        if with_data:
+            shutil.copytree(DISTRIB_DIR, directory, symlinks=True, dirs_exist_ok=True)
     for release_os in release_oses:
         for source in release_files(release_os):
             shutil.copy2(source, directory)
@@ -227,13 +229,13 @@ def release_files(release_os):
     return files
 
 
-def pack_archive(target, source, env):
-    name = '%s-x64' % DIST_NAME
+def pack_archive(target, source, env, with_data=True):
+    name = os.path.splitext(os.path.basename(str(target[0])))[0]
     programs = 1 + len(TARGET_PROGRAMS)
     binaries = [str(node) for node in source[:2 * programs]]
     dlls = sorted(glob.glob(os.path.join(WINDOWS_BIN_DIR, '*.dll'))) \
         + [os.path.join(LINUX_BIN_DIR, so) for so in LINUX_SOS]
-    directory = stage_directory(name, binaries, dlls, ('linux', 'windows'))
+    directory = stage_directory(name, binaries, dlls, ('linux', 'windows'), with_data)
     with zipfile.ZipFile(str(target[0]), 'w', zipfile.ZIP_DEFLATED) as archive:
         for base, dirs, files in os.walk(directory):
             dirs.sort()
@@ -274,3 +276,11 @@ archive = env.Command(os.path.join(DIST, '%s-x64.zip' % DIST_NAME),
                       + [File(path) for path in NOTICE_SOURCES] + [names],
                       pack_archive)
 env.Alias('distrib', archive)
+# the port alone, for publishing: the archive of distrib without the game's data,
+# which the player has from the game's own install
+port_archive = env.Command(os.path.join(DIST, '%s-x64-port.zip' % DIST_NAME),
+                           linux_binary + target_binaries[:len(TARGET_PROGRAMS)] + [windows_binary]
+                           + target_binaries[len(TARGET_PROGRAMS):] + dlls + release
+                           + [File(path) for path in NOTICE_SOURCES] + [names],
+                           lambda target, source, env: pack_archive(target, source, env, False))
+env.Alias('release', port_archive)

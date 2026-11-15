@@ -26,6 +26,8 @@
 #
 #   make [linux windows]   the native binary / the MinGW cross build with the DLLs
 #   make distrib           release archives in build/distrib/ (builds both, and the data)
+#   make release           build/distrib/<name>-x64-port.zip: the archive of distrib
+#                          without the game's data, to publish
 #   make distrib-data      build/distrib/data: the disc's files and music
 #   make apk               the Android APK in build/distrib/ (tools/android_apk.py)
 #   make disc | host | input | recomp | gen | obj    one stage (scons stage=...)
@@ -53,7 +55,7 @@ comma := ,
 # under `make -j`.  The parallelism is scons's own (JOBS).
 .NOTPARALLEL:
 
-.PHONY: all windows-skipped host input recomp gen obj linux windows disc distrib-data distrib apk \
+.PHONY: all windows-skipped host input recomp gen obj linux windows disc distrib-data distrib release apk \
         clean distclean test help
 
 # the Windows build needs the MinGW-w64 cross compiler: a host without it (a board) builds
@@ -77,6 +79,9 @@ disc distrib-data:
 
 distrib: linux windows distrib-data
 	$(SCONS) distrib
+
+release: linux windows
+	$(SCONS) release
 
 apk: distrib-data
 	python3 $(SDK)/tools/android_apk.py -j $(JOBS) --target $(TARGET)
