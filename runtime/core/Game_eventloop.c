@@ -89,6 +89,11 @@ int Winapi_MenuBarOpen(void);
 #ifdef __cplusplus
 }
 #endif
+#if defined(GAME_WINAPI_TOUCH_GAMEPAD) && GAME_WINAPI_TOUCH_GAMEPAD
+#define WINAPI_TOUCH_ON_WINDOW_THREAD 1
+#else
+#define WINAPI_TOUCH_ON_WINDOW_THREAD 0
+#endif
 #else
 #define WINAPI_ROUTES_INPUT 0
 #endif
@@ -576,6 +581,15 @@ void Game_Event_Loop(void)
         /* the panel first, unless a dialog or the window menu of the game is open:
          * those keep their input (they run on the window's thread) */
         if (!Winapi_DialogOpen() && !Winapi_MenuBarOpen() && Game_OsdEvent(&event)) continue;
+#endif
+#if WINAPI_ROUTES_INPUT
+        /* a touch goes to the window's thread, whose pump hands it to an open
+         * dialog, then to the window menu, then to the on-screen gamepad
+         * (WinApi-user32.c); a game without GAME_WINAPI_TOUCH_GAMEPAD has its
+         * gamepad here, but a dialog or the window menu still takes its touches */
+        if ((event.type == SDL_FINGERDOWN || event.type == SDL_FINGERMOTION || event.type == SDL_FINGERUP)
+            && (WINAPI_TOUCH_ON_WINDOW_THREAD || Winapi_DialogOpen() || Winapi_MenuBarOpen())
+            && Winapi_RouteEvent(&event)) continue;
 #endif
         if (Handle_Input_Event(&event)) continue;
 #if WINAPI_ROUTES_INPUT
