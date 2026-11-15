@@ -812,7 +812,15 @@ uint32_t CCALL GetFileAttributesA_c(uint32_t a0)
 
     if (a0 == 0) return 0xffffffffu;
     Winapi_ResolveGamePath((const char *)GUEST_MEM(a0), path);
-    if (!CLIB_FindFile(path, real)) return 0xffffffffu; /* INVALID_FILE_ATTRIBUTES */
+    if (!CLIB_FindFile(path, real))
+    {
+        /* a directory only the write root has (the game made it) */
+        char overlay[4096];
+
+        if (CLIB_WriteOverlay(path, overlay, sizeof(overlay)) && CLIB_FindFile(overlay, real) &&
+            stat(real, &st) == 0 && S_ISDIR(st.st_mode)) return 0x00000010u; /* FILE_ATTRIBUTE_DIRECTORY */
+        return 0xffffffffu; /* INVALID_FILE_ATTRIBUTES */
+    }
     if (stat(real, &st) == 0 && S_ISDIR(st.st_mode)) return 0x00000010u; /* FILE_ATTRIBUTE_DIRECTORY */
     return 0x00000080u; /* FILE_ATTRIBUTE_NORMAL */
 }

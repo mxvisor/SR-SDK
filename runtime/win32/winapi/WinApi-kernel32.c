@@ -159,10 +159,19 @@ extern void CCALL Game_ExitMain_Asm(int32_t status);
 /* A directory's names, read at once and sorted the way Windows lists them: '.' and '..'
  * first, then the rest in case-insensitive order (NTFS).  readdir's order is the file
  * system's own (on ext4 a hash order that differs from one file system to another), and a
- * game may count on '.' and '..' coming first. */
+ * game may count on '.' and '..' coming first.  With a write root apart from the game
+ * directory, a directory of the game is two: its own (dirs[0]) and the write root's copy
+ * (dirs[1]), where the game's saves are; a name in both is the write root's, as the file
+ * opened by that name is. */
 typedef struct {
-    char **names;
+    char *name;             /* first: find_list_compare sorts the entries by it */
+    int in;                 /* the index in dirs of its directory */
+} find_entry;
+
+typedef struct {
+    find_entry *entries;
     int count, next;
+    char *dirs[2];
 } find_list;
 
 static int find_list_rank(const char *name)
@@ -188,47 +197,73 @@ static int find_list_compare(const void *first, const void *second)
 static void find_list_close(find_list *list)
 {
     if (list == NULL) return;
-    for (int index = 0; index < list->count; index++) free(list->names[index]);
-    free(list->names);
+    for (int index = 0; index < list->count; index++) free(list->entries[index].name);
+    free(list->entries);
+    free(list->dirs[0]);
+    free(list->dirs[1]);
     free(list);
 }
 
-static find_list *find_list_open(const char *path)
+/* the names of dirs[in] that the list does not have yet (ignoring case) */
+static void find_list_add(find_list *list, int in, int *capacity)
 {
-    DIR *dir = opendir(path);
+    DIR *dir = opendir(list->dirs[in]);
     struct dirent *entry;
-    find_list *list;
-    int capacity = 0;
+    int before = list->count;
 
-    if (dir == NULL) return NULL;
-    list = (find_list *) calloc(1, sizeof(find_list));
-    if (list == NULL)
-    {
-        closedir(dir);
-        return NULL;
-    }
+    if (dir == NULL) return;
     while ((entry = readdir(dir)) != NULL)
     {
         char *name;
-        if (list->count == capacity)
+        int index;
+
+        for (index = 0; index < before; index++) if (strcasecmp(list->entries[index].name, entry->d_name) == 0) break;
+        if (index < before) continue;
+        if (list->count == *capacity)
         {
-            char **grown = (char **) realloc(list->names, (capacity ? capacity * 2 : 32) * sizeof(char *));
+            int grown_capacity = *capacity ? *capacity * 2 : 32;
+            find_entry *grown = (find_entry *) realloc(list->entries, grown_capacity * sizeof(find_entry));
             if (grown == NULL) break;
-            list->names = grown;
-            capacity = capacity ? capacity * 2 : 32;
+            list->entries = grown;
+            *capacity = grown_capacity;
         }
         name = strdup(entry->d_name);
         if (name == NULL) break;
-        list->names[list->count++] = name;
+        list->entries[list->count].name = name;
+        list->entries[list->count++].in = in;
     }
     closedir(dir);
-    if (list->count > 1) qsort(list->names, list->count, sizeof(char *), find_list_compare);
+}
+
+/* path: the directory, overlay: the write root's copy of it; either may be NULL */
+static find_list *find_list_open(const char *path, const char *overlay)
+{
+    find_list *list = (find_list *) calloc(1, sizeof(find_list));
+    int capacity = 0;
+
+    if (list == NULL) return NULL;
+    if (path != NULL) list->dirs[0] = strdup(path);
+    if (overlay != NULL) list->dirs[1] = strdup(overlay);
+    if (list->dirs[1] != NULL) find_list_add(list, 1, &capacity);
+    if (list->dirs[0] != NULL) find_list_add(list, 0, &capacity);
+    if (list->count == 0)
+    {
+        find_list_close(list);
+        return NULL;
+    }
+    if (list->count > 1) qsort(list->entries, list->count, sizeof(find_entry), find_list_compare);
     return list;
 }
 
 static const char *find_list_read(find_list *list)
 {
-    return (list->next < list->count) ? list->names[list->next++] : NULL;
+    return (list->next < list->count) ? list->entries[list->next++].name : NULL;
+}
+
+/* the directory of the name find_list_read returned last */
+static const char *find_list_dir(const find_list *list)
+{
+    return list->dirs[(list->next > 0) ? list->entries[list->next - 1].in : 0];
 }
 
 typedef struct {
@@ -273,6 +308,80 @@ typedef struct _win32_find_data_ {
     char cAlternateFileName[14];
 } win32_find_data;
 
+#endif
+
+/* the write root's copy of the game's directory src (a name as the game gives it,
+ * "" the current directory) into overlay: 0 when there is none */
+static int find_overlay_dir(const char *src, char *overlay)
+{
+    char path[4096];
+    struct stat status;
+
+    if (src[0] == 0 || strcmp(src, ".") == 0)
+    {
+        /* the current directory: the write root's copy of it, the directory of a name in it */
+        char *slash;
+
+        if (!CLIB_WriteOverlay("x", path, sizeof(path)) || (slash = strrchr(path, '/')) == NULL) return 0;
+        *slash = 0;
+    }
+    else if (!CLIB_WriteOverlay(src, path, sizeof(path))) return 0;
+    if (!CLIB_FindFile(path, overlay)) return 0;
+    return stat(overlay, &status) == 0 && S_ISDIR(status.st_mode);
+}
+
+#ifdef _WIN32
+/* A search on Windows: in the write root's copy of the directory first (when the write
+ * root is apart from the game directory), then in the game's, leaving out the names the
+ * first one gave (a name in both is the write root's, as the file opened by it is). */
+typedef struct {
+    HANDLE h;
+    char game_pattern[MAX_PATH];    /* "": no second search */
+    char **seen;
+    int seen_count;
+} win_find_state;
+
+static void win_find_close(win_find_state *state)
+{
+    if (state->h != INVALID_HANDLE_VALUE) FindClose(state->h);
+    for (int index = 0; index < state->seen_count; index++) free(state->seen[index]);
+    free(state->seen);
+    free(state);
+}
+
+/* the next name of the search: 0 when there is none */
+static int win_find_next(win_find_state *state, LPWIN32_FIND_DATAA data, int first)
+{
+    for (;;)
+    {
+        int found = first ? 1 : FindNextFileA(state->h, data);
+
+        first = 0;
+        if (!found)
+        {
+            if (state->game_pattern[0] == 0) return 0;
+            FindClose(state->h);
+            state->h = FindFirstFileA(state->game_pattern, data);
+            state->game_pattern[0] = 0;
+            if (state->h == INVALID_HANDLE_VALUE) return 0;
+        }
+        if (state->game_pattern[0] != 0)
+        {
+            char **grown = (char **) realloc(state->seen, (state->seen_count + 1) * sizeof(char *));
+            if (grown != NULL)
+            {
+                state->seen = grown;
+                if ((grown[state->seen_count] = _strdup(data->cFileName)) != NULL) state->seen_count++;
+            }
+            return 1;
+        }
+        {
+            int index;
+            for (index = 0; index < state->seen_count; index++) if (_stricmp(state->seen[index], data->cFileName) == 0) break;
+            if (index == state->seen_count) return 1;
+        }
+    }
+}
 #endif
 
 
@@ -1107,17 +1216,40 @@ uint32_t CCALL CreateDirectoryA_c(const char *lpPathName, void */*lpSecurityAttr
     }
 
 #ifdef _WIN32
-    if (0 != mkdir(lpPathName))
-#else
-    char buf[8192];
+    char overlay[MAX_PATH];
+    const char *target = lpPathName;
 
-    if (CLIB_FindFile(lpPathName, buf))
+    /* with the write root apart from the game directory, a directory the game
+     * makes is the write root's, as the files it writes there are */
+    if (find_overlay_dir(lpPathName, overlay))
     {
         Winapi_SetLastError(ERROR_FILE_EXISTS);
         return 0;
     }
+    if (CLIB_WriteOverlay(lpPathName, overlay, sizeof(overlay)))
+    {
+        CLIB_MakeParentDirs(overlay);
+        target = overlay;
+    }
+    if (0 != mkdir(target))
+#else
+    char buf[8192], overlay[8192];
+    const char *target = buf;
 
-    if (0 != mkdir(buf, 0777))
+    if (CLIB_FindFile(lpPathName, buf) || find_overlay_dir(lpPathName, overlay))
+    {
+        Winapi_SetLastError(ERROR_FILE_EXISTS);
+        return 0;
+    }
+    /* with the write root apart from the game directory, a directory the game
+     * makes is the write root's, as the files it writes there are */
+    if (CLIB_WriteOverlay(lpPathName, overlay, sizeof(overlay)))
+    {
+        CLIB_MakeParentDirs(overlay);
+        target = overlay;
+    }
+
+    if (0 != mkdir(target, 0777))
 #endif
     {
         if (errno == EEXIST)
@@ -1727,7 +1859,7 @@ uint32_t CCALL FindClose_c(void *hFindFile)
     if (((handle)hFindFile)->sh.d != NULL)
     {
 #ifdef _WIN32
-        FindClose((HANDLE)((handle)hFindFile)->sh.d);
+        win_find_close((win_find_state *)((handle)hFindFile)->sh.d);
 #else
         find_file_state *state;
 
@@ -1784,13 +1916,45 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         return INVALID_HANDLE32_VALUE;
     }
 
-    ret->handle_type = HT_SEARCH;
-    ret->sh.d = FindFirstFileA(lpFileName, (LPWIN32_FIND_DATAA)lpFindFileData);
-
-    if (ret->sh.d == INVALID_HANDLE_VALUE)
     {
-        x86_free(ret);
-        return INVALID_HANDLE32_VALUE;
+        win_find_state *state = (win_find_state *) calloc(1, sizeof(win_find_state));
+        char directory[MAX_PATH], overlay_dir[MAX_PATH];
+        const char *pattern = lpFileName;
+        const char *slash = strrchr(lpFileName, '\\'), *other = strrchr(lpFileName, '/');
+
+        if (state == NULL)
+        {
+            x86_free(ret);
+            Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return INVALID_HANDLE32_VALUE;
+        }
+        if (other != NULL && (slash == NULL || other > slash)) slash = other;
+        directory[0] = 0;
+        if (slash != NULL)
+        {
+            snprintf(directory, sizeof(directory), "%.*s", (int)(slash - lpFileName), lpFileName);
+            pattern = slash + 1;
+        }
+        state->h = INVALID_HANDLE_VALUE;
+        if (find_overlay_dir(directory, overlay_dir))
+        {
+            char overlay_pattern[MAX_PATH];
+
+            snprintf(overlay_pattern, sizeof(overlay_pattern), "%s\\%s", overlay_dir, pattern);
+            state->h = FindFirstFileA(overlay_pattern, (LPWIN32_FIND_DATAA)lpFindFileData);
+            if (state->h != INVALID_HANDLE_VALUE) snprintf(state->game_pattern, sizeof(state->game_pattern), "%s", lpFileName);
+        }
+        if (state->h == INVALID_HANDLE_VALUE)
+            state->h = FindFirstFileA(lpFileName, (LPWIN32_FIND_DATAA)lpFindFileData);
+        if (state->h == INVALID_HANDLE_VALUE)
+        {
+            free(state);
+            x86_free(ret);
+            return INVALID_HANDLE32_VALUE;
+        }
+        win_find_next(state, (LPWIN32_FIND_DATAA)lpFindFileData, 1);
+        ret->handle_type = HT_SEARCH;
+        ret->sh.d = state;
     }
 
     return ret;
@@ -1823,7 +1987,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     {
         // no wildcards
 
-        if (!CLIB_FindFile(lpFileName, buf))
+        if (!CLIB_FindFile(lpFileName, buf) && !find_overlay_dir(lpFileName, buf))
         {
             Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
             return INVALID_HANDLE32_VALUE;
@@ -1838,7 +2002,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         if (S_ISDIR(filestat.st_mode))
         {
             // directory
-            dirinfo = find_list_open(buf);
+            dirinfo = find_list_open(buf, NULL);
             if (dirinfo == NULL)
             {
                 Winapi_SetLastError(ERROR_ACCESS_DENIED);
@@ -1901,13 +2065,21 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             pattern++;
         }
 
-        if (!CLIB_FindFile(orig_directory, buf))
         {
-            Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-            return INVALID_HANDLE32_VALUE;
-        }
+            /* the directory of the game and the write root's copy of it */
+            char overlay_dir[8192];
+            int in_game = CLIB_FindFile(orig_directory, buf);
+            int in_overlay = find_overlay_dir(orig_directory, overlay_dir);
 
-        dirinfo = find_list_open(buf);
+            if (in_game && in_overlay && strcmp(buf, overlay_dir) == 0) in_overlay = 0;
+            if (!in_game && !in_overlay)
+            {
+                Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
+                return INVALID_HANDLE32_VALUE;
+            }
+            if (!in_game) snprintf(buf, sizeof(buf), "%s", overlay_dir);
+            dirinfo = find_list_open(buf, (in_game && in_overlay) ? overlay_dir : NULL);
+        }
         if (dirinfo == NULL)
         {
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
@@ -1993,7 +2165,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             }
         }
 
-        snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry);
+        snprintf(buf, sizeof(buf), "%s/%s", find_list_dir(dirinfo), direntry);
 
         if (0 != stat(buf, &filestat))
         {
@@ -2052,7 +2224,9 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
     }
 
 #ifdef _WIN32
-    return FindNextFileA((HANDLE)((handle)hFindFile)->sh.d, (LPWIN32_FIND_DATAA)lpFindFileData);
+    if (win_find_next((win_find_state *)((handle)hFindFile)->sh.d, (LPWIN32_FIND_DATAA)lpFindFileData, 0)) return 1;
+    Winapi_SetLastError(ERROR_NO_MORE_FILES);
+    return 0;
 #else
     const char *direntry;
     find_file_state *state;
@@ -2102,7 +2276,7 @@ uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
         return 0;
     }
 
-    snprintf(buf, sizeof(buf), "%s/%s", state->directory, direntry);
+    snprintf(buf, sizeof(buf), "%s/%s", find_list_dir(state->dirinfo), direntry);
 
     stat(buf, &filestat);
 
