@@ -50,7 +50,8 @@ else is SR-SDK's.
   XMIDI/MIDI synthesized with TinySoundFont.
 - **The port's own frame**: a resizable window or full screen that keeps the picture's
   shape; picture filters through OpenGL; an on-screen panel on one key (F12) for the
-  port's settings, saved in `<program>.cfg`; gamepads; on-screen buttons on Android;
+  port's settings, saved in `<program>.cfg`; gamepads; on-screen buttons on Android; the
+  gyroscope of a phone as the mouse of a DOS game (a mod);
   crash reports with the guest's registers.
 - **Checks**: `tools/regress/run_all.sh` builds and runs the ports a workspace lists under
   Linux and Wine, at different load addresses, and compares SR's output for SR's own
@@ -576,6 +577,15 @@ skeleton/               a starting point for a new game repository -- to come
   without XInput's dead zones, and the motors; for the joystick APIs of the games. No pad, or
   `Gamepad=off` in the settings file: nothing is opened. `$<GAME>_DEBUG_PAD` logs the pads and
   every change of their state;
+- `Game_gyro.c`, `.h`: the host's gyroscope (a phone, a tablet) as the pointer, the mod
+  `Gyro_Mouse=on` with `Gyro_Mouse_Speed=1..9` (5: the picture's width in a turn of 38 degrees);
+  opened on the thread that pumps the events, only while the mod is on. The INT 33h driver of
+  `runtime/dos` then keeps its own position, which turning the device moves; a touch away from the
+  on-screen buttons (the pointer of `touchgamepad.c`, not SDL's mouse of the first finger) puts
+  it under the finger and presses the button, and the turns go on from there. An on-screen button
+  with the key `TOUCHGAMEPAD_MOUSE_LEFT` is the mouse's left button; a layout may give it to a
+  button while the mod is on (`Game_GyroMod()`; a switch of the mod places the buttons again). A game shows the two items in its panel with `Game_GyroAddItems()` from
+  `GAME_OSD_ITEMS()`;
 - `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
 - `Game_audiostream.c/.h`: a stream of PCM (`Game_AudioSourceOpen`, SDL_OpenAudioDevice's calls: a fill callback or a queue) on a device of its own or in SDL_mixer's output, whose one post-mix hook it owns; the Sound Blaster, DirectSound and a game's own driver play through it.
 

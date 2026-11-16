@@ -31,6 +31,7 @@
 #include "Game_vars.h"
 #include "Game_memory.h"
 #include "Game_thread.h"
+#include "Game_gyro.h"
 #include "Game_hooks.h"
 #include "input.h"
 #include "main.h"
@@ -190,6 +191,7 @@ int Game_FlipThread(void *data)
     for (;;)
     {
 #if FLIP_PUMPS
+        Game_GyroPump();
         SDL_PumpEvents();
         if (SDL_SemWaitTimeout(Game_FlipSem, 10) != 0)
         {

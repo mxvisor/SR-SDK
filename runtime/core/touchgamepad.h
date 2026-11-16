@@ -47,4 +47,15 @@ int  TouchGamepad_ButtonAt(float x, float y);
  * down (SDLK_UNKNOWN: nothing); EmulateKey does not reach SDL's key state */
 int  TouchGamepad_HeldKey(int index, SDL_Keycode *key);
 
+/* The key of a button that is the left button of the mouse, not a key of the
+ * keyboard: TouchGamepad_MouseButtons reads it. */
+#define TOUCHGAMEPAD_MOUSE_LEFT ((SDL_Keycode)-2)
+/* the buttons of the mouse the on-screen buttons hold (1: the left one) */
+int  TouchGamepad_MouseButtons(void);
+/* The pointer: the finger that came down away from the buttons, the first of
+ * such while none holds it.  *x, *y: where it is or was last (0..1 of the
+ * window), *down: it still touches; the result counts the fingers that became
+ * the pointer (a new touch), 0 before the first. */
+unsigned int TouchGamepad_Pointer(float *x, float *y, int *down);
+
 #endif /* _TOUCHGAMEPAD_H_INCLUDED_ */

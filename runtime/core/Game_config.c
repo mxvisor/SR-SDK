@@ -46,6 +46,7 @@
 #include "input.h"
 #include "Game_vfs.h"
 #include "Game_osd.h"
+#include "Game_gyro.h"
 #include "Game_hooks.h"
 
 /* the program's name is the port's namespace in the game directory: the
@@ -188,6 +189,7 @@ static void read_config(void)
         if (Game_OsdConfigKey(str, param)) continue;
         if (Config_Audio(str, param)) continue;
         if (Config_Input(str, param)) continue;
+        if (Game_GyroConfig(str, param)) continue;
 
 #ifdef GAME_CONFIG_KEY
         // the game's own keys: nonzero if it took this one

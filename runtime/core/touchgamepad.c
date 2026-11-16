@@ -29,8 +29,12 @@
  * with its own layout has game/Game_touchlayout.h; the others get
  * touchlayout_default.h.  gp_layout may depend on the game's state (a mod
  * that adds a button): the game calls TouchGamepad_Relayout when that state
- * changes.  A button of width 0 is hidden: not drawn, never touched.  The
- * desktop builds get no-ops. */
+ * changes.  A button of width 0 is hidden: not drawn, never touched.  A
+ * button with the key TOUCHGAMEPAD_MOUSE_LEFT holds the mouse's left button
+ * instead of a key.  A finger that comes down away from the buttons is the
+ * pointer (TouchGamepad_Pointer): SDL makes a mouse of the first finger only,
+ * wherever it is, and a mouse of the game that wants the touches away from the
+ * buttons reads the pointer instead.  The desktop builds get no-ops. */
 
 #include <math.h>
 #include <stdlib.h>
@@ -453,18 +457,55 @@ static int gp_button_with_finger(Sint64 finger)
     return -1;
 }
 
+/* the main thread's (TouchGamepad_Event), read by the game's: the mouse's
+ * buttons of the on-screen buttons, and the pointer under gp_pointer_lock */
+static SDL_atomic_t gp_mouse_buttons;
+static SDL_SpinLock gp_pointer_lock;
+static Sint64 gp_pointer_finger = -1;
+static float gp_pointer_x, gp_pointer_y;
+static unsigned int gp_pointer_touches;
+
 static void gp_press(int idx, Sint64 finger)
 {
     gp_buttons[idx].finger = finger;
     gp_stamp++;
-    EmulateKey(SDL_KEYDOWN, gp_buttons[idx].key);
+    if (gp_buttons[idx].key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, 1);
+    else EmulateKey(SDL_KEYDOWN, gp_buttons[idx].key);
 }
 
 static void gp_release(int idx)
 {
     gp_buttons[idx].finger = -1;
     gp_stamp++;
-    EmulateKey(SDL_KEYUP, gp_buttons[idx].key);
+    if (gp_buttons[idx].key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, -1);
+    else EmulateKey(SDL_KEYUP, gp_buttons[idx].key);
+}
+
+/* the pointer: a finger that came down away from the buttons, if none holds it */
+static void gp_pointer_down(Sint64 finger, float x, float y)
+{
+    SDL_AtomicLock(&gp_pointer_lock);
+    if (gp_pointer_finger < 0)
+    {
+        gp_pointer_finger = finger;
+        gp_pointer_touches++;
+        gp_pointer_x = x;
+        gp_pointer_y = y;
+    }
+    SDL_AtomicUnlock(&gp_pointer_lock);
+}
+
+/* the motion (down) or the lift of a finger: the pointer's moves it */
+static void gp_pointer_move(Sint64 finger, float x, float y, int down)
+{
+    SDL_AtomicLock(&gp_pointer_lock);
+    if (finger == gp_pointer_finger)
+    {
+        gp_pointer_x = x;
+        gp_pointer_y = y;
+        if (!down) gp_pointer_finger = -1;
+    }
+    SDL_AtomicUnlock(&gp_pointer_lock);
 }
 
 /* The arrows a finger at (x, y) asks of the pad: the 360 degrees around its centre
@@ -528,6 +569,10 @@ int TouchGamepad_Event(SDL_Event *event)
 
     pad = gp_pad_with_finger(finger);
 
+    /* the pointer's finger moves the pointer, wherever it goes (and presses the
+     * buttons it slides onto, as any finger) */
+    if (event->type != SDL_FINGERDOWN) gp_pointer_move(finger, event->tfinger.x, event->tfinger.y, event->type != SDL_FINGERUP);
+
     if (event->type == SDL_FINGERUP)
     {
         if (pad >= 0)
@@ -562,7 +607,8 @@ int TouchGamepad_Event(SDL_Event *event)
     else if (event->type == SDL_FINGERDOWN)
     {
         idx = gp_button_at(x, y);
-        if (idx >= 0 && gp_buttons[idx].finger < 0) gp_press(idx, finger);
+        if (idx >= 0) { if (gp_buttons[idx].finger < 0) gp_press(idx, finger); }
+        else gp_pointer_down(finger, event->tfinger.x, event->tfinger.y);
     }
     else /* SDL_FINGERMOTION */
     {
@@ -597,6 +643,27 @@ void TouchGamepad_ReleaseAll(void)
     {
         if (gp_buttons[i].finger >= 0) gp_release(i);
     }
+    SDL_AtomicLock(&gp_pointer_lock);
+    gp_pointer_finger = -1;
+    SDL_AtomicUnlock(&gp_pointer_lock);
+}
+
+int TouchGamepad_MouseButtons(void)
+{
+    return SDL_AtomicGet(&gp_mouse_buttons) > 0 ? 1 : 0;
+}
+
+unsigned int TouchGamepad_Pointer(float *x, float *y, int *down)
+{
+    unsigned int touches;
+
+    SDL_AtomicLock(&gp_pointer_lock);
+    *x = gp_pointer_x;
+    *y = gp_pointer_y;
+    *down = gp_pointer_finger >= 0;
+    touches = gp_pointer_touches;
+    SDL_AtomicUnlock(&gp_pointer_lock);
+    return touches;
 }
 
 int TouchGamepad_ButtonAt(float x, float y)
@@ -607,7 +674,7 @@ int TouchGamepad_ButtonAt(float x, float y)
 int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
 {
     if (index < 0 || index >= GP_NBUTTONS) return 0;
-    *key = (gp_buttons[index].finger >= 0) ? gp_buttons[index].key : SDLK_UNKNOWN;
+    *key = (gp_buttons[index].finger >= 0 && gp_buttons[index].key != TOUCHGAMEPAD_MOUSE_LEFT) ? gp_buttons[index].key : SDLK_UNKNOWN;
     return 1;
 }
 
@@ -645,6 +712,18 @@ int TouchGamepad_ButtonAt(float x, float y)
 {
     (void)x;
     (void)y;
+    return 0;
+}
+
+int TouchGamepad_MouseButtons(void)
+{
+    return 0;
+}
+
+unsigned int TouchGamepad_Pointer(float *x, float *y, int *down)
+{
+    *x = *y = 0;
+    *down = 0;
     return 0;
 }
 

@@ -51,6 +51,7 @@
 #include "main.h"
 #include "Game_osd.h"
 #include "Game_pad.h"
+#include "Game_gyro.h"
 #include "Game_hooks.h"
 
 #if !defined(GAME_KEYBOARD_BLOCKED)
@@ -583,6 +584,7 @@ void Game_Event_Loop(void)
     {
         run_requests(1);
 #if MAIN_WAITS
+        Game_GyroPump();
         if (!SDL_WaitEventTimeout(&event, MAIN_WAIT_MS)) continue;
 #else
         if (!main_next_event(&event)) continue;
