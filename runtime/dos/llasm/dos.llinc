@@ -31,12 +31,11 @@ extern Game_DosIdtBase
 
 ; The environment of the program as the C library reads it: the guest address
 ; of the array of the addresses of the variables ("NAME=VALUE"), a zero at its
-; end.  The getenv of the DOS/4GW extender reads its own copy, which the
-; extender's server builds; instruction_replacements.sci loads this one instead.
+; end.  WATCOM's start-up builds its own; a game that starts at its main skips
+; that, and its instruction_replacements.sci loads this one instead.
 extern Game_DosEnviron
 
-; WATCOM int386()'s raw `int N / ret` stubs: Game_DosInt86Thunk stands in for
-; them, and Game_DosInt86No hands it N.  One slot is enough: int386() is not
-; reentrant.
-proc Game_DosInt86Thunk external
-extern Game_DosInt86No
+; The drivers of the Miles AIL/32 2.x (llasm/ail2.llinc): external_procedures.sci
+; routes AIL_register_driver and the dispatcher of the driver functions to them.
+proc SR_AIL2_register_driver external
+proc SR_AIL2_call_driver external

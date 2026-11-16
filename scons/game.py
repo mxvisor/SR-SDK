@@ -145,6 +145,10 @@ ARCHS = _keys(CFG, 'archs')
 MODULES = _keys(CFG, 'modules')
 # DLLs of the original recompiled as modules of their own (say, the 3D drivers a game loads)
 DLL_MODULES = _keys(CFG, 'dll_modules') if 'dll_modules' in CFG else []
+# other programs of a DOS game recompiled as modules of their own, which the game
+# runs with INT 21h AH=4Bh (say, its intro): their global names get the prefix
+# <module>_ (SR.cfg global_prefix), the runtime finds them by name (exe_modules.h)
+EXE_MODULES = _keys(CFG, 'exe_modules') if 'exe_modules' in CFG else []
 VARIANTS = _keys(CFG, 'variants')
 DEVICES = _keys(CFG, 'devices')
 # the native device of an aarch64 Linux host (a board) is not a choice of the game:
@@ -713,6 +717,8 @@ def module_pipeline(MODULE, EXT, input_key):
             text = game_cfg.read()
         with open(str(target[0]), 'w') as out:
             out.write((DOS4GW_SR_CFG if is_dos4gw else '') + text)
+            if MODULE in EXE_MODULES:
+                out.write('\n# SR-SDK: a program of exe_modules= (scons/game.py)\nglobal_prefix=%s_\n' % MODULE.lower())
 
     if want('recomp'):
         # Stage 2: SR's working directory. SR.cfg, bssborder.csv and the .sci
@@ -818,6 +824,9 @@ GEN_MAIN, GEN_SRC_DIR, gen_deps = module_pipeline(MODULE, '.EXE', 'input_exe')
 DLL_MASTERS = []
 for DLL_MODULE in DLL_MODULES:
     DLL_MASTERS.append(module_pipeline(DLL_MODULE, '.DLL', 'input_' + DLL_MODULE))
+# the other programs (exe_modules=) are built as the DLLs are
+for EXE_MODULE in EXE_MODULES:
+    DLL_MASTERS.append(module_pipeline(EXE_MODULE, '.EXE', 'input_' + EXE_MODULE))
 
 
 # ------------------------------------------------- stage 4: obj, stage 5: bin --
@@ -855,6 +864,16 @@ if want('obj'):
             with open(dll_header_path, 'w') as stream:
                 stream.write(dll_header)
         env.Append(CPPDEFINES=['GAME_HAVE_DLL_MODULES'], CPPPATH=[dll_header_dir])
+    if EXE_MODULES:
+        # the programs INT 21h AH=4Bh runs (Game_dosexec.c): X(NAME, prefix) per module
+        exe_header_dir = os.path.join(obj_device, 'include')
+        os.makedirs(exe_header_dir, exist_ok=True)
+        exe_header = '#define GAME_EXE_MODULES(X) ' + ' '.join('X(%s, %s)' % (m, m.lower()) for m in EXE_MODULES) + '\n'
+        exe_header_path = os.path.join(exe_header_dir, 'exe_modules.h')
+        if not os.path.exists(exe_header_path) or open(exe_header_path).read() != exe_header:
+            with open(exe_header_path, 'w') as stream:
+                stream.write(exe_header)
+        env.Append(CPPDEFINES=['GAME_HAVE_EXE_MODULES'], CPPPATH=[exe_header_dir])
 
     if CFG.get('icon') and device != 'arm64-android':
         # icon= of game.cfg: the window's icon, game_icon.h (tools/game_icon.py) for

@@ -117,7 +117,12 @@ lists the routines the program gives to INT 21h AH=25h (EDX loaded with an addre
 through a wrapper routine that takes it from its stack argument), and the second run takes them as
 code, so the game's `fixup_interpret_as_code.sci` is for what this pattern misses. A DOS4GW program
 also gets `esp_dword_aligned`, `ebp_dword_aligned` and `code_writable` in its `SR.cfg` from
-`scons/game.py`.
+`scons/game.py`. Keys of `SR.cfg` a game may need (off by default; `SR/SR/SR_main.c`):
+`int_stub_table=yes` (a WATCOM library whose int386x() returns into a table of 256 stubs
+`int N / ret`: SR finds the table and gives the instruction that takes its address a stub of
+its own), `exact_push16=yes` (a 16-bit push or pop moves esp by 2, as the CPU does: for code
+that measures the distance of a pointer from esp after such pushes) and `global_prefix=<name>`
+(before every global name of the output; set by `scons/game.py` for `exe_modules=`).
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 `TODO` lines of the launchers name what to fill in.
 
@@ -146,6 +151,9 @@ Everything about the game is in `game/game.cfg`:
 platform=dos            # selects runtime/dos and SR; win32: runtime/win32 and SRW
 archs=llasm             # SR's output type
 modules=Game-main       # the modules of the original, game/recomp/<module>/
+exe_modules=INTRO       # dos only: other programs the game runs (INT 21h AH=4Bh), in the same
+                        # binary: game/recomp/<NAME>/, NAME.EXE of the disc (input_<NAME>=),
+                        # their global names get the prefix <name>_ (SR.cfg global_prefix)
 variants=default        # recognized versions of the original, by sha256
 input_exe=../path/to/GAME.EXE
 link=separate
@@ -363,7 +371,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | Macro | Meaning |
 |---|---|
 | `GAME_ENTRY` | the llasm symbol the game starts at (`Game-asm.c`): default `c_start_`, the program's entry point, which SR exports by itself; `c_main_` is the game's C `main` named by `main_` in `global_aliases.sci`, for a port that skips the startup code |
-| `GAME_PROGRAM_MEMORY`, `GAME_PROGRAM_STACK` | `Game-asm.c`, a game started at its entry point: the size of the program's memory block (default 64 MiB, less if the guest window has no room) and of the stack in it (1 MiB); the startup code grows its heap in the block with INT 21h AH=4Ah |
+| `GAME_PROGRAM_MEMORY`, `GAME_PROGRAM_STACK` | `Game-asm.c`, a game started at its entry point: the size of the program's memory block (default 64 MiB, less if the guest window has no room) and of the stack in it (1 MiB); the startup code grows its heap in the block (INT 21h EAX=80004800h of the flat model it is told it runs under: `Game_dosint.c`, AH=30h) |
 | `GAME_ARGS(argc, argv)` | `Game_dosmain.c`: takes the port's own options out of `argv`, returns the new `argc` (default `Game_ReadArgs`: `--config-file=`) |
 | `GAME_CONFIG()` | the port's configuration, read after the options and the defaults of `Init_Display`/`Init_Audio`/`Init_Input` (default `Game_ReadConfig`, `runtime/core/Game_config.c`: `--config-file=`, else `<program>.cfg` in the data directory or the write root; `Sound`, `Music` and the keys of the display, audio and input) |
 | `GAME_CONFIG_KEY(key, value)` | a key of the settings file that is the game's (`Game_config.c`, DOS and Win32); nonzero: taken |
@@ -371,7 +379,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DISPLAY_WINDOW_FLAGS`, `GAME_DISPLAY_FLIP()` | the same: more `SDL_WINDOW_*` flags; the start of `Game_Display_Flip`, on the flip thread (nonzero: the game showed the frame itself) |
 | `GAME_DISPLAY_MAX_PIXELS` | the same: the most pixels of the frame, for a `Display_Flip_Procedure` that changes `Render_Width` and `Render_Height` as the game runs (default 1024×768) |
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
-| `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; the guest address of the array of their addresses is `Game_DosEnviron` (a DOS4GW game's `getenv` reads its own copy, which the port has not got: `instruction_replacements.sci` loads `Game_DosEnviron` instead) |
+| `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; WATCOM's startup builds the array of their addresses itself; for a game that starts at its main (`GAME_ENTRY`), which skips that, it is `Game_DosEnviron`, and `instruction_replacements.sci` points the C library's `getenv` at it |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `core/Game_audio.c`, the SDL_mixer device of every port (DOS and Win32): its channels (default SDL_mixer's 8) |
@@ -552,12 +560,18 @@ skeleton/               a starting point for a new game repository -- to come
   interrupts and AIL timer callbacks, the software interrupts every DOS game here shares
   (INT 21h and DPMI as far as a flat game asks them), after the game's `Game_DosInterrupt`;
 - `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
-- `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h) and Input Status #1 (3DAh);
+- `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h), Input Status #1 (3DAh), the Map Mask and the
+  graphics controller, and mode 12h (640x480, 16 colours, four planes: the VGA window holds the
+  plane the Map Mask addresses, the picture is made of the planes through the attribute palette);
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
   buffers, the PSP) at its own addresses in the low memory of the guest window (zeros below
   the PSP at 10000h, the VGA window at A0000h), and the memory block of a
   program started at its entry point (`Game_DosProgramInit`: stack and heap above the image,
-  grown by INT 21h AH=4Ah);
+  grown by INT 21h AH=4Ah or EAX=80004800h); the blocks of DPMI 0100h are taken first fit
+  and given back (0101h), resized in place (0102h);
+- `Game_dosexec.c`, `.h`: INT 21h AH=4Bh, the other programs of the game (`exe_modules=` of
+  `game.cfg`, modules of the same binary): run on the game's CPU with a PSP and a program block
+  of their own, also behind `COMMAND.COM /C`; their AH=4Ch comes back, AH=4Dh gives the code;
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
   close, FindFirst/FindNext, the DTA, the devices CON and NUL);
 - `Game_doskbd.c`, `.h`: the keyboard: the controller's bytes (port 60h, E0 before a grey
@@ -571,6 +585,11 @@ skeleton/               a starting point for a new game repository -- to come
   timer service on the PIT (`Game_AIL_TimerInterrupt` from the game's `GAME_DOS_TIMER_TICK()`),
   the digital driver (`$<GAME>_NOSOUND`) and its samples; the game's `external_procedures.sci`
   routes AIL's entry points to the `SR_AIL_*` of `llasm/ail.llinc`, which its own llasm includes;
+- `Game_dosail2.c`, `.h`: the drivers of the Miles AIL/32 2.x a game was linked with, over
+  `Game_ail.c`: a digital one (one .VOC at a time) and an XMIDI one (General MIDI through
+  `Game_midi.c`), by the numbers of the driver functions; the game's `external_procedures.sci`
+  routes its `AIL_register_driver` and the dispatcher of the driver functions to
+  `SR_AIL2_register_driver` and `SR_AIL2_call_driver` (`llasm/ail2.llinc`, in every DOS game's llasm);
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_pad.c`, `.h`: the host's gamepads (`SDL_GameController`, up to four, plugged in and out
   while the game runs) with the state of XInput: its buttons, two sticks, two triggers, with or

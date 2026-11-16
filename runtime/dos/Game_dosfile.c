@@ -155,6 +155,45 @@ static void dos_create(Game_DosRegs *regs)
     attach(regs, file, "CREATE", dos_path);
 }
 
+/* AH=43h: the attributes of a file (AL=0: into CX) or a change of them (AL=1,
+ * CX; the port keeps none).  A file the game can open is a plain one, archive
+ * (20h); a directory of the game directory is 10h.  WATCOM's open() asks after
+ * it opens a file for writing, for the read-only bit. */
+static void dos_attributes(Game_DosRegs *regs)
+{
+    const char *dos_path = (const char *)guest_pointer(regs->edx);
+    uint16_t attributes;
+    game_file *file;
+
+    errno = 0;
+    file = Game_OpenGameFile(dos_path, 'r', 0);
+    if (file != NULL) {
+        game_fclose(file);
+        attributes = 0x20;
+    } else {
+        const char *path = dos_path;
+        file_entry *entry = NULL;
+        char rewritten[PATH_MAX];
+
+        if (path[0] != 0 && path[1] == ':') {
+            if (toupper((unsigned char)path[0]) != 'C' ||
+                snprintf(rewritten, sizeof(rewritten), "C:%s", path + 2) >= (int)sizeof(rewritten)) {
+                Game_DosError(regs, 0x02);
+                return;
+            }
+            path = rewritten;
+        }
+        if (vfs_get_real_name(path, NULL, &entry) != 0 || entry == NULL || !(entry->attributes & 1)) {
+            if (Game_TraceFileEnabled()) fprintf(stderr, "FILE ATTRFAIL '%s'\n", dos_path);
+            Game_DosError(regs, 0x02);
+            return;
+        }
+        attributes = 0x10;
+    }
+    if (Game_DosAL(regs) == 0) Game_DosSetCX(regs, attributes);
+    Game_DosSetCarry(regs, 0);
+}
+
 static int is_device(uint16_t handle)
 {
     return handle == GAME_HANDLE_CON || handle == GAME_HANDLE_NUL;
@@ -628,6 +667,7 @@ int Game_DosFileCall(Game_DosRegs *regs, void *(*pointer)(uint32_t address))
     case 0x3f: dos_read(regs); return 1;
     case 0x40: dos_write(regs); return 1;
     case 0x42: dos_seek(regs); return 1;
+    case 0x43: dos_attributes(regs); return 1;
     case 0x4e: dos_findfirst(regs); return 1;
     case 0x4f: dos_findnext(regs); return 1;
     default: return 0;

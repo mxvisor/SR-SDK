@@ -27,8 +27,9 @@
 
 #include <stdint.h>
 
-/* The VGA ports of a DOS game: the DAC (3C7h, 3C8h, 3C9h) and Input Status
- * #1 (3DAh). */
+/* The VGA of a DOS game: the DAC (3C7h, 3C8h, 3C9h), Input Status #1 (3DAh),
+ * the sequencer's Map Mask (3C4h/3C5h), the graphics controller (3CEh/3CFh)
+ * and mode 12h, 640x480 in 16 colours on four planes (Game_dosvga.c). */
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,12 @@ int Game_DosVgaIn(uint16_t port, uint32_t *value);
 /* OUT to a VGA port: 1, or 0 if the port is not one of them.  A complete DAC
  * entry goes to the display (Set_Palette_Value). */
 int Game_DosVgaOut(uint16_t port, uint8_t value);
+/* INT 10h AH=00h: the planes of mode 12h, or none for the other modes; clear:
+ * bit 7 of AL was not set */
+void Game_DosVgaSetMode(uint8_t mode, int clear);
+/* INT 10h AX=1000h/1007h: a palette register of the attribute controller */
+void Game_DosVgaSetAttribute(uint8_t index, uint8_t value);
+uint8_t Game_DosVgaAttribute(uint8_t index);
 
 #ifdef __cplusplus
 }

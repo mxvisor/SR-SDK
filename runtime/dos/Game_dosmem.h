@@ -66,13 +66,19 @@ uint8_t *Game_DosMemBase(void);
 /* Gives all of the memory back except the first_free bytes from the PSP on. */
 void Game_DosMemReset(uint32_t first_free);
 
-/* Takes paragraphs * 16 bytes (at least 16), zeroed.  Returns the guest
- * address of the block, 0 if the memory is exhausted; *segment is its DOS
- * segment.  The block is also Game_DosMemLastBlock. */
+/* Takes paragraphs * 16 bytes (at least 16), zeroed, in the first gap they
+ * fit in.  Returns the guest address of the block, 0 if no gap is large
+ * enough; *segment is its DOS segment.  The block is also
+ * Game_DosMemLastBlock. */
 uint32_t Game_DosMemAlloc(uint32_t paragraphs, uint16_t *segment);
+/* Gives the block at the segment back; 0 if no block begins there. */
+int Game_DosMemFree(uint16_t segment);
+/* Makes the block at the segment paragraphs * 16 bytes, where it is; 0 if
+ * there is none or it cannot grow so. */
+int Game_DosMemResize(uint16_t segment, uint32_t paragraphs);
 /* The largest block DPMI 0100h could still give, in paragraphs (at most 0xffff). */
 uint32_t Game_DosMemFreeParagraphs(void);
-/* Bytes left below DOS_MEMORY_END. */
+/* Bytes free below DOS_MEMORY_END, in all the gaps. */
 uint32_t Game_DosMemFreeBytes(void);
 
 /* An address of the game's real-mode world, segment << 4 plus offset, as the
@@ -81,18 +87,27 @@ uint32_t Game_DosMemFreeBytes(void);
 uint8_t *Game_DosMemPtr(uint32_t address, uint32_t size);
 
 /* The memory block of a program that starts at its entry point, as the
- * extender gives it: the stack at the bottom, then the heap that the startup
- * code grows with INT 21h AH=4Ah (it begins at the initial ESP and asks for
- * the new end of the block, in 4 KiB pages from address 0).  The startup code
- * measures the stack against the end of the program's image, so the block has
- * to lie above `above`, a guest address.  Returns the initial ESP, 0 if no
- * block of `size` bytes lies there. */
+ * extender gives it: the stack at the bottom, then the heap.  The startup
+ * code measures the stack against the end of the program's image, so the
+ * block has to lie above `above`, a guest address.  Returns the initial ESP,
+ * where the block ends for the program at first (its break); 0 if no block of
+ * `size` bytes lies there. */
 uint32_t Game_DosProgramInit(uint32_t size, uint32_t stack_size, uint32_t above);
 void Game_DosProgramDeinit(void);
-/* INT 21h AH=4Ah on the block: 1 if its end can be at `pages` * 4 KiB. */
-int Game_DosProgramResize(uint32_t pages);
 /* 0 without a program block */
+uint32_t Game_DosProgramBase(void);
 uint32_t Game_DosProgramEnd(void);
+/* INT 21h AH=4Ah on the block: moves its break to the guest address `end`; 0
+ * if that is outside of it. */
+int Game_DosProgramResize(uint32_t end);
+/* Takes `size` bytes at the break, rounded up to 4 KiB, and moves it on (INT
+ * 21h EAX=80004800h of the flat model); the guest address, 0 if the block has
+ * not got them. */
+uint32_t Game_DosProgramAlloc(uint32_t size);
+/* Keeps the block aside for another program, which makes its own with
+ * Game_DosProgramInit; Pop frees that one and brings the first back. */
+void Game_DosProgramPush(void);
+void Game_DosProgramPop(void);
 
 #ifdef __cplusplus
 }

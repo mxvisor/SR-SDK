@@ -49,6 +49,8 @@
 #include "Game_doskbd.h"
 #include "Game_doscd.h"
 #include "Game_dospit.h"
+#include "Game_dosvga.h"
+#include "Game_dosexec.h"
 #include "Game_hooks.h"
 #include "llasm_cpu.h"
 
@@ -81,6 +83,37 @@ static int isr_running;
  * c_RunProcECX is a jump to garbage. */
 static uintptr_t code_start;
 static uintptr_t code_end;
+
+/* The extender WATCOM's start-up is told it runs under (INT 21h AH=30h with
+ * EBX = "PHAR"): the flat one of Intel's Code Builder, "CB" in the upper half
+ * of EAX.  It is the one its start-up addresses everything of linearly, as the
+ * translated code does: the PSP at the address of [EDX+10h], the environment
+ * at the segment of [PSP+2Ch] shifted, the program's block resized (AH=4Ah) to
+ * ESP minus [EDX+1Ch] bytes, its heap grown with EAX=80004800h.  (Under the
+ * others, PharLap's "DX" and DOS/4G, it reads both through selectors that the
+ * translated code drops: from the addresses 81h and 0.) */
+enum { CB_INFO_PSP = 0x10 / 4, CB_INFO_BASE = 0x1c / 4, CB_INFO_SIZE = 0x20 / 4 };
+static uint32_t cb_info[CB_INFO_SIZE];
+static int code_builder;
+/* the PSP of the program running (another one while a program of the game's
+ * runs: Game_dosexec.c) */
+static uint32_t psp_address = DOS_PSP_ADDRESS;
+
+uint32_t Game_DosPsp(void)
+{
+    return psp_address;
+}
+
+void Game_DosSetPsp(uint32_t address)
+{
+    psp_address = address;
+}
+
+void Game_DosVectors(uint32_t *copy, int restore)
+{
+    if (restore) memcpy(vectors, copy, sizeof(vectors));
+    else memcpy(copy, vectors, sizeof(vectors));
+}
 
 /* <GAME>_TRACE_INT: every software interrupt with its registers before and after */
 static int trace_int(void)
@@ -301,9 +334,10 @@ static int dos_call(Game_DosRegs *regs)
     }
     case 0x25: {
         /* Set vector: AL = vector, EDX = handler.  WATCOM's setvect and
-         * getvect, under the DOS/4GW 2.x their start-up detected (a flag of 2
-         * to 8), use the extended forms instead: AX = 2504h, CL = vector, EDX
-         * = handler, and AX = 2502h, CL = vector, the handler back in EBX. */
+         * getvect use PharLap's forms when their start-up found PharLap (a
+         * game that starts at its main sets that flag itself): AX = 2504h, CL
+         * = vector, EDX = handler, and AX = 2502h, CL = vector, the handler
+         * back in EBX. */
         const uint16_t function = Game_DosAX(regs);
         if (function == 0x2502u) {
             regs->ebx = vectors[(uint8_t)regs->ecx];
@@ -325,22 +359,43 @@ static int dos_call(Game_DosRegs *regs)
         Game_DosSetAL(regs, 0);
         break;
     case 0x30:
-        /* DOS 7.0 and, in the upper half of EAX, the DOS/4GW signature "DX".
-         * BL is the extender's major version in ASCII: WATCOM's start-up
-         * stores it minus '0' as the flag that picks its heap code, and 2
-         * selects DOS/4GW 2.x. */
-        regs->eax = 0x44580700u;
-        regs->ebx = (regs->ebx & 0xffffff00u) | '2';
+        /* DOS 7.0; WATCOM's start-up asks for its extender (above) */
+        if (regs->ebx == 0x50484152u) {
+            cb_info[CB_INFO_PSP] = psp_address;
+            cb_info[CB_INFO_BASE] = Game_DosProgramBase();
+            regs->edx = GAME_PTR_TO_GUEST32(cb_info);
+            regs->eax = 0x42430700u;
+            code_builder = 1;
+        } else {
+            regs->eax = 0x00000007u;
+        }
         break;
     case 0x35:
         /* Get vector: AL = vector, the handler in EBX (WATCOM's getvect takes
          * all 32 bits of it). */
         regs->ebx = vectors[Game_DosAL(regs)];
         break;
+    case 0x37:
+        /* The switch character: AL=0 reads it into DL ('/', AL=0), AL=1 sets
+         * it (DOS 5 ignores that). */
+        if (Game_DosAL(regs) == 0) regs->edx = (regs->edx & 0xffffff00u) | '/';
+        regs->eax &= 0xffffff00u;
+        break;
     case 0x48: {
         /* Allocate memory: BX paragraphs, the segment in AX.  It is also how
-         * much is free: callers ask for too much and read BX back. */
+         * much is free: callers ask for too much and read BX back.  Code
+         * Builder's EAX=80004800h takes EBX bytes of the program's block, the
+         * address in EAX. */
         uint16_t segment;
+        if (code_builder && regs->eax == 0x80004800u) {
+            const uint32_t address = Game_DosProgramAlloc(regs->ebx);
+            if (address == 0) {
+                Game_DosError(regs, 8);
+                return 1;
+            }
+            regs->eax = address;
+            break;
+        }
         if (Game_DosMemAlloc(Game_DosBX(regs), &segment) == 0) {
             Game_DosSetBX(regs, (uint16_t)Game_DosMemFreeParagraphs());
             Game_DosError(regs, 8);
@@ -350,9 +405,8 @@ static int dos_call(Game_DosRegs *regs)
         break;
     }
     case 0x49:
-        /* Free memory: the pool never takes a block back.  A game leaks a few
-         * DOS blocks at most, and a segment the game passes is not trusted as
-         * a pointer. */
+        /* Free memory: the block is at ES, which the translated code drops;
+         * it stays taken (DPMI 0101h, with the segment in DX, frees). */
         break;
     case 0x44:
         /* IOCTL.  The standard handles are the console, everything else a
@@ -374,18 +428,29 @@ static int dos_call(Game_DosRegs *regs)
             return 1;
         }
         break;
-    case 0x4a:
+    case 0x4a: {
         /* Resize a block.  The program's own block (see Game_DosProgramInit)
-         * ends at its size; the pool's blocks never move, and a block is as
-         * large as the game was told. */
-        if (Game_DosProgramEnd() != 0 && !Game_DosProgramResize(regs->ebx)) {
-            regs->ebx = Game_DosProgramEnd() >> 12;
+         * ends where the program asks: in 4 KiB pages from address 0, under
+         * Code Builder in bytes from its start.  The pool's blocks never move,
+         * and a block is as large as the game was told. */
+        const uint32_t end = code_builder ? Game_DosProgramBase() + regs->ebx : regs->ebx << 12;
+        if (Game_DosProgramEnd() != 0 && ((!code_builder && regs->ebx > 0xfffffu) || !Game_DosProgramResize(end))) {
+            regs->ebx = code_builder ? Game_DosProgramEnd() - Game_DosProgramBase() : Game_DosProgramEnd() >> 12;
             Game_DosError(regs, 8);
             return 1;
         }
         break;
+    }
+    case 0x4b:
+        return Game_DosExec(regs);
     case 0x4c:
+        /* the end of a program the game ran (Game_dosexec.c), or of the game */
+        Game_DosExecExit(Game_DosAL(regs));
         Game_ExitMain_Asm(Game_DosAL(regs));
+        break;
+    case 0x4d:
+        /* the exit code of the program that ran last, AH = 0: it ended normally */
+        Game_DosSetAX(regs, Game_DosExecCode());
         break;
     default:
         return 0;
@@ -424,7 +489,13 @@ static int dpmi_call(Game_DosRegs *regs)
     case 0x0007:    /* set segment base */
     case 0x0008:    /* set segment limit */
     case 0x0009:    /* set access rights */
-    case 0x0101:    /* free a DOS block (see INT 21h AH=49h) */
+    case 0x0101:
+        /* Free a DOS block: DX = its selector, its segment here. */
+        if (!Game_DosMemFree(Game_DosDX(regs))) {
+            Game_DosError(regs, 0x0009);
+            return 1;
+        }
+        break;
     case 0x0501:    /* the page services: the game's memory is the host's */
     case 0x0600:
     case 0x0601:
@@ -445,9 +516,13 @@ static int dpmi_call(Game_DosRegs *regs)
         break;
     }
     case 0x0102:
-        /* Resize a DOS block: the pool cannot. */
-        Game_DosError(regs, 0x0008);
-        return 1;
+        /* Resize a DOS block: DX = its selector, BX paragraphs, where it is. */
+        if (!Game_DosMemResize(Game_DosDX(regs), Game_DosBX(regs))) {
+            Game_DosSetBX(regs, (uint16_t)Game_DosMemFreeParagraphs());
+            Game_DosError(regs, 0x0008);
+            return 1;
+        }
+        break;
     case 0x0300: {
         /* Simulate a real-mode interrupt: BL = vector, ES:EDI = the register
          * structure of DPMI 0.9 (EDI 00, ESI 04, EBP 08, EBX 10, EDX 14, ECX
@@ -540,13 +615,34 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
         switch (Game_DosAH(regs)) {
         case 0x00:
             video_mode = Game_DosAL(regs) & 0x7f;
+            Game_DosVgaSetMode(video_mode, (Game_DosAL(regs) & 0x80) == 0);
             Game_DosRequestPresent();
             Game_DosSetCarry(regs, 0);
             return;
         case 0x0f:
             /* AL = the mode, AH = columns, BH = the page */
-            regs->eax = (regs->eax & 0xffff0000u) | ((video_mode <= 3 ? 80u : 40u) << 8) | video_mode;
+            regs->eax = (regs->eax & 0xffff0000u) | ((video_mode <= 1 || video_mode == 0x0d || video_mode == 0x13 ? 40u : 80u) << 8) | video_mode;
             regs->ebx &= 0xffff00ffu;
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x10:
+            /* AL = 00h-03h, 07h, the attribute controller (a palette register,
+             * the border, all of them, blinking; reading a register): its 16
+             * palette registers map the colours of mode 12h into the DAC
+             * (Game_dosvga.c); the table of AL = 02h is at ES, which the
+             * translated code drops.  The DAC functions (AL = 10h on) are not
+             * here. */
+            if (Game_DosAL(regs) == 0x00) Game_DosVgaSetAttribute((uint8_t)regs->ebx, (uint8_t)(regs->ebx >> 8));
+            else if (Game_DosAL(regs) == 0x07) regs->ebx = (regs->ebx & 0xffff00ffu) | ((uint32_t)Game_DosVgaAttribute((uint8_t)regs->ebx) << 8);
+            else if (Game_DosAL(regs) > 0x03) break;
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x12:
+            /* alternate select: BL = 36h turns the refresh off (AL = 1) or on
+             * (AL = 0), a faster VRAM while a game draws; the picture goes on
+             * being presented.  AL = 12h: supported. */
+            if ((uint8_t)regs->ebx != 0x36) break;
+            Game_DosSetAL(regs, 0x12);
             Game_DosSetCarry(regs, 0);
             return;
         case 0x01:      /* cursor shape */

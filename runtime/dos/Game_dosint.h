@@ -71,6 +71,12 @@ void *Game_DosGuestPointer(uint32_t address);
  * the call on with the number of the service it means. */
 void Game_DosDispatch(uint8_t number, Game_DosRegs *regs);
 
+/* the PSP of the program running (DOS_PSP_ADDRESS: the game) */
+uint32_t Game_DosPsp(void);
+void Game_DosSetPsp(uint32_t address);
+/* the 256 interrupt vectors into copy, or back from it (restore) */
+void Game_DosVectors(uint32_t *copy, int restore);
+
 #ifdef __cplusplus
 }
 #endif

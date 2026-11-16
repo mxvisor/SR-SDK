@@ -36,7 +36,17 @@ uint32_t Game_DosMemLastBlock;
 #define POOL_SIZE (DOS_MEMORY_END - DOS_PSP_ADDRESS)
 
 static uint8_t *pool;
-static uint32_t pool_next;
+/* where the blocks begin (the PSP and its environment lie before), from the
+ * PSP on, a multiple of 16 */
+static uint32_t pool_first;
+
+/* The taken blocks, by address: offsets from the PSP and sizes, multiples of
+ * 16.  DOS keeps its arena in the memory itself; the game must not see it, so
+ * the list is here. */
+#define POOL_BLOCKS 256
+typedef struct { uint32_t at, bytes; } pool_block;
+static pool_block blocks[POOL_BLOCKS];
+static unsigned int block_count;
 
 int Game_DosMemInit(uint32_t first_free)
 {
@@ -50,7 +60,7 @@ int Game_DosMemInit(uint32_t first_free)
 void Game_DosMemDeinit(void)
 {
     pool = NULL;
-    pool_next = 0;
+    block_count = 0;
     Game_DosMemLastBlock = 0;
 }
 
@@ -62,36 +72,95 @@ uint8_t *Game_DosMemBase(void)
 void Game_DosMemReset(uint32_t first_free)
 {
     if (pool != NULL) memset(pool, 0, POOL_SIZE);
-    pool_next = first_free;
+    pool_first = (first_free + 15u) & ~15u;
+    block_count = 0;
     Game_DosMemLastBlock = 0;
+}
+
+/* The end of the free space after the index-th block's predecessor: where the
+ * next block (or the pool) begins. */
+static uint32_t gap_end(unsigned int index)
+{
+    return index < block_count ? blocks[index].at : POOL_SIZE;
+}
+
+static uint32_t gap_start(unsigned int index)
+{
+    return index == 0 ? pool_first : blocks[index - 1].at + blocks[index - 1].bytes;
 }
 
 uint32_t Game_DosMemAlloc(uint32_t paragraphs, uint16_t *segment)
 {
-    uint32_t bytes = paragraphs * 16u;
-    uint32_t at = (pool_next + 15u) & ~15u;
+    const uint32_t bytes = paragraphs == 0 ? 16u : paragraphs * 16u;
+    unsigned int index;
 
-    if (pool == NULL) return 0;
-    if (bytes == 0) bytes = 16u;
-    if (at > POOL_SIZE || bytes > POOL_SIZE - at) return 0;
+    if (pool == NULL || block_count == POOL_BLOCKS) return 0;
+    /* the first gap it fits in, as DOS's first fit */
+    for (index = 0; index <= block_count; index++) {
+        const uint32_t at = gap_start(index);
+        if (gap_end(index) >= at && gap_end(index) - at >= bytes) {
+            memmove(&blocks[index + 1], &blocks[index], (block_count - index) * sizeof(blocks[0]));
+            blocks[index].at = at;
+            blocks[index].bytes = bytes;
+            block_count++;
+            memset(pool + at, 0, bytes);
+            *segment = (uint16_t)((DOS_PSP_ADDRESS + at) >> 4);
+            Game_DosMemLastBlock = DOS_PSP_ADDRESS + at;
+            return Game_DosMemLastBlock;
+        }
+    }
+    return 0;
+}
 
-    pool_next = at + bytes;
-    memset(pool + at, 0, bytes);
-    *segment = (uint16_t)((DOS_PSP_ADDRESS + at) >> 4);
-    Game_DosMemLastBlock = DOS_PSP_ADDRESS + at;
-    return Game_DosMemLastBlock;
+/* the index of the block at the segment, block_count for none */
+static unsigned int block_of(uint16_t segment)
+{
+    const uint32_t at = ((uint32_t)segment << 4) - DOS_PSP_ADDRESS;
+    unsigned int index;
+
+    for (index = 0; index < block_count && blocks[index].at != at; index++) {}
+    return index;
+}
+
+int Game_DosMemFree(uint16_t segment)
+{
+    const unsigned int index = block_of(segment);
+
+    if (index == block_count) return 0;
+    block_count--;
+    memmove(&blocks[index], &blocks[index + 1], (block_count - index) * sizeof(blocks[0]));
+    return 1;
+}
+
+int Game_DosMemResize(uint16_t segment, uint32_t paragraphs)
+{
+    const unsigned int index = block_of(segment);
+    const uint32_t bytes = paragraphs == 0 ? 16u : paragraphs * 16u;
+
+    if (index == block_count || gap_end(index + 1) - blocks[index].at < bytes) return 0;
+    blocks[index].bytes = bytes;
+    return 1;
 }
 
 uint32_t Game_DosMemFreeBytes(void)
 {
-    return pool_next < POOL_SIZE ? POOL_SIZE - pool_next : 0;
+    uint32_t total = 0;
+    unsigned int index;
+
+    for (index = 0; index <= block_count; index++)
+        if (gap_end(index) > gap_start(index)) total += gap_end(index) - gap_start(index);
+    return total;
 }
 
 uint32_t Game_DosMemFreeParagraphs(void)
 {
-    uint32_t available = Game_DosMemFreeBytes() / 16u;
+    uint32_t largest = 0;
+    unsigned int index;
 
-    return available > 0xffffu ? 0xffffu : available;
+    for (index = 0; index <= block_count; index++)
+        if (gap_end(index) > gap_start(index) && gap_end(index) - gap_start(index) > largest)
+            largest = gap_end(index) - gap_start(index);
+    return largest / 16u > 0xffffu ? 0xffffu : largest / 16u;
 }
 
 uint8_t *Game_DosMemPtr(uint32_t address, uint32_t size)
@@ -102,6 +171,11 @@ uint8_t *Game_DosMemPtr(uint32_t address, uint32_t size)
 
 static uint8_t *program_block;
 static uint32_t program_size;
+/* the guest address where the block ends for the program now (its break) */
+static uint32_t program_break;
+/* the block of the program that ran another one (Game_dosexec.c) */
+static uint8_t *saved_block;
+static uint32_t saved_size, saved_break;
 
 uint32_t Game_DosProgramInit(uint32_t size, uint32_t stack_size, uint32_t above)
 {
@@ -122,7 +196,8 @@ uint32_t Game_DosProgramInit(uint32_t size, uint32_t stack_size, uint32_t above)
         Game_MemoryReport("the program's memory", 4u << 20);
         return 0;
     }
-    return GAME_PTR_TO_GUEST32(program_block) + stack_size;
+    program_break = GAME_PTR_TO_GUEST32(program_block) + stack_size;
+    return program_break;
 }
 
 void Game_DosProgramDeinit(void)
@@ -130,6 +205,7 @@ void Game_DosProgramDeinit(void)
     if (program_block != NULL) unmap_memory_32bit(program_block, program_size);
     program_block = NULL;
     program_size = 0;
+    program_break = 0;
 }
 
 uint32_t Game_DosProgramEnd(void)
@@ -137,7 +213,43 @@ uint32_t Game_DosProgramEnd(void)
     return program_block == NULL ? 0 : GAME_PTR_TO_GUEST32(program_block) + program_size;
 }
 
-int Game_DosProgramResize(uint32_t pages)
+uint32_t Game_DosProgramBase(void)
 {
-    return pages <= (Game_DosProgramEnd() >> 12);
+    return program_block == NULL ? 0 : GAME_PTR_TO_GUEST32(program_block);
+}
+
+int Game_DosProgramResize(uint32_t end)
+{
+    if (program_block == NULL || end < GAME_PTR_TO_GUEST32(program_block) || end > Game_DosProgramEnd()) return 0;
+    program_break = end;
+    return 1;
+}
+
+uint32_t Game_DosProgramAlloc(uint32_t size)
+{
+    /* in pages, as an extender gives memory: the break of the start-up's
+     * resize is ESP, and the word at it is the stack's */
+    const uint32_t address = (program_break + 0xfffu) & ~0xfffu;
+    if (program_block == NULL || address > Game_DosProgramEnd() || size > Game_DosProgramEnd() - address) return 0;
+    program_break = address + size;
+    return address;
+}
+
+void Game_DosProgramPush(void)
+{
+    saved_block = program_block;
+    saved_size = program_size;
+    saved_break = program_break;
+    program_block = NULL;
+    program_size = 0;
+    program_break = 0;
+}
+
+void Game_DosProgramPop(void)
+{
+    Game_DosProgramDeinit();
+    program_block = saved_block;
+    program_size = saved_size;
+    program_break = saved_break;
+    saved_block = NULL;
 }

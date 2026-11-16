@@ -116,7 +116,6 @@ extern "C" uint32_t CCALL X86_InPortProcedure(uint16_t port, uint32_t size)
 
 extern "C" void CCALL X86_OutPortProcedure(uint16_t port, uint32_t size, uint32_t value)
 {
-    (void)size;
     if (trace_enabled(TRACE_PORTS)) fprintf(stderr, "out %04x, %02x\n", port, value);
 #ifdef GAME_DOS_PORT_OUT
     if (GAME_DOS_PORT_OUT(port, value)) return;
@@ -126,7 +125,11 @@ extern "C" void CCALL X86_OutPortProcedure(uint16_t port, uint32_t size, uint32_
 #endif
     if (port == 0x201) Game_DosJoyOut();
     else if (port == 0x40 || port == 0x43) Game_DosPitOut(port, (uint8_t)value);
-    else Game_DosVgaOut(port, (uint8_t)value);
+    else {
+        /* OUT DX, AX: AL to the port, AH to the next (an index, then its data) */
+        Game_DosVgaOut(port, (uint8_t)value);
+        if (size == 2) Game_DosVgaOut((uint16_t)(port + 1), (uint8_t)(value >> 8));
+    }
 }
 
 /* The host pointer of a segment-override access, NULL if there is none. */
@@ -181,10 +184,6 @@ extern "C" {
 uint32_t Game_DosCr0 = 0x13;
 uint32_t Game_DosDsLimit = 0x00ffffffu;
 uint32_t Game_DosIdtBase;
-/* WATCOM int386() dispatches a software interrupt by returning into a raw
- * `int N / ret` stub; the game's replacement stashes N here and returns into
- * Game_DosInt86Thunk instead (llasm/Game-llasm.llasm). */
-uint32_t Game_DosInt86No;
 /* The handler every vector starts with (llasm/Game-llasm.llasm). */
 extern void CCALL c_Game_DosNullIsr(void *cpu);
 }

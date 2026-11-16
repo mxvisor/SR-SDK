@@ -59,10 +59,14 @@
 #     image=<the disc image>           .nrg, .mds, .bin, .img or .iso (a .bin or
 #                                      .img with its cue sheet beside it), the
 #                                      one path outside the repository
-#                                      (required). Its cue sheet is made in
+#                                      (required, unless floppy=). Its cue sheet is made in
 #                                      build/cd/ with image/image.py, once.
 #                                      `scons image=<path>` builds from another
 #                                      (build/disc-image says which)
+#     floppy=<images>                  a game on floppies instead: the FAT12 images
+#                                      in order, their HUF archives unpacked as the
+#                                      installer does (floppy.py) into build/disc,
+#                                      the disc of the copy; no audio tracks
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
@@ -130,6 +134,17 @@ def read_cfg(path):
         if chosen:
             cfg['image'] = chosen
     return cfg
+
+
+def read_floppies(path):
+    """The floppy= images of a cfg: a FAT12 set the game's installer reads."""
+    images = []
+    with open(path, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if line.lower().startswith('floppy='):
+                images.extend(line.split('=', 1)[1].split())
+    return images
 
 
 def disc_cue(root, cfg, cfg_name):
@@ -276,8 +291,13 @@ def main():
 
     root = os.getcwd()
     cfg = read_cfg(args.cfg)
-    cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
-    audio_cue = cfg.get('audio_cue') or fail(args.cfg + ' has no audio_cue')
+    floppies = read_floppies(args.cfg)
+    if floppies:
+        cue_path = None
+        audio_cue = cfg.get('audio_cue')
+    else:
+        cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
+        audio_cue = cfg.get('audio_cue') or fail(args.cfg + ' has no audio_cue')
     audio_dir = cfg.get('audio_dir', 'AUDIO')
     audio_format = args.audio or cfg.get('audio', 'ogg')
     if audio_format not in ('flac', 'wav', 'ogg'):
@@ -290,30 +310,37 @@ def main():
     if cfg.get('soundfont') and sf2_subset.fluid_source() is None:
         fail(sf2_subset.FLUID_MISSING)
 
-    image_path, tracks = parse_cue(cue_path)
-    data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
-    if data is None:
-        fail('no data track in %s' % cue_path)
+    if floppies:
+        tracks = []
+    else:
+        image_path, tracks = parse_cue(cue_path)
+        data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
+        if data is None:
+            fail('no data track in %s' % cue_path)
     if os.path.exists(args.out):
         fail('%s exists; give a new directory' % args.out)
     os.makedirs(args.out)
 
     # 1. the data track, without the installer
-    image = Image(data['path'], data)
-    pvd = image.sector(16)
-    if pvd[1:6] != b'CD001':
-        fail('no ISO9660 volume in the data track')
-    root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
     copy = Copy(cfg.get('skip_files', '').split(), cfg.get('skip_dirs', '').split(), audio_dir,
                 read_place_rules(args.cfg), args.out)
-    if any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=', 'expand=')) for line in open(args.cfg)):
+    made_disc = any(line.split('#', 1)[0].strip().lower().startswith(('patch=', 'unpack=', 'expand=')) for line in open(args.cfg))
+    if floppies or made_disc:
         # the disc with its patch= archives over it and its unpack= archives
         # and expand= files unpacked, not the bare image
         disc = os.path.join(root, 'build', 'disc')
-        subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
-                        disc, '--cfg', args.cfg, '--cue', cue_path], check=True)
+        command = [sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'disc_tree.py'),
+                   disc, '--cfg', args.cfg]
+        if cue_path:
+            command += ['--cue', cue_path]
+        subprocess.run(command, check=True)
         copy.tree(DirTree(disc), disc)
     else:
+        image = Image(data['path'], data)
+        pvd = image.sector(16)
+        if pvd[1:6] != b'CD001':
+            fail('no ISO9660 volume in the data track')
+        root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
         copy.tree(ImageTree(image, (root_lba, root_size)), (root_lba, root_size))
     # the directories whose files all went elsewhere (place=) are not part of the install
     for rel in copy.placed:
@@ -334,6 +361,8 @@ def main():
         os.makedirs(os.path.join(args.out, path), exist_ok=True)
 
     # 3. the audio tracks and their cue sheet
+    if not tracks:
+        return
     music = os.path.join(args.out, audio_dir)
     os.mkdir(music)
     audio = [(position, t) for position, t in enumerate(tracks) if t['mode'] == 'AUDIO']

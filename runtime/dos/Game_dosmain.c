@@ -77,10 +77,11 @@ void Game_SetMainArgs(int argc, char *argv[]);
 #define DOS_ENV_OFFSET 0x100u
 #define DOS_ENV_SIZE 0x100u
 
-/* The environment as the C library of a DOS4GW program reads it (the guest's
- * getenv of the extender reads a copy the extender's server built, which the
- * port has not got): the array of the addresses of the variables, a zero at
- * its end, and the guest address of the array. */
+/* The environment as the C library of a DOS4GW program reads it: the array
+ * of the addresses of the variables, a zero at its end, and the guest address
+ * of the array.  WATCOM's start-up builds that array itself from the block
+ * behind the PSP; a game that starts at its main (GAME_ENTRY) skips it, and
+ * its input points the C library's getenv at this one. */
 static uint32_t Game_DosEnvironArray[16];
 extern "C" { uint32_t Game_DosEnviron; }
 

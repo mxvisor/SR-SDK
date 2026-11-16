@@ -108,6 +108,17 @@ def read_unpacks(path):
     return unpacks
 
 
+def read_floppies(path):
+    """The floppy= images of a cfg: a FAT12 set the game's installer reads."""
+    images = []
+    with open(path, 'rt') as stream:
+        for line in stream:
+            line = line.split('#', 1)[0].strip()
+            if line.lower().startswith('floppy='):
+                images.extend(line.split('=', 1)[1].split())
+    return images
+
+
 def find_path_ci(root, name):
     """root/name, each part of name matched without regard to case."""
     path = root
@@ -248,42 +259,66 @@ def main():
 
     root = os.getcwd()
     cfg = read_cfg(args.cfg)
-    # a tree copied to a machine without the image: the unpacked disc is all there is
-    if not args.cue and cfg.get('image') and not os.path.isfile(os.path.join(root, cfg['image'])) \
-            and os.path.isfile(os.path.join(args.out, STAMP)):
-        print('disc: no image %s, %s is used as it is' % (cfg['image'], args.out))
-        return
-    cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
+    floppies = [os.path.join(root, image) for image in read_floppies(args.cfg)]
+    floppy_tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'floppy.py')
     patches = [(os.path.join(root, archive), inner) for archive, inner in read_patches(args.cfg)]
     for archive, _ in patches:
         if not os.path.isfile(archive):
             fail('no such patch: %s' % archive)
     unpacks = read_unpacks(args.cfg)
     expands = read_expands(args.cfg)
-    image_file = os.path.join(root, cfg['image']) if cfg.get('image') else cue_path
-    stamp = stamp_of([image_file, cfg.get('audio_dir', 'AUDIO')] + [a + '|' + i for a, i in patches]
-                     + [a for a, _ in patches] + ['unpack|' + a + '|' + d for a, d in unpacks] + ['expand|' + w for w in expands])
-    stamp_file = os.path.join(args.out, STAMP)
-    if os.path.isfile(stamp_file) and open(stamp_file).read().strip() == stamp:
-        print('disc: %s is up to date' % args.out)
-        return
+    if floppies:
+        # the floppy set is the disc: the installer's files, unpacked by floppy.py
+        missing = [image for image in floppies if not os.path.isfile(image)]
+        if missing and os.path.isfile(os.path.join(args.out, STAMP)):
+            print('disc: no floppy %s, %s is used as it is' % (missing[0], args.out))
+            return
+        if missing:
+            fail('no such floppy image: %s' % missing[0])
+        image_file = ' '.join(floppies)
+        stamp = stamp_of(floppies + [floppy_tool] + [a + '|' + i for a, i in patches]
+                         + ['unpack|' + a + '|' + d for a, d in unpacks] + ['expand|' + w for w in expands])
+        stamp_file = os.path.join(args.out, STAMP)
+        if os.path.isfile(stamp_file) and open(stamp_file).read().strip() == stamp:
+            print('disc: %s is up to date' % args.out)
+            return
+        if os.path.exists(args.out):
+            shutil.rmtree(args.out)
+        os.makedirs(args.out)
+        if subprocess.run([sys.executable, '-I', floppy_tool, args.out] + floppies).returncode:
+            fail('cannot unpack the floppy images')
+        print('disc: from %d floppy images' % len(floppies))
+    else:
+        # a tree copied to a machine without the image: the unpacked disc is all there is
+        if not args.cue and cfg.get('image') and not os.path.isfile(os.path.join(root, cfg['image'])) \
+                and os.path.isfile(os.path.join(args.out, STAMP)):
+            print('disc: no image %s, %s is used as it is' % (cfg['image'], args.out))
+            return
+        cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
+        image_file = os.path.join(root, cfg['image']) if cfg.get('image') else cue_path
+        stamp = stamp_of([image_file, cfg.get('audio_dir', 'AUDIO')] + [a + '|' + i for a, i in patches]
+                         + [a for a, _ in patches] + ['unpack|' + a + '|' + d for a, d in unpacks] + ['expand|' + w for w in expands])
+        stamp_file = os.path.join(args.out, STAMP)
+        if os.path.isfile(stamp_file) and open(stamp_file).read().strip() == stamp:
+            print('disc: %s is up to date' % args.out)
+            return
 
-    image_path, tracks = parse_cue(cue_path)
-    data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
-    if data is None:
-        fail('no data track in %s' % cue_path)
-    image = Image(data['path'], data)
-    pvd = image.sector(16)
-    if pvd[1:6] != b'CD001':
-        fail('no ISO9660 volume in the data track')
-    root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
+        image_path, tracks = parse_cue(cue_path)
+        data = next((t for t in tracks if t['mode'] != 'AUDIO'), None)
+        if data is None:
+            fail('no data track in %s' % cue_path)
+        image = Image(data['path'], data)
+        pvd = image.sector(16)
+        if pvd[1:6] != b'CD001':
+            fail('no ISO9660 volume in the data track')
+        root_lba, root_size = struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0]
 
-    if os.path.exists(args.out):
-        shutil.rmtree(args.out)
-    os.makedirs(args.out)
-    copy = Copy([], [], cfg.get('audio_dir', 'AUDIO'), [], args.out)
-    copy.tree(ImageTree(image, (root_lba, root_size)), (root_lba, root_size))
-    print('disc: %d files, %.1f MB from %s' % (copy.count, copy.total / 1e6, os.path.basename(image_file)))
+        if os.path.exists(args.out):
+            shutil.rmtree(args.out)
+        os.makedirs(args.out)
+        copy = Copy([], [], cfg.get('audio_dir', 'AUDIO'), [], args.out)
+        copy.tree(ImageTree(image, (root_lba, root_size)), (root_lba, root_size))
+        print('disc: %d files, %.1f MB from %s' % (copy.count, copy.total / 1e6, os.path.basename(image_file)))
 
     for archive, inner in patches:
         with tempfile.TemporaryDirectory(prefix='disc_tree_') as temp:
