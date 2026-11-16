@@ -182,14 +182,21 @@ architecture keeps the programs off the original's `<game>.exe`; a game with its
 `<program>.cfg` or `.log` renames the port.
 
 `game/recomp/<module>/<variant>/` holds SR's inputs for the original: its
-`sha256`, `SR.cfg` and the `*.sci` files. Then:
+`sha256`, `SR.cfg` and the `*.sci` files. `sha256` may list several originals, one per
+line (the hash first, then a note): releases of the game whose exe differs only where
+SR's inputs do not care (two languages of one build) share them. Then:
 
 ```sh
 scons                            # build/bin/<device>/<program>-<arch>
 scons device=x64-windows         # Windows, cross-built with MinGW-w64
 scons stage=gen                  # stop after SR's output
 scons input_exe=/path/to/GAME.EXE
+scons image=../iso/OTHER.bin     # another release's disc image than image= of game/distrib.cfg
 ```
+
+`image=` (also `make <target> image=...`) stays the choice, in `build/disc-image`, for
+the next builds, `build/disc` and `build/distrib/data`, until `image=default`; the exe
+of `disc:` is taken from the disc again when it changed.
 
 The game's `Makefile` is two lines, `include SR-SDK/scons/game.mk`: the targets are scons's
 (`scons/game.py` and `scons/release.SConscript`), the `.mk` only chains them.

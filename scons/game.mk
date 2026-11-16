@@ -37,6 +37,10 @@
 #   make distclean         build/ and run/ whole, the unpacked disc too
 #   make test | help
 #
+#   image=<path>           with any of them: build from another disc image than
+#                          game/distrib.cfg's (another language of the game), kept as
+#                          the choice in build/disc-image; image=default goes back
+#
 # A repository of several targets (targets= of game/game.cfg, game-<name>/; see
 # scons/game.py): `linux`, `windows` and the stages build every target in turn,
 # or those of TARGETS=<name ...> (default: the main one); `apk` builds the one
@@ -50,6 +54,9 @@ SDK := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 TARGETS ?= default $(subst $(comma), ,$(shell sed -n 's/^targets[ \t]*=//p' game/game.cfg))
 TARGET ?= default
 comma := ,
+# image=<path>: build from another disc image than game/distrib.cfg's (scons/game.py),
+# remembered in build/disc-image; image=default goes back
+SCONS_IMAGE := $(if $(image),image=$(image))
 
 # The targets share build/ (the host tree, build/disc): never two at once, even
 # under `make -j`.  The parallelism is scons's own (JOBS).
@@ -69,13 +76,13 @@ windows-skipped:
 	@echo "make: the Windows build is skipped, no $(MINGW_GCC) (MinGW-w64); \`make windows\` says what is missing"
 
 host input recomp gen obj:
-	set -e; for t in $(TARGETS); do $(SCONS) target=$$t stage=$@; done
+	set -e; for t in $(TARGETS); do $(SCONS) $(SCONS_IMAGE) target=$$t stage=$@; done
 
 linux windows:
-	set -e; for t in $(TARGETS); do $(SCONS) -j$(JOBS) target=$$t $@; done
+	set -e; for t in $(TARGETS); do $(SCONS) $(SCONS_IMAGE) -j$(JOBS) target=$$t $@; done
 
 disc distrib-data:
-	$(SCONS) -j$(JOBS) $@
+	$(SCONS) $(SCONS_IMAGE) -j$(JOBS) $@
 
 distrib: linux windows distrib-data
 	$(SCONS) distrib

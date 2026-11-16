@@ -64,6 +64,17 @@ def write_cue(path, tracks):
         stream.write('\n'.join(lines) + '\n')
 
 
+def file_beside(base, name):
+    """base/name, or the file of base whose name differs from it only in case: a
+    cue sheet written on DOS or Windows names GAME.BIN for Game.bin."""
+    path = os.path.join(base, name)
+    if not os.path.exists(path) and os.path.isdir(base):
+        match = [entry for entry in os.listdir(base) if entry.lower() == name.lower()]
+        if len(match) == 1:
+            return os.path.join(base, match[0])
+    return path
+
+
 def parse_cue(path):
     """Tracks of a cue sheet of BINARY files: number, mode, path (their file),
     index0, index1 (in sectors from the start of that file). One file for the
@@ -78,7 +89,7 @@ def parse_cue(path):
         key = words[0].upper()
         if key == 'FILE':
             name = line.split('"')[1] if '"' in line else words[1]
-            files.append((os.path.join(base, os.path.basename(name.replace('\\', '/'))), words[-1].upper()))
+            files.append((file_beside(base, os.path.basename(name.replace('\\', '/'))), words[-1].upper()))
         elif key == 'TRACK':
             if not files:
                 fail('TRACK before FILE in %s' % path)

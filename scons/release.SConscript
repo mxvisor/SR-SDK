@@ -148,6 +148,11 @@ if os.path.isfile(DISTRIB_CFG):
         for path in (DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py'), SF2_SUBSET):
             with open(path, 'rb') as stream:
                 digest.update(stream.read())
+        # the disc `scons image=` chose instead of the cfg's (scons/game.py)
+        choice = os.path.join(ROOT, 'build', 'disc-image')
+        if os.path.isfile(choice):
+            with open(choice, 'rb') as stream:
+                digest.update(b'image=' + stream.read())
         return digest.hexdigest()
 
     def make_distrib(target, source, env):
@@ -170,9 +175,12 @@ if os.path.isfile(DISTRIB_CFG):
     # the stamp stands for the directory: when it is gone, so is the stamp
     if not os.path.isdir(DISTRIB_DIR) and os.path.exists(DISTRIB_STAMP):
         os.remove(DISTRIB_STAMP)
-    # made again when the cfg or the tool that reads it changes
+    # made again when the cfg, the tool that reads it or the disc image chosen changes
+    # (make_distrib itself skips the work when its stamp says the directory is up to date)
+    _choice = os.path.join(ROOT, 'build', 'disc-image')
     env.Alias('distrib-data', env.Command(DISTRIB_STAMP, [DISTRIB_CFG, os.path.join(SDK_ROOT, 'tools', 'distrib_cd.py'),
-                                                          SF2_SUBSET],
+                                                          SF2_SUBSET,
+                                                          env.Value(open(_choice).read() if os.path.isfile(_choice) else '')],
                                            make_distrib))
 
 # ------------------------------------------------------------------ distrib --

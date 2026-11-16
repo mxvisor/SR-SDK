@@ -60,7 +60,9 @@
 #                                      .img with its cue sheet beside it), the
 #                                      one path outside the repository
 #                                      (required). Its cue sheet is made in
-#                                      build/cd/ with image/image.py, once
+#                                      build/cd/ with image/image.py, once.
+#                                      `scons image=<path>` builds from another
+#                                      (build/disc-image says which)
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
 #                                      build/disc, not the bare image
@@ -108,8 +110,13 @@ def fail(message) -> NoReturn:
     sys.exit('distrib_cd: ' + message)
 
 
+# the disc image `scons image=` chose instead of image= of the cfg (scons/game.py),
+# relative to the repository's root, the current directory
+DISC_IMAGE_CHOICE = os.path.join('build', 'disc-image')
+
+
 def read_cfg(path):
-    # as scons/game.py reads it
+    # as scons/game.py reads it; image= is the one scons/game.py was told to use
     cfg = {}
     with open(path, 'rt') as stream:
         for line in stream:
@@ -117,6 +124,11 @@ def read_cfg(path):
             if line:
                 key, value = line.split('=', 1)
                 cfg[key.strip()] = value.strip()
+    if 'image' in cfg and os.path.isfile(DISC_IMAGE_CHOICE):
+        with open(DISC_IMAGE_CHOICE, 'rt') as stream:
+            chosen = stream.read().strip()
+        if chosen:
+            cfg['image'] = chosen
     return cfg
 
 

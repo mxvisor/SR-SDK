@@ -90,7 +90,29 @@ CFG = read_cfg(os.path.join(GAME_DIR, 'game.cfg'))
 # unpacked from the disc image (build/disc, its cue sheet in build/cd, the game
 # directory build/distrib/data and its stamp): the rest is made from the sources
 # on any machine, but the tree is also copied to one that has no disc image.
-KEEP_ON_CLEAN = (('disc',), ('cd',), ('distrib', 'data'), ('distrib', 'data.stamp'))
+KEEP_ON_CLEAN = (('disc',), ('cd',), ('distrib', 'data'), ('distrib', 'data.stamp'), ('disc-image',))
+
+# image=<path> builds from another disc image than image= of game/distrib.cfg (the
+# same game in another language: game/recomp/<module>/<variant>/sha256 lists its
+# exe too), and the choice stays in build/disc-image for the next builds and for
+# tools/disc_tree.py and tools/distrib_cd.py; image=default goes back to the cfg's.
+# `clean` keeps it with the unpacked disc, `distclean` forgets it.
+DISC_IMAGE_CHOICE = os.path.join(ROOT, 'build', 'disc-image')
+if ARGUMENTS.get('image'):
+    _image = ARGUMENTS['image']
+    if _image == 'default':
+        if os.path.exists(DISC_IMAGE_CHOICE):
+            os.remove(DISC_IMAGE_CHOICE)
+    else:
+        _path = _image if os.path.isabs(_image) else os.path.join(ROOT, _image)
+        if not os.path.isfile(_path):
+            raise Exception('image=%s: no such disc image' % _image)
+        _image = os.path.relpath(os.path.abspath(_path), ROOT)
+        os.makedirs(os.path.dirname(DISC_IMAGE_CHOICE), exist_ok=True)
+        _old = open(DISC_IMAGE_CHOICE).read().strip() if os.path.isfile(DISC_IMAGE_CHOICE) else None
+        if _old != _image:
+            with open(DISC_IMAGE_CHOICE, 'wt') as stream:
+                stream.write(_image + '\n')
 
 
 def clean_tree(directory, keep):
@@ -271,6 +293,10 @@ Environment variables:
   - PATH_INC: paths to find include files
   - PATH_LIB: paths to find library files
   - BUILD_DIR: where build/ lives (default <root>/build)
+
+image=<path> builds from another disc image than image= of game/distrib.cfg (another
+release of the game whose exe game/recomp/<module>/<variant>/sha256 lists); it stays
+the choice (build/disc-image) until image=default.
   - ANDROID_NDK_HOME: NDK path, required for device=arm64-android
 
 Stages: host -> input -> recomp -> gen -> obj -> bin -> dist;
@@ -628,31 +654,41 @@ def module_pipeline(MODULE, EXT, input_key):
     SR_SEGMENTS = os.path.join(RECOMP_DIR, 'segments.sha256')
 
     if want('input'):
-        # Stage 0: the original, checked against the hash the variant records.
-        # The check runs here rather than in build.sh so that it cannot be
-        # skipped: nothing downstream ever reads an EXE that is not the recorded one.
+        # Stage 0: the original, checked against the hashes the variant records
+        # (sha256: one per line, the first word; several when releases of the game
+        # share SR's inputs, as two languages of one build do).  The check runs here
+        # rather than in build.sh so that it cannot be skipped: nothing downstream
+        # ever reads an EXE that is not a recorded one.
+        expected = set()
         with open(os.path.join(RECOMP_SRC, 'sha256'), 'rt') as stream:
-            expected = stream.read().split()[0].lower()
+            for line in stream:
+                words = line.split('#', 1)[0].split()
+                if words:
+                    expected.add(words[0].lower())
+        current = sha256_of(INPUT_EXE) if os.path.exists(INPUT_EXE) else None
 
-        if not (os.path.exists(INPUT_EXE) and sha256_of(INPUT_EXE) == expected):
-            source = ARGUMENTS.get(input_key, CFG.get(input_key, ''))
-            if not source and input_key != 'input_exe':
-                source = 'disc:' + MODULE + EXT      # a DLL: the file of that name on the disc
-            if source.startswith('disc:'):
-                # the exe is a file of the game's disc, as game/distrib.cfg makes it
-                # (the image with its patch= archives over it): build/disc/
-                source = disc_file(source[len('disc:'):])
-            elif source and not os.path.isabs(source):
-                source = os.path.join(ROOT, source)
-            if not source or not os.path.exists(source):
-                raise Exception(
-                    'stage 0: %s is not there and no original to take it from '
-                    '(scons input_exe=/path/to/the/original, or game.cfg %s=%s)'
-                    % (INPUT_EXE, input_key, CFG.get(input_key, '')))
-            actual = sha256_of(source)
-            if actual != expected:
-                raise Exception('stage 0: sha256 of %s is %s, expected %s (game/recomp/%s/%s/sha256)'
-                                % (source, actual, expected, MODULE, VARIANT))
+        source = ARGUMENTS.get(input_key, CFG.get(input_key, ''))
+        if not source and input_key != 'input_exe':
+            source = 'disc:' + MODULE + EXT      # a DLL: the file of that name on the disc
+        if source.startswith('disc:'):
+            # the exe is a file of the game's disc, as game/distrib.cfg makes it
+            # (the image with its patch= archives over it): build/disc/.  Looked
+            # at every time: `scons image=` may have put another disc there.
+            source = disc_file(source[len('disc:'):])
+        elif current in expected and input_key not in ARGUMENTS:
+            source = INPUT_EXE          # an original given by path is copied once
+        elif source and not os.path.isabs(source):
+            source = os.path.join(ROOT, source)
+        if not source or not os.path.exists(source):
+            raise Exception(
+                'stage 0: %s is not there and no original to take it from '
+                '(scons input_exe=/path/to/the/original, or game.cfg %s=%s)'
+                % (INPUT_EXE, input_key, CFG.get(input_key, '')))
+        actual = current if source == INPUT_EXE else sha256_of(source)
+        if actual not in expected:
+            raise Exception('stage 0: sha256 of %s is %s, expected %s (game/recomp/%s/%s/sha256)'
+                            % (source, actual, ' or '.join(sorted(expected)), MODULE, VARIANT))
+        if actual != current:
             if not os.path.isdir(INPUT_DIR):
                 os.makedirs(INPUT_DIR)
             if os.path.exists(INPUT_EXE):
