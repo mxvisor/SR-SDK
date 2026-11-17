@@ -41,6 +41,8 @@ int Game_DosExec(Game_DosRegs *regs);
 void Game_DosExecExit(uint8_t status);
 /* AH=4Dh: the exit code of the program that ran last */
 uint8_t Game_DosExecCode(void);
+/* 1 while a program that Game_DosExec started runs */
+int Game_DosExecRunning(void);
 
 #ifdef __cplusplus
 }

@@ -72,6 +72,32 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
+## emu8950
+
+`extern/emu8950/` is a git submodule of
+[emu8950](https://github.com/digital-sound-antiques/emu8950), pinned to a
+commit: Mitsutaka Okazaki's Y8950/YM3526/YM3812 emulator, the OPL2 of
+`runtime/core/Game_opl.c`, under the MIT license (the full text is below under
+"SR's license"), with this copyright line:
+
+```
+Copyright (c) 2014 Mitsutaka Okazaki
+```
+
+## The Audio Interface Library 2
+
+`runtime/dos/Game_dosail2fm.c` is a port to C of `XMIDI.ASM` and `YAMAHA.INC`,
+the Ad Lib XMIDI driver of the Audio Interface Library 2.14 by John Miles
+(Copyright (C) 1991, 1992 Miles Design, Inc.), whose package says:
+
+```
+As of May 26, 2000, all source code and compiled object code in this package
+may be considered "open-source freeware," usable by anyone for any purpose,
+commercial or otherwise, without restriction or limitation.
+```
+
+The port is under SR-SDK's MIT license.
+
 ## SDL
 
 SR-SDK contains no SDL sources. `tools/android_sdl.sh` downloads the release

@@ -43,6 +43,10 @@ uint32_t Game_AIL2_RegisterDriver(uint32_t image);
 /* the driver function `function`; `arguments` is the guest address of the
  * caller's arguments, the driver's handle first */
 uint32_t Game_AIL2_CallDriver(uint32_t function, uint32_t arguments);
+/* The program that Game_DosExec ran has ended: its drivers are shut down (a
+ * program need not call AIL_shutdown; its memory, the sequences and the
+ * samples the drivers play, is freed). */
+void Game_AIL2_ProgramEnded(void);
 
 #ifdef __cplusplus
 }

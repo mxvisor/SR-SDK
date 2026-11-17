@@ -887,7 +887,7 @@ if want('obj'):
         env.Append(CPPDEFINES=['GAME_HAVE_ICON'], CPPPATH=[icon_header_dir])
 
     env.Append(CPPPATH=[GAME_DIR] + RUNTIME_DIRS
-               + [os.path.join(SDK_ROOT, 'extern', 'tsf')]
+               + [os.path.join(SDK_ROOT, 'extern', 'tsf'), os.path.join(SDK_ROOT, 'extern', 'emu8950')]
                + ([os.path.join(RUNTIME_CORE, 'gl'),
                    os.path.join(RUNTIME_CORE, 'gl', 'glad', 'include')] if GL else [])
                + [os.path.join(RUNTIME_CORE, 'display'), LLASM_SUPPORT])
@@ -903,8 +903,8 @@ if want('obj'):
 
     # runtime files built as C, not C++ (the rest are C++): TinySoundFont's
     # static tables would need the C++ runtime (__cxa_guard_*), which the link
-    # line does not have
-    RUNTIME_PLAIN_C = ('Game_tsf_impl.c',)
+    # line does not have; emu8950 is C as well
+    RUNTIME_PLAIN_C = ('Game_tsf_impl.c', 'Game_opl_impl.c', 'Game_opl_adpcm_impl.c')
     runtime_objs = []
     for runtime_dir in RUNTIME_DIRS:
         obj_runtime = os.path.join(obj_device, 'runtime',
@@ -931,7 +931,8 @@ if want('obj'):
                         continue
                     if os.path.basename(source) in RUNTIME_PLAIN_C:
                         runtime_objs += env.Object(os.path.join(obj_runtime, name),
-                                                   CCFLAGS=env['CCFLAGS'] + ['-x', 'c', '-Wno-null-pointer-subtraction'])
+                                                   CCFLAGS=env['CCFLAGS'] + ['-x', 'c', '-Wno-null-pointer-subtraction',
+                                                                                 '-Wno-unused-parameter'])
                         continue
                     runtime_objs += env.Object(os.path.join(obj_runtime, name))
 

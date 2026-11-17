@@ -79,6 +79,10 @@ submodule: `tsf.h` (MIT) and `tml.h` (Zlib), header-only. Its directory is on
 the game's include path, for ports that synthesize MIDI music in the audio
 callback; SDL2_mixer's own MIDI backend is then not needed.
 
+`extern/emu8950/` is the [emu8950](https://github.com/digital-sound-antiques/emu8950)
+submodule (MIT): an emulator of the YM3812, the OPL2 FM chip of the Ad Lib, in C, for
+the FM music of the DOS games (`runtime/core/Game_opl.c`).
+
 ## Requirements
 
 - Python 3 and [SCons](https://scons.org/)
@@ -585,9 +589,11 @@ skeleton/               a starting point for a new game repository -- to come
   timer service on the PIT (`Game_AIL_TimerInterrupt` from the game's `GAME_DOS_TIMER_TICK()`),
   the digital driver (`$<GAME>_NOSOUND`) and its samples; the game's `external_procedures.sci`
   routes AIL's entry points to the `SR_AIL_*` of `llasm/ail.llinc`, which its own llasm includes;
-- `Game_dosail2.c`, `.h`: the drivers of the Miles AIL/32 2.x a game was linked with, over
-  `Game_ail.c`: a digital one (one .VOC at a time) and an XMIDI one (General MIDI through
-  `Game_midi.c`), by the numbers of the driver functions; the game's `external_procedures.sci`
+- `Game_dosail2.c`, `.h`: the drivers of the Miles AIL/32 2.x a game was linked with, by the
+  numbers of the driver functions: a digital one (one .VOC at a time, over `Game_ail.c`) and
+  an XMIDI one: the Ad Lib driver of AIL 2.14 (`Game_dosail2fm.c`, `.h`: its interpreter
+  and its synthesizer ported to C, on the OPL2 of `core/Game_opl.c`, with the timbres the
+  game loads from its `.AD` file), one at a time; the game's `external_procedures.sci`
   routes its `AIL_register_driver` and the dispatcher of the driver functions to
   `SR_AIL2_register_driver` and `SR_AIL2_call_driver` (`llasm/ail2.llinc`, in every DOS game's llasm);
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
@@ -606,6 +612,7 @@ skeleton/               a starting point for a new game repository -- to come
   button while the mod is on (`Game_GyroMod()`; a switch of the mod places the buttons again). A game shows the two items in its panel with `Game_GyroAddItems()` from
   `GAME_OSD_ITEMS()`;
 - `Game_audio.c`, `Game_sound.h`: the SDL_mixer device (`Game_AudioInit`) shared by CD audio, MIDI and a game's digital sound, DOS and Win32.
+- `Game_opl.c/.h`: an OPL2 (emu8950, `extern/emu8950`, built as C by `Game_opl_impl.c` and `Game_opl_adpcm_impl.c`) on SDL_mixer's music, with the service routine of the FM driver that writes it called on the audio thread at the driver's rate (AIL's 120 Hz), so the music keeps its time whatever the game's frame rate is;
 - `Game_audiostream.c/.h`: a stream of PCM (`Game_AudioSourceOpen`, SDL_OpenAudioDevice's calls: a fill callback or a queue) on a device of its own or in SDL_mixer's output, whose one post-mix hook it owns; the Sound Blaster, DirectSound and a game's own driver play through it.
 
 The `Game_dos*` files are in `runtime/dos/`; the others are in `runtime/core/`, and a game that

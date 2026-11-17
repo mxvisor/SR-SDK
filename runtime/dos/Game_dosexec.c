@@ -50,6 +50,7 @@
 #include "Game_dosint.h"
 #include "Game_dosregs.h"
 #include "Game_dosexec.h"
+#include "Game_dosail2.h"
 #include "Game_hooks.h"
 #include "llasm_cpu.h"
 /* the CPU is reached by its fields here: Game_DosRegs has the same names */
@@ -266,6 +267,8 @@ int Game_DosExec(Game_DosRegs *regs)
         cpu->_eflags = 0x202u;
         module->entry(cpu);
     }
+    /* what the program left running goes with its memory */
+    Game_AIL2_ProgramEnded();
     exec_running = 0;
 
     memcpy(cpu, &saved_cpu, sizeof(saved_cpu));
@@ -294,6 +297,11 @@ void Game_DosExecExit(uint8_t status)
 #else
     longjmp(exec_env, 1);
 #endif
+}
+
+int Game_DosExecRunning(void)
+{
+    return exec_running;
 }
 
 uint8_t Game_DosExecCode(void)

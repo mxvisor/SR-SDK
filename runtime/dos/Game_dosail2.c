@@ -34,17 +34,18 @@
  * external_procedures.sci routes the two (register and dispatch) to the
  * SR_AIL2_* procedures of llasm/ail2.llinc, and the drivers are these: a
  * digital one (driver type 2, the .VOC player of a Sound Blaster) on a sample
- * of Game_ail, and an XMIDI one (type 3) on Game_ail's sequences.  The kind of
+ * of Game_ail, and an XMIDI one (type 3), the Ad Lib driver of AIL 2 on an
+ * OPL2 (Game_dosail2fm.c): one at a time, as there is one chip.  The kind of
  * a registered driver is the kind of the functions its table lists.  The
  * numbers, the descriptor and the states are those of AIL 2.14's AIL.H and
  * AIL.INC (open-source freeware since 2000); every argument and every field
  * of the descriptor is 32 bits wide in AIL/32, and a far pointer of the
  * digital functions is two of them, the offset and the selector.
  *
- * A digital driver of AIL 2 plays one .VOC at a time.  The XMIDI driver needs
- * no timbres (it plays General MIDI through Game_midi): its timbre requests
- * are empty.  The config file's Sound and Music turn the drivers off: the
- * game's AIL_register_driver fails then.  $<GAME>_TRACE_SOUND traces the
+ * A digital driver of AIL 2 plays one .VOC at a time.  The FM driver asks for
+ * the timbres of its sequences, which the game loads from its .AD file.  The
+ * config file's Sound and Music turn the drivers off: the game's
+ * AIL_register_driver fails then.  $<GAME>_TRACE_SOUND traces the
  * calls. */
 
 #include <stdint.h>
@@ -58,6 +59,8 @@
 #include "Game_vars.h"
 #include "Game_ail.h"
 #include "Game_dosail2.h"
+#include "Game_dosail2fm.h"
+#include "Game_dosexec.h"
 
 /* the numbers of the driver functions (AIL.INC) */
 enum {
@@ -71,23 +74,20 @@ enum {
     AIL2_STATE_TAB_SIZE = 150, AIL2_REG_SEQ = 151, AIL2_REL_SEQ_HND = 152, AIL2_T_CACHE_SIZE = 153,
     AIL2_DEFINE_T_CACHE = 154, AIL2_T_REQ = 155, AIL2_INSTALL_T = 156, AIL2_PROTECT_T = 157,
     AIL2_UNPROTECT_T = 158, AIL2_T_STATUS = 159,
-    AIL2_START_SEQ = 170, AIL2_STOP_SEQ = 171, AIL2_RESUME_SEQ = 172, AIL2_SEQ_STAT = 173,
-    AIL2_REL_VOL = 174, AIL2_REL_TEMPO = 175, AIL2_SET_REL_VOL = 176, AIL2_SET_REL_TEMPO = 177,
-    AIL2_LAST = 192
+    AIL2_START_SEQ = 170, AIL2_STOP_SEQ = 171, AIL2_RESUME_SEQ = 173, AIL2_SEQ_STAT = 174,
+    AIL2_REL_VOL = 175, AIL2_REL_TEMPO = 176, AIL2_SET_REL_VOL = 177, AIL2_SET_REL_TEMPO = 178,
+    AIL2_LAST = 194
 };
 
 /* drvr_desc.drvr_type */
 #define DSP_DRVR    2
 #define XMIDI_DRVR  3
 
-/* the states of AIL_VOC_playback_status and AIL_sequence_status */
+/* the states of AIL_VOC_playback_status */
 #define DAC_STOPPED 0
 #define DAC_PAUSED  1
 #define DAC_PLAYING 2
 #define DAC_DONE    3
-#define SEQ_STOPPED 0
-#define SEQ_PLAYING 1
-#define SEQ_DONE    2
 
 #define AIL2_DRIVERS 16
 
@@ -107,6 +107,7 @@ typedef struct {
 
 typedef struct {
     int type;               /* 0: a free handle */
+    int child;              /* registered by a program Game_DosExec ran */
     ail2_desc desc;
     /* digital: the sample of Game_ail, the .VOC block to play next, the state */
     int sample;
@@ -118,8 +119,16 @@ typedef struct {
 
 static ail2_driver drivers[AIL2_DRIVERS];
 
+/* The Sound Blaster's DAC sounds at half the scale of its samples beside the
+ * FM chip (Game_opl.c): the levels of the two on the card, as DOSBox Staging
+ * measures them.  The game's volume (0-127) is the driver's, as it set it. */
+static int32_t dac_volume(const ail2_driver *d)
+{
+    return (d->volume + 1) / 2;
+}
+
 static const char dsp_names[] = "Sound Blaster Digital Sound\0";
-static const char xmidi_names[] = "General MIDI Synthesizer\0";
+static const char fm_names[] = "Ad Lib(R) Music Synthesizer Card\0";
 
 static int trace_sound(void)
 {
@@ -244,7 +253,7 @@ static int voc_start(ail2_driver *d)
     Game_AilSetSampleType(d->sample, stereo ? GAME_AIL_F_STEREO : 0, 0);
     Game_AilSetSampleRate(d->sample, (int32_t)rate);
     Game_AilSetSampleAddress(d->sample, pieces > 1 ? d->voc_pcm : first, pieces > 1 ? total : first_length);
-    Game_AilSetSampleVolume(d->sample, d->volume);
+    Game_AilSetSampleVolume(d->sample, dac_volume(d));
     Game_AilSetSamplePan(d->sample, d->pan);
     Game_AilSetSampleLoopCount(d->sample, 1);
     Game_AilStartSample(d->sample);
@@ -311,7 +320,7 @@ static uint32_t digital_call(ail2_driver *d, uint32_t function, const uint32_t *
         return voc_status(d);
     case AIL2_SET_D_PB_VOL:
         d->volume = (int32_t)(args[1] & 127);
-        Game_AilSetSampleVolume(d->sample, d->volume);
+        Game_AilSetSampleVolume(d->sample, dac_volume(d));
         return 0;
     case AIL2_D_PB_VOL:
         return (uint32_t)d->volume;
@@ -335,64 +344,25 @@ static uint32_t digital_call(ail2_driver *d, uint32_t function, const uint32_t *
     }
 }
 
-/* XMIDI: a sequence handle is the number of Game_ail's sequence */
-static uint32_t xmidi_call(ail2_driver *d, uint32_t function, const uint32_t *args)
+static void shutdown_driver(ail2_driver *d)
 {
-    const int sequence = (int)args[1];
-    (void)d;
+    if (d->type == DSP_DRVR) {
+        voc_stop(d);
+        Game_AilReleaseSample(d->sample);
+    } else {
+        Game_AIL2_FmClose();
+    }
+    d->type = 0;
+}
 
-    switch (function) {
-    case AIL2_STATE_TAB_SIZE:
-        /* the game allocates a state table per sequence; this driver keeps none */
-        return 16;
-    case AIL2_REG_SEQ: {
-        const int number = Game_AilAllocateSequence();
-        if (number < 0) return 0xffffffffu;
-        if (!Game_AilInitSequence(number, guest(args[1]), args[2])) {
-            Game_AilReleaseSequence(number);
-            return 0xffffffffu;
-        }
-        if (trace_sound()) fprintf(stderr, "AIL2: sequence %i: XMIDI %08x, number %u\n", number, args[1], args[2]);
-        return (uint32_t)number;
-    }
-    case AIL2_REL_SEQ_HND:
-        Game_AilReleaseSequence(sequence);
-        return 0;
-    case AIL2_T_CACHE_SIZE:
-        return 0;
-    case AIL2_T_REQ:
-        return 0xffffu;
-    case AIL2_T_STATUS:
-        return 1;
-    case AIL2_DEFINE_T_CACHE:
-    case AIL2_INSTALL_T:
-    case AIL2_PROTECT_T:
-    case AIL2_UNPROTECT_T:
-        return 0;
-    case AIL2_START_SEQ:
-        Game_AilStartSequence(sequence);
-        return 0;
-    case AIL2_STOP_SEQ:
-        Game_AilStopSequence(sequence);
-        return 0;
-    case AIL2_RESUME_SEQ:
-        Game_AilResumeSequence(sequence);
-        return 0;
-    case AIL2_SEQ_STAT: {
-        const uint32_t status = Game_AilSequenceStatus(sequence);
-        if (status & GAME_AIL_PLAYING) return SEQ_PLAYING;
-        if (status & GAME_AIL_STOPPED) return SEQ_STOPPED;
-        return SEQ_DONE;
-    }
-    case AIL2_REL_VOL:
-    case AIL2_REL_TEMPO:
-        return 100;
-    case AIL2_SET_REL_VOL:
-    case AIL2_SET_REL_TEMPO:
-        return 0;
-    default:
-        if (trace_sound()) fprintf(stderr, "AIL2: XMIDI function %u not supported\n", function);
-        return 0;
+extern "C" void Game_AIL2_ProgramEnded(void)
+{
+    int handle;
+
+    for (handle = 0; handle < AIL2_DRIVERS; handle++) {
+        if (drivers[handle].type == 0 || !drivers[handle].child) continue;
+        if (trace_sound()) fprintf(stderr, "AIL2: driver %i: its program ended\n", handle);
+        shutdown_driver(&drivers[handle]);
     }
 }
 
@@ -409,9 +379,12 @@ extern "C" uint32_t Game_AIL2_RegisterDriver(uint32_t image)
     for (handle = 0; handle < AIL2_DRIVERS && drivers[handle].type != 0; handle++) {}
     if (handle == AIL2_DRIVERS) return 0xffffffffu;
     if (type == DSP_DRVR && (drivers[handle].sample = Game_AilAllocateSample()) < 0) return 0xffffffffu;
+    /* one FM driver: Game_AIL2_FmOpen refuses a second */
+    if (type == XMIDI_DRVR && !Game_AIL2_FmOpen()) return 0xffffffffu;
 
     d = &drivers[handle];
     d->type = type;
+    d->child = Game_DosExecRunning();
     d->voc_state = DAC_DONE;
     d->volume = 127;
     d->pan = 64;
@@ -419,14 +392,15 @@ extern "C" uint32_t Game_AIL2_RegisterDriver(uint32_t image)
     d->desc.min_API_version = 200;
     d->desc.drvr_type = (uint32_t)type;
     /* the file of the timbres the game loads for the driver ("AD": Ad Lib's
-     * .AD, which the XMIDI drivers on OPL read); the timbre requests here are
-     * empty, so it is never read */
+     * .AD, which the XMIDI drivers on OPL read) */
     memcpy(d->desc.data_suffix, type == DSP_DRVR ? "VOC" : "AD", type == DSP_DRVR ? 4 : 3);
-    d->desc.dev_name_table = GAME_PTR_TO_GUEST32(type == DSP_DRVR ? dsp_names : xmidi_names);
+    d->desc.dev_name_table = GAME_PTR_TO_GUEST32(type == DSP_DRVR ? dsp_names : fm_names);
     d->desc.default_IO = type == DSP_DRVR ? 0x220 : 0x388;
     d->desc.default_IRQ = type == DSP_DRVR ? 7 : -1;
     d->desc.default_DMA = type == DSP_DRVR ? 1 : -1;
     d->desc.default_DRQ = -1;
+    /* the FM driver asked for 120 calls a second: its interpreter runs on the
+     * audio thread instead (Game_opl.c) */
     d->desc.service_rate = -1;
     return (uint32_t)handle;
 }
@@ -447,21 +421,18 @@ extern "C" uint32_t Game_AIL2_CallDriver(uint32_t function, uint32_t arguments)
     case AIL2_DESC_DRVR:
         result = GAME_PTR_TO_GUEST32(&d->desc);
         break;
+    case AIL2_INIT_DRVR:
+    case AIL2_SERVE_DRVR:
+        if (d->type == XMIDI_DRVR) result = Game_AIL2_FmCall(function, args);
+        break;
     case AIL2_DET_DEV:
         result = 1;
         break;
-    case AIL2_INIT_DRVR:
-    case AIL2_SERVE_DRVR:
-        break;
     case AIL2_SHUTDOWN_DRVR:
-        if (d->type == DSP_DRVR) {
-            voc_stop(d);
-            Game_AilReleaseSample(d->sample);
-        }
-        d->type = 0;
+        shutdown_driver(d);
         break;
     default:
-        result = d->type == DSP_DRVR ? digital_call(d, function, args) : xmidi_call(d, function, args);
+        result = d->type == DSP_DRVR ? digital_call(d, function, args) : Game_AIL2_FmCall(function, args);
         break;
     }
     if (trace_sound() && function != AIL2_VOC_PB_STAT && function != AIL2_SEQ_STAT)
