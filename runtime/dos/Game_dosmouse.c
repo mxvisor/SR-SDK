@@ -49,7 +49,17 @@
  * position is the driver's own: turning the device moves it, and a touch away
  * from the on-screen buttons (gyro_mouse) and function 4 set it, so a tap puts
  * the pointer under the finger and the turns go on from there.  An on-screen
- * button may be the left button (TOUCHGAMEPAD_MOUSE_LEFT).
+ * button may be the left button (TOUCHGAMEPAD_MOUSE_LEFT).  Another one may
+ * make the touches the right button (TOUCHGAMEPAD_MOUSE_RIGHT): a touch on the
+ * picture that comes down while it is held (the gamepad's pointer, as SDL's
+ * mouse is the first finger's, the one on that button) is the right button,
+ * where the finger is, until it is lifted (pad_mouse).
+ *
+ * The range covers the whole picture, unless the game's hook
+ * GAME_DOS_MOUSE_MARGIN_Y(width, height) leaves rows out above and below it
+ * (a game that draws a smaller screen in the middle of the mode's and sets
+ * the range to that screen): a place on the picture is then the same place
+ * of the game's, the motion of a touch or of the gyroscope as on the screen.
  *
  * A touch clicks only in the picture: one that comes down beside it, where
  * the on-screen buttons are, is not the mouse's (no press until it is lifted,
@@ -73,6 +83,12 @@
 #include "Game_gyro.h"
 #include "Game_osd.h"
 #include "touchgamepad.h"
+
+/* the rows of the picture (width x height) above and below the part the
+ * range covers */
+#ifndef GAME_DOS_MOUSE_MARGIN_Y
+#define GAME_DOS_MOUSE_MARGIN_Y(width, height) 0
+#endif
 
 static int mouse_min_x, mouse_max_x = -1;
 static int mouse_min_y, mouse_max_y = -1;
@@ -98,6 +114,16 @@ static int pointer_beside;
 /* the event loop's buttons pressed by a touch beside the picture, until it is
  * lifted (SDL's buttons, a bit each) */
 static int touch_beside_events;
+#if defined(__ANDROID__)
+/* where the last touch in the picture left the mouse (-1: none yet) */
+static int touch_last_x = -1, touch_last_y = -1;
+/* the pointer's touch is the right button (pad_mouse), and the pointer's
+ * touches when it was last looked at */
+static int right_touch;
+static unsigned int right_touches;
+#endif
+/* the mouse's buttons of the on-screen gamepad as pad_mouse gave them last */
+static int pad_last;
 
 static int trace_mouse(void)
 {
@@ -174,7 +200,7 @@ static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
 #if defined(__ANDROID__)
     {
         /* the buttons pressed beside the picture, until they are released */
-        static int touch_beside, before, last_x = -1, last_y = -1, keyboard_x = -1, keyboard_y = -1;
+        static int touch_beside, before, keyboard_x = -1, keyboard_y = -1;
 
         /* where the keyboard's touches left SDL's mouse */
         if (TouchGamepad_KeyboardShown()) {
@@ -184,12 +210,12 @@ static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
             keyboard_x = -1;
         }
         if (keyboard_x >= 0) inside = 0;
-        if (inside || last_x < 0) {
-            last_x = *x;
-            last_y = *y;
+        if (inside || touch_last_x < 0) {
+            touch_last_x = *x;
+            touch_last_y = *y;
         } else {
-            *x = last_x;
-            *y = last_y;
+            *x = touch_last_x;
+            *y = touch_last_y;
         }
         touch_beside &= *buttons;
         if (!inside) touch_beside |= *buttons & ~before;
@@ -251,13 +277,65 @@ static void gyro_mouse(int width, int height, int *px, int *py, int *buttons)
     if (*py > height - 1) *py = height - 1;
 }
 
+/* The mouse's buttons of the on-screen gamepad: 1 the left one it holds, 2 a
+ * touch that is the right button.  A touch of the gamepad's pointer that
+ * comes down on the picture while its right button's modifier is held
+ * (TOUCHGAMEPAD_MOUSE_RIGHT) is the right button until it is lifted, and puts
+ * the mouse under the finger (the gyroscope's position is already there);
+ * SDL's mouse of the same finger is not the left button then. */
+static int pad_mouse(int width, int height, int *px, int *py, int *buttons)
+{
+    const int pad = TouchGamepad_MouseButtons();
+#if defined(__ANDROID__)
+    float fx, fy;
+    int down, x, y;
+    const unsigned int touches = TouchGamepad_Pointer(&fx, &fy, &down);
+
+    if (touches != right_touches) {
+        right_touches = touches;
+        right_touch = (pad & 2) && down && window_to_picture(fx, fy, width, height, &x, &y);
+    }
+    if (!down) right_touch = 0;
+    if (right_touch) {
+        if (!Game_GyroOn()) {
+            window_to_picture(fx, fy, width, height, &x, &y);
+            *px = touch_last_x = x;
+            *py = touch_last_y = y;
+        }
+        *buttons &= ~1;
+        return (pad & 1) | 2;
+    }
+#else
+    (void)width;
+    (void)height;
+    (void)px;
+    (void)py;
+    (void)buttons;
+#endif
+    return pad & 1;
+}
+
+/* The rows of the picture the range covers: from *top, *rows of them. */
+static void range_rows(int height, int *top, int *rows)
+{
+    const int width = (int)Render_Width > 0 ? (int)Render_Width : 320;
+
+    (void)width;
+    *top = GAME_DOS_MOUSE_MARGIN_Y(width, height);
+    *rows = height - 2 * *top;
+    if (*top < 0 || *rows <= 0) {
+        *top = 0;
+        *rows = height;
+    }
+}
+
 /* The position in the virtual screen, clamped to the range the game set. */
 static void mouse_position(int *x, int *y, int *buttons)
 {
     const int width = (int)Render_Width > 0 ? (int)Render_Width : 320;
     const int height = (int)Render_Height > 0 ? (int)Render_Height : 200;
     const int virtual_width = width <= 320 ? 2 * width : width;
-    int px, py;
+    int px, py, top, rows;
 
     if (mouse_max_x < 0) mouse_max_x = virtual_width - 1;
     if (mouse_max_y < 0) mouse_max_y = height - 1;
@@ -265,11 +343,14 @@ static void mouse_position(int *x, int *y, int *buttons)
     screen_mouse(width, height, &px, &py, buttons);
     if (Game_GyroOn()) gyro_mouse(width, height, &px, &py, buttons);
     else gyro_was_on = 0;
-    /* an on-screen button that is the mouse's (TOUCHGAMEPAD_MOUSE_LEFT) */
-    *buttons |= TouchGamepad_MouseButtons();
+    /* the on-screen buttons that are the mouse's (TOUCHGAMEPAD_MOUSE_LEFT,
+     * TOUCHGAMEPAD_MOUSE_RIGHT) */
+    pad_last = pad_mouse(width, height, &px, &py, buttons);
+    *buttons |= pad_last;
 
     *x = mouse_min_x + (int)((int64_t)px * (mouse_max_x - mouse_min_x + 1) / width);
-    *y = mouse_min_y + (int)((int64_t)py * (mouse_max_y - mouse_min_y + 1) / height);
+    range_rows(height, &top, &rows);
+    *y = mouse_min_y + (int)((int64_t)(py - top) * (mouse_max_y - mouse_min_y + 1) / rows);
     if (*x < mouse_min_x) *x = mouse_min_x;
     if (*x > mouse_max_x) *x = mouse_max_x;
     if (*y < mouse_min_y) *y = mouse_min_y;
@@ -422,7 +503,7 @@ void Game_DosMouseDeliverIrq(void)
         if (after == event_buttons) continue;
         event_buttons = after;
         if (handler_address == 0) continue;
-        after |= TouchGamepad_MouseButtons();
+        after |= pad_last;
         condition = button_events(handler_buttons, after);
         if ((condition & handler_mask) == 0) {
             handler_buttons = after;
@@ -447,7 +528,7 @@ void Game_DosMouseDeliverIrq(void)
 
     /* the motion, and the buttons that are not the host mouse's events: the
      * on-screen gamepad's, the gyroscope's touch */
-    if (!gyro) buttons = event_buttons | TouchGamepad_MouseButtons();
+    if (!gyro) buttons = event_buttons | pad_last;
     {
         const unsigned int condition = button_events(handler_buttons, buttons) |
                                        ((x != handler_x || y != handler_y) ? MOUSE_MOVED : 0);
@@ -521,17 +602,24 @@ int Game_DosMouseCall(Game_DosRegs *regs)
     case 0x0004:
         /* the position: the driver's own only with the gyroscope */
         if (gyro_was_on) {
+            const int height = (int)Render_Height > 0 ? (int)Render_Height : 200;
+            int top, rows;
+
+            range_rows(height, &top, &rows);
             gyro_x = (double)((int16_t)Game_DosCX(regs) - mouse_min_x) / (mouse_max_x - mouse_min_x + 1);
-            gyro_y = (double)((int16_t)Game_DosDX(regs) - mouse_min_y) / (mouse_max_y - mouse_min_y + 1);
+            gyro_y = (top + (double)((int16_t)Game_DosDX(regs) - mouse_min_y) * rows / (mouse_max_y - mouse_min_y + 1)) /
+                     height;
         }
         break;
     case 0x0007:
         mouse_min_x = Game_DosCX(regs);
         mouse_max_x = Game_DosDX(regs);
+        if (trace_mouse()) fprintf(stderr, "MOUSE range x %d..%d\n", mouse_min_x, mouse_max_x);
         break;
     case 0x0008:
         mouse_min_y = Game_DosCX(regs);
         mouse_max_y = Game_DosDX(regs);
+        if (trace_mouse()) fprintf(stderr, "MOUSE range y %d..%d\n", mouse_min_y, mouse_max_y);
         break;
     case 0x000b:
         /* the motion since the last call, in mickeys */

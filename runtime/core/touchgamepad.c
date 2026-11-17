@@ -31,7 +31,8 @@
  * that adds a button): the game calls TouchGamepad_Relayout when that state
  * changes.  A button of width 0 is hidden: not drawn, never touched.  A
  * button with the key TOUCHGAMEPAD_MOUSE_LEFT holds the mouse's left button
- * instead of a key.  A finger that comes down away from the buttons is the
+ * instead of a key; one with TOUCHGAMEPAD_MOUSE_RIGHT makes the touches that
+ * come down while it is held the right button.  A finger that comes down away from the buttons is the
  * pointer (TouchGamepad_Pointer): SDL makes a mouse of the first finger only,
  * wherever it is, and a mouse of the game that wants the touches away from the
  * buttons reads the pointer instead.
@@ -688,7 +689,7 @@ static int gp_button_with_finger(Sint64 finger)
 
 /* the main thread's (TouchGamepad_Event), read by the game's: the mouse's
  * buttons of the on-screen buttons, and the pointer under gp_pointer_lock */
-static SDL_atomic_t gp_mouse_buttons;
+static SDL_atomic_t gp_mouse_buttons, gp_mouse_right;
 static SDL_SpinLock gp_pointer_lock;
 static Sint64 gp_pointer_finger = -1;
 static float gp_pointer_x, gp_pointer_y;
@@ -703,6 +704,7 @@ static void gp_press(int idx, Sint64 finger)
     b->finger = finger;
     gp_stamp++;
     if (b->key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, 1);
+    else if (b->key == TOUCHGAMEPAD_MOUSE_RIGHT) SDL_AtomicAdd(&gp_mouse_right, 1);
     else if (b->key < 0) {}     /* the port's own: when it is let go */
     else if (gp_keyboard && kb_modifier(b->key)) kb_arm(idx, !kb_armed[idx]);
     else if (gp_keyboard) EmulateKeyMod(SDL_KEYDOWN, b->key, kb_mods());
@@ -717,6 +719,7 @@ static void gp_release(int idx)
     b->finger = -1;
     gp_stamp++;
     if (b->key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, -1);
+    else if (b->key == TOUCHGAMEPAD_MOUSE_RIGHT) SDL_AtomicAdd(&gp_mouse_right, -1);
     else if (b->key == TOUCHGAMEPAD_KEYBOARD) gp_keyboard_wanted = 1;
     else if (b->key == KB_HIDE) gp_keyboard_wanted = 0;
     else if (b->key == KB_LANG)
@@ -967,7 +970,7 @@ void TouchGamepad_ReleaseAll(void)
 
 int TouchGamepad_MouseButtons(void)
 {
-    return SDL_AtomicGet(&gp_mouse_buttons) > 0 ? 1 : 0;
+    return (SDL_AtomicGet(&gp_mouse_buttons) > 0 ? 1 : 0) | (SDL_AtomicGet(&gp_mouse_right) > 0 ? 2 : 0);
 }
 
 unsigned int TouchGamepad_Pointer(float *x, float *y, int *down)

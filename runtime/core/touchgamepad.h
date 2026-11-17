@@ -55,9 +55,16 @@ int  TouchGamepad_HeldKey(int index, SDL_Keycode *key);
  * a PC keyboard over the lower part of the screen, drawn instead of the
  * layout's buttons until its HIDE key or a touch above it closes it. */
 #define TOUCHGAMEPAD_KEYBOARD ((SDL_Keycode)-3)
+/* The key of a button that makes the touches the mouse's right button: a
+ * touch on the picture that comes down while it is held is the right button,
+ * where the finger is, until it is lifted (TouchGamepad_MouseButtons, bit 2;
+ * the DOS mouse, Game_dosmouse.c). */
+#define TOUCHGAMEPAD_MOUSE_RIGHT ((SDL_Keycode)-6)
 /* the keyboard is open: every touch is its own, none is the mouse's */
 int  TouchGamepad_KeyboardShown(void);
-/* the buttons of the mouse the on-screen buttons hold (1: the left one) */
+/* the buttons of the mouse the on-screen buttons hold: 1 the left one
+ * (TOUCHGAMEPAD_MOUSE_LEFT), 2 the right one's (TOUCHGAMEPAD_MOUSE_RIGHT: the
+ * touches are the right button) */
 int  TouchGamepad_MouseButtons(void);
 /* The pointer: the finger that came down away from the buttons, the first of
  * such while none holds it.  *x, *y: where it is or was last (0..1 of the

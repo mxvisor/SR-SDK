@@ -393,6 +393,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_DUMP_GUEST_MEMORY()` | called when the game opens its error log: a debug dump |
 | `GAME_DOS_AIL_PERIOD_POINTER()` / `GAME_DOS_AIL_SAMPLE_NAME(address)` / `GAME_DOS_AIL_SERVICE_US` | `Game_dosail.c`: where the game reads AIL's current PIT period (a dword of microseconds, kept current); the name of the sound at a guest address, for `$<GAME>_TRACE_SOUND`; the period of the DIG driver's own service timer (default 5000 us, SB16.DIG's) |
 | `GAME_DOS_TIMER_TICK()` | what the PIT's channel 0 interrupt runs in `Game_dostimer.c`'s `SR_CheckTimer`, in place of `Game_DosTimerTick` (the guest's INT 8 and INT 1Ch handlers): a sound driver's timer service and then the game's handler |
+| `GAME_DOS_MOUSE_MARGIN_Y(width, height)` | `Game_dosmouse.c`: the rows of the picture (the mode's `width` × `height`) above and below the part the mouse's range covers, for a game that draws a smaller screen in the middle and sets the range to it; a touch and the gyroscope then put the pointer under the finger (default 0: the range covers the picture) |
 
 `Game_dosmain.c` is the `main` of a DOS game's port, `Game_dostimer.c` its
 `SR_CheckTimer`; a game with its own version of one lists it in `runtime_skip` and brings the
@@ -611,7 +612,9 @@ skeleton/               a starting point for a new game repository -- to come
   A button with the key `TOUCHGAMEPAD_KEYBOARD` opens a translucent PC keyboard (F1-F12, Esc,
   Shift, Ctrl, Alt and the arrows; EN/RU changes only its labels, the game makes the keys
   letters) in place of the buttons: its HIDE key, or a touch above it, closes it, and while it is
-  open no touch is the game's mouse. A game without such a button has no keyboard;
+  open no touch is the game's mouse. A game without such a button has no keyboard. While a
+  button with the key `TOUCHGAMEPAD_MOUSE_RIGHT` is held, a touch on the picture is the right
+  button of the DOS mouse where the finger is, until it is lifted;
 - `Game_gyro.c`, `.h`: the host's gyroscope (a phone, a tablet) as the pointer, the mod
   `Gyro_Mouse=on` with `Gyro_Mouse_Speed=1..9` (5: the picture's width in a turn of 38 degrees);
   opened on the thread that pumps the events, only while the mod is on. The INT 33h driver of

@@ -78,10 +78,16 @@ freely, subject to the following restrictions:
 [emu8950](https://github.com/digital-sound-antiques/emu8950), pinned to a
 commit: Mitsutaka Okazaki's Y8950/YM3526/YM3812 emulator, the OPL2 of
 `runtime/core/Game_opl.c`, under the MIT license (the full text is below under
-"SR's license"), with this copyright line:
+"SR's license"), with this copyright line in its `LICENSE`:
 
 ```
 Copyright (c) 2014 Mitsutaka Okazaki
+```
+
+and this one in the header of its source, `emu8950.c`:
+
+```
+Copyright (C) 2001-2026 Mitsutaka Okazaki
 ```
 
 ## The Audio Interface Library 2
