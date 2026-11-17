@@ -606,6 +606,12 @@ skeleton/               a starting point for a new game repository -- to come
   without XInput's dead zones, and the motors; for the joystick APIs of the games. No pad, or
   `Gamepad=off` in the settings file: nothing is opened. `$<GAME>_DEBUG_PAD` logs the pads and
   every change of their state;
+- `touchgamepad.c`, `.h`: the on-screen buttons of the Android build, drawn over the game and
+  pressing keys; a game's `game/Game_touchlayout.h` places them (`touchlayout_default.h` otherwise).
+  A button with the key `TOUCHGAMEPAD_KEYBOARD` opens a translucent PC keyboard (F1-F12, Esc,
+  Shift, Ctrl, Alt and the arrows; EN/RU changes only its labels, the game makes the keys
+  letters) in place of the buttons: its HIDE key, or a touch above it, closes it, and while it is
+  open no touch is the game's mouse. A game without such a button has no keyboard;
 - `Game_gyro.c`, `.h`: the host's gyroscope (a phone, a tablet) as the pointer, the mod
   `Gyro_Mouse=on` with `Gyro_Mouse_Speed=1..9` (5: the picture's width in a turn of 38 degrees);
   opened on the thread that pumps the events, only while the mod is on. The INT 33h driver of

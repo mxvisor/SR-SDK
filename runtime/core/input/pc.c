@@ -38,6 +38,14 @@
  * is set too: that is what the game's runtime reads. */
 void EmulateKey(int type, int key)
 {
+    /* a button of the keypad is its number (WM_KEYDOWN reads NumLock) */
+    EmulateKeyMod(type, key, (key >= SDLK_KP_1 && key <= SDLK_KP_PERIOD) ? KMOD_NUM : KMOD_NONE);
+}
+
+/* mod: the modifiers that are down with it (the character of BIOS and of a
+ * dialog reads them) */
+void EmulateKeyMod(int type, int key, int mod)
+{
     SDL_Event pump_event;
 
     pump_event.type = type;
@@ -45,8 +53,7 @@ void EmulateKey(int type, int key)
     pump_event.key.repeat = 0;
     pump_event.key.keysym.sym = (SDL_Keycode) key;
     pump_event.key.keysym.scancode = SDL_GetScancodeFromKey((SDL_Keycode) key);
-    /* a button of the keypad is its number (WM_KEYDOWN reads NumLock) */
-    pump_event.key.keysym.mod = (key >= SDLK_KP_1 && key <= SDLK_KP_PERIOD) ? KMOD_NUM : KMOD_NONE;
+    pump_event.key.keysym.mod = (Uint16)mod;
 
     SDL_PushEvent(&pump_event);
 }

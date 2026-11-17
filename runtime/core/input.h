@@ -26,6 +26,7 @@
 #define _INPUT_H_INCLUDED_
 
 void EmulateKey(int type, int key);
+void EmulateKeyMod(int type, int key, int mod);
 void Init_Input(void);
 void Init_Input2(void);
 int Config_Input(char *str, char *param);

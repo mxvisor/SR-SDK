@@ -40,8 +40,9 @@ int  TouchGamepad_Stamp(void);
  * placed again at the next Draw */
 void TouchGamepad_Relayout(void);
 int  TouchGamepad_Event(SDL_Event *event);
-/* is a button at this place of the window (0..1)? */
 void TouchGamepad_ReleaseAll(void);
+/* is a button at this place of the window (0..1)?  (anywhere while the
+ * keyboard is open) */
 int  TouchGamepad_ButtonAt(float x, float y);
 /* the button `index`: 0 past the last one, otherwise *key is what it holds
  * down (SDLK_UNKNOWN: nothing); EmulateKey does not reach SDL's key state */
@@ -50,6 +51,12 @@ int  TouchGamepad_HeldKey(int index, SDL_Keycode *key);
 /* The key of a button that is the left button of the mouse, not a key of the
  * keyboard: TouchGamepad_MouseButtons reads it. */
 #define TOUCHGAMEPAD_MOUSE_LEFT ((SDL_Keycode)-2)
+/* The key of a button that opens the on-screen keyboard (when it is let go):
+ * a PC keyboard over the lower part of the screen, drawn instead of the
+ * layout's buttons until its HIDE key or a touch above it closes it. */
+#define TOUCHGAMEPAD_KEYBOARD ((SDL_Keycode)-3)
+/* the keyboard is open: every touch is its own, none is the mouse's */
+int  TouchGamepad_KeyboardShown(void);
 /* the buttons of the mouse the on-screen buttons hold (1: the left one) */
 int  TouchGamepad_MouseButtons(void);
 /* The pointer: the finger that came down away from the buttons, the first of

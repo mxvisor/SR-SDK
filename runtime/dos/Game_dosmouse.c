@@ -150,9 +150,10 @@ static int window_point_in_picture(int window_x, int window_y)
 }
 
 /* The host's mouse in the picture, and its buttons.  On Android the mouse is
- * a touch's (SDL's of the first finger): beside the picture it stays where
- * the last touch in it was, and a button that goes down there stays up until
- * it is released. */
+ * a touch's (SDL's of the first finger): beside the picture, and on the
+ * on-screen keyboard, it stays where the last touch in the picture was, and a
+ * button that goes down there stays up until it is released.  After the
+ * keyboard closes the mouse stays until a touch moves it. */
 static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
 {
     int window_x = 0, window_y = 0, window_width = 0, window_height = 0;
@@ -173,8 +174,16 @@ static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
 #if defined(__ANDROID__)
     {
         /* the buttons pressed beside the picture, until they are released */
-        static int touch_beside, before, last_x = -1, last_y = -1;
+        static int touch_beside, before, last_x = -1, last_y = -1, keyboard_x = -1, keyboard_y = -1;
 
+        /* where the keyboard's touches left SDL's mouse */
+        if (TouchGamepad_KeyboardShown()) {
+            keyboard_x = window_x;
+            keyboard_y = window_y;
+        } else if (window_x != keyboard_x || window_y != keyboard_y) {
+            keyboard_x = -1;
+        }
+        if (keyboard_x >= 0) inside = 0;
         if (inside || last_x < 0) {
             last_x = *x;
             last_y = *y;

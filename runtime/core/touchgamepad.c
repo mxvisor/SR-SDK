@@ -34,7 +34,16 @@
  * instead of a key.  A finger that comes down away from the buttons is the
  * pointer (TouchGamepad_Pointer): SDL makes a mouse of the first finger only,
  * wherever it is, and a mouse of the game that wants the touches away from the
- * buttons reads the pointer instead.  The desktop builds get no-ops. */
+ * buttons reads the pointer instead.
+ *
+ * A button with the key TOUCHGAMEPAD_KEYBOARD opens the keyboard when it is
+ * let go: a PC keyboard (kb_keys) over the lower part of the screen, drawn
+ * and touched instead of the layout's buttons.  Its keys press the keys of the
+ * same places of a PC keyboard (the game makes them letters: EN/RU changes
+ * only what they show); Shift, Ctrl and Alt stay down until the next key is
+ * let go.  HIDE, or a touch that comes down above the keyboard and is lifted,
+ * closes it.  While it is open no touch is the pointer or SDL's mouse.  The
+ * desktop builds get no-ops. */
 
 #include <math.h>
 #include <stdlib.h>
@@ -167,16 +176,231 @@ static void gp_find_pads(void)
     gp_npads = n;
 }
 
+/* ---- the keyboard ---- */
+
+/* the keys of the keyboard itself */
+#define KB_HIDE ((SDL_Keycode)-4)
+#define KB_LANG ((SDL_Keycode)-5)
+/* an empty place in a row */
+#define KB_GAP  SDLK_UNKNOWN
+
+typedef struct {
+    SDL_Keycode key;
+    int units;              /* the width in quarters of a key; 0 ends the row */
+    int arrow;
+    const char *en, *ru;    /* the labels; ru NULL: the same as en */
+    Uint8 r, g, b;
+} KBKey;
+
+#define KB_ROWS 6
+/* a row is 15 keys (60 quarters) wide */
+#define KB_ROW_UNITS 60
+#define KB_END {KB_GAP, 0, 0, NULL, NULL, 0, 0, 0}
+#define KB_K(key, en, ru) {key, 4, 0, en, ru, GP_GREY}
+#define KB_SP(key, units, label, colour) {key, units, 0, label, NULL, colour}
+#define KB_ARROW(key, arrow) {key, 4, arrow, NULL, NULL, GP_LIGHT}
+
+/* the rows from the top; the Russian letters are those of the same places */
+static const KBKey kb_keys[] = {
+    KB_SP(SDLK_ESCAPE, 6, "ESC", GP_RED), KB_SP(KB_GAP, 2, NULL, GP_GREY),
+    KB_K(SDLK_F1, "F1", NULL), KB_K(SDLK_F2, "F2", NULL), KB_K(SDLK_F3, "F3", NULL), KB_K(SDLK_F4, "F4", NULL),
+    KB_SP(KB_GAP, 2, NULL, GP_GREY),
+    KB_K(SDLK_F5, "F5", NULL), KB_K(SDLK_F6, "F6", NULL), KB_K(SDLK_F7, "F7", NULL), KB_K(SDLK_F8, "F8", NULL),
+    KB_SP(KB_GAP, 2, NULL, GP_GREY),
+    KB_K(SDLK_F9, "F9", NULL), KB_K(SDLK_F10, "F10", NULL), KB_K(SDLK_F11, "F11", NULL), KB_K(SDLK_F12, "F12", NULL),
+    KB_END,
+    KB_K(SDLK_BACKQUOTE, "`", "\xd0\x81"),
+    KB_K(SDLK_1, "1", NULL), KB_K(SDLK_2, "2", NULL), KB_K(SDLK_3, "3", NULL), KB_K(SDLK_4, "4", NULL),
+    KB_K(SDLK_5, "5", NULL), KB_K(SDLK_6, "6", NULL), KB_K(SDLK_7, "7", NULL), KB_K(SDLK_8, "8", NULL),
+    KB_K(SDLK_9, "9", NULL), KB_K(SDLK_0, "0", NULL), KB_K(SDLK_MINUS, "-", NULL), KB_K(SDLK_EQUALS, "=", NULL),
+    KB_SP(SDLK_BACKSPACE, 8, "BKSP", GP_BLUE),
+    KB_END,
+    KB_SP(SDLK_TAB, 6, "TAB", GP_BLUE),
+    KB_K(SDLK_q, "Q", "\xd0\x99"), KB_K(SDLK_w, "W", "\xd0\xa6"), KB_K(SDLK_e, "E", "\xd0\xa3"),
+    KB_K(SDLK_r, "R", "\xd0\x9a"), KB_K(SDLK_t, "T", "\xd0\x95"), KB_K(SDLK_y, "Y", "\xd0\x9d"),
+    KB_K(SDLK_u, "U", "\xd0\x93"), KB_K(SDLK_i, "I", "\xd0\xa8"), KB_K(SDLK_o, "O", "\xd0\xa9"),
+    KB_K(SDLK_p, "P", "\xd0\x97"), KB_K(SDLK_LEFTBRACKET, "[", "\xd0\xa5"), KB_K(SDLK_RIGHTBRACKET, "]", "\xd0\xaa"),
+    KB_SP(SDLK_BACKSLASH, 6, "\\", GP_GREY),
+    KB_END,
+    KB_SP(KB_GAP, 7, NULL, GP_GREY),
+    KB_K(SDLK_a, "A", "\xd0\xa4"), KB_K(SDLK_s, "S", "\xd0\xab"), KB_K(SDLK_d, "D", "\xd0\x92"),
+    KB_K(SDLK_f, "F", "\xd0\x90"), KB_K(SDLK_g, "G", "\xd0\x9f"), KB_K(SDLK_h, "H", "\xd0\xa0"),
+    KB_K(SDLK_j, "J", "\xd0\x9e"), KB_K(SDLK_k, "K", "\xd0\x9b"), KB_K(SDLK_l, "L", "\xd0\x94"),
+    KB_K(SDLK_SEMICOLON, ";", "\xd0\x96"), KB_K(SDLK_QUOTE, "'", "\xd0\xad"),
+    KB_SP(SDLK_RETURN, 9, "ENTER", GP_BLUE),
+    KB_END,
+    KB_SP(SDLK_LSHIFT, 9, "SHIFT", GP_BLUE),
+    KB_K(SDLK_z, "Z", "\xd0\xaf"), KB_K(SDLK_x, "X", "\xd0\xa7"), KB_K(SDLK_c, "C", "\xd0\xa1"),
+    KB_K(SDLK_v, "V", "\xd0\x9c"), KB_K(SDLK_b, "B", "\xd0\x98"), KB_K(SDLK_n, "N", "\xd0\xa2"),
+    KB_K(SDLK_m, "M", "\xd0\xac"), KB_K(SDLK_COMMA, ",", "\xd0\x91"), KB_K(SDLK_PERIOD, ".", "\xd0\xae"),
+    KB_K(SDLK_SLASH, "/", "."),
+    KB_SP(KB_GAP, 3, NULL, GP_GREY), KB_ARROW(SDLK_UP, 1),
+    KB_END,
+    KB_SP(SDLK_LCTRL, 6, "CTRL", GP_BLUE), KB_SP(SDLK_LALT, 6, "ALT", GP_BLUE),
+    {KB_LANG, 6, 0, "EN", "RU", GP_BLUE},
+    KB_SP(SDLK_SPACE, 22, "SPACE", GP_GREY), KB_SP(KB_HIDE, 8, "HIDE", GP_ORANGE),
+    KB_ARROW(SDLK_LEFT, 3), KB_ARROW(SDLK_DOWN, 2), KB_ARROW(SDLK_RIGHT, 4),
+    KB_END,
+};
+#define KB_NKEYS ((int)(sizeof(kb_keys) / sizeof(kb_keys[0])))
+
+static GPButton kb_buttons[KB_NKEYS];
+static const KBKey *kb_key[KB_NKEYS];
+/* Shift, Ctrl or Alt that waits for the next key */
+static Uint8 kb_armed[KB_NKEYS];
+static int kb_count, kb_ru;
+/* the box around the keys */
+static int kb_x0, kb_y0, kb_x1, kb_y1;
+/* the finger that came down beside the keys: it closes the keyboard when it is lifted */
+static Sint64 kb_close_finger = -1;
+/* the keyboard is drawn and touched instead of the layout's buttons; the
+ * main thread's, read by the presenter's */
+static volatile int gp_keyboard;
+/* what a button asked of the keyboard (-1: nothing): done once the event is */
+static int gp_keyboard_wanted = -1;
+/* SDL's buttons of a touch that came down on the keyboard, until they go up (a bit each) */
+static int gp_mouse_eaten;
+
+/* the buttons drawn and touched now */
+static GPButton *gp_current(int *count)
+{
+    if (gp_keyboard)
+    {
+        *count = kb_count;
+        return kb_buttons;
+    }
+    *count = GP_NBUTTONS;
+    return gp_buttons;
+}
+
+static void kb_labels(void)
+{
+    int i;
+
+    for (i = 0; i < kb_count; i++)
+    {
+        kb_buttons[i].label = (kb_ru && kb_key[i]->ru != NULL) ? kb_key[i]->ru : kb_key[i]->en;
+    }
+}
+
+/* the rows at the bottom of the screen, as wide as the screen (a key at most
+ * 1.6 times as wide as it is high), together 62 % of its height */
+static void kb_layout(int W, int H)
+{
+    const KBKey *k;
+    int m = H / 40, kw, kh, gap, units = 0, y, n = 0;
+
+    kh = (H * 62 / 100) / KB_ROWS;
+    kw = (W - 2 * m) / (KB_ROW_UNITS / 4);
+    if (kw > kh * 8 / 5) kw = kh * 8 / 5;
+    gap = kh / 12;
+    if (gap < 1) gap = 1;
+    kb_x0 = (W - kw * (KB_ROW_UNITS / 4)) / 2;
+    kb_x1 = kb_x0 + kw * (KB_ROW_UNITS / 4);
+    kb_y1 = H - m;
+    kb_y0 = kb_y1 - KB_ROWS * kh;
+
+    y = kb_y0;
+    for (k = kb_keys; k < kb_keys + KB_NKEYS; k++)
+    {
+        if (k->units == 0)
+        {
+            y += kh;
+            units = 0;
+            continue;
+        }
+        if (k->key != KB_GAP)
+        {
+            GPButton *b = &kb_buttons[n];
+            int left = kb_x0 + units * kw / 4, right = kb_x0 + (units + k->units) * kw / 4;
+
+            b->x = left + gap / 2;
+            b->y = y + gap / 2;
+            b->w = right - left - gap;
+            b->h = kh - gap;
+            b->key = k->key;
+            b->arrow = k->arrow;
+            b->r = k->r;
+            b->g = k->g;
+            b->b = k->b;
+            b->finger = -1;
+            kb_key[n] = k;
+            kb_armed[n] = 0;
+            n++;
+        }
+        units += k->units;
+    }
+    kb_count = n;
+    kb_labels();
+}
+
+static int kb_modifier(SDL_Keycode key)
+{
+    switch (key)
+    {
+        case SDLK_LSHIFT: return KMOD_LSHIFT;
+        case SDLK_LCTRL:  return KMOD_LCTRL;
+        case SDLK_LALT:   return KMOD_LALT;
+        default:          return 0;
+    }
+}
+
+/* the modifiers that wait */
+static int kb_mods(void)
+{
+    int i, mod = 0;
+
+    for (i = 0; i < kb_count; i++)
+    {
+        if (kb_armed[i]) mod |= kb_modifier(kb_buttons[i].key);
+    }
+    return mod;
+}
+
+/* a modifier goes down or up: the game's key and SDL's state of them (that
+ * TranslateMessage reads) */
+static void kb_arm(int idx, int arm)
+{
+    const int bit = kb_modifier(kb_buttons[idx].key);
+
+    if (kb_armed[idx] == arm) return;
+    kb_armed[idx] = (Uint8)arm;
+    SDL_SetModState(arm ? (SDL_Keymod)(SDL_GetModState() | bit) : (SDL_Keymod)(SDL_GetModState() & ~bit));
+    EmulateKeyMod(arm ? SDL_KEYDOWN : SDL_KEYUP, kb_buttons[idx].key, kb_mods());
+    gp_stamp++;
+}
+
+static void kb_disarm_all(void)
+{
+    int i;
+
+    for (i = 0; i < kb_count; i++) kb_arm(i, 0);
+}
+
+/* the layout of what is shown now, for a screen of W x H */
+static void gp_place_all(int W, int H)
+{
+    if (gp_keyboard)
+    {
+        kb_layout(W, H);
+        gp_npads = 0;
+    }
+    else
+    {
+        gp_layout(W, H);
+        gp_find_pads();
+    }
+}
+
 static void gp_ensure_layout(void)
 {
     int W, H;
 
     if (SDL_GetRendererOutputSize(gp_renderer, &W, &H) != 0) return;
     if (W == gp_W && H == gp_H) return;
-    gp_layout(W, H);
+    gp_place_all(W, H);
     gp_W = W;
     gp_H = H;
-    gp_find_pads();
 }
 
 static SDL_Texture *gp_glyph_texture(uint32_t code)
@@ -348,7 +572,8 @@ static void gp_outline_round_rect(const SDL_Rect *rect)
 
 static void gp_draw_button(GPButton *btn)
 {
-    int active = (btn->finger >= 0);
+    int active = (btn->finger >= 0) ||
+                 (btn >= kb_buttons && btn < kb_buttons + KB_NKEYS && kb_armed[btn - kb_buttons]);
     Uint8 r, g, b, a;
     SDL_Rect rect;
 
@@ -383,15 +608,17 @@ static void gp_draw_button(GPButton *btn)
 
 void TouchGamepad_Draw(SDL_Renderer *renderer)
 {
-    int i;
+    GPButton *set;
+    int i, n;
 
     if (renderer == NULL) return;
     gp_renderer = renderer;
     gp_ensure_layout();
 
-    for (i = 0; i < GP_NBUTTONS; i++)
+    set = gp_current(&n);
+    for (i = 0; i < n; i++)
     {
-        gp_draw_button(&gp_buttons[i]);
+        gp_draw_button(&set[i]);
     }
 }
 
@@ -433,12 +660,13 @@ static int gp_pad_at(int x, int y)
 
 static int gp_button_at(int x, int y)
 {
-    int i;
+    int i, n;
+    const GPButton *set = gp_current(&n);
 
-    for (i = 0; i < GP_NBUTTONS; i++)
+    for (i = 0; i < n; i++)
     {
-        if (x >= gp_buttons[i].x && x < gp_buttons[i].x + gp_buttons[i].w &&
-            y >= gp_buttons[i].y && y < gp_buttons[i].y + gp_buttons[i].h)
+        if (x >= set[i].x && x < set[i].x + set[i].w &&
+            y >= set[i].y && y < set[i].y + set[i].h)
         {
             return i;
         }
@@ -448,11 +676,12 @@ static int gp_button_at(int x, int y)
 
 static int gp_button_with_finger(Sint64 finger)
 {
-    int i;
+    int i, n;
+    const GPButton *set = gp_current(&n);
 
-    for (i = 0; i < GP_NBUTTONS; i++)
+    for (i = 0; i < n; i++)
     {
-        if (gp_buttons[i].finger == finger) return i;
+        if (set[i].finger == finger) return i;
     }
     return -1;
 }
@@ -465,20 +694,44 @@ static Sint64 gp_pointer_finger = -1;
 static float gp_pointer_x, gp_pointer_y;
 static unsigned int gp_pointer_touches;
 
+/* idx: a button of what is shown now (gp_current) */
 static void gp_press(int idx, Sint64 finger)
 {
-    gp_buttons[idx].finger = finger;
+    int n;
+    GPButton *b = &gp_current(&n)[idx];
+
+    b->finger = finger;
     gp_stamp++;
-    if (gp_buttons[idx].key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, 1);
-    else EmulateKey(SDL_KEYDOWN, gp_buttons[idx].key);
+    if (b->key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, 1);
+    else if (b->key < 0) {}     /* the port's own: when it is let go */
+    else if (gp_keyboard && kb_modifier(b->key)) kb_arm(idx, !kb_armed[idx]);
+    else if (gp_keyboard) EmulateKeyMod(SDL_KEYDOWN, b->key, kb_mods());
+    else EmulateKey(SDL_KEYDOWN, b->key);
 }
 
 static void gp_release(int idx)
 {
-    gp_buttons[idx].finger = -1;
+    int n;
+    GPButton *b = &gp_current(&n)[idx];
+
+    b->finger = -1;
     gp_stamp++;
-    if (gp_buttons[idx].key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, -1);
-    else EmulateKey(SDL_KEYUP, gp_buttons[idx].key);
+    if (b->key == TOUCHGAMEPAD_MOUSE_LEFT) SDL_AtomicAdd(&gp_mouse_buttons, -1);
+    else if (b->key == TOUCHGAMEPAD_KEYBOARD) gp_keyboard_wanted = 1;
+    else if (b->key == KB_HIDE) gp_keyboard_wanted = 0;
+    else if (b->key == KB_LANG)
+    {
+        kb_ru = !kb_ru;
+        kb_labels();
+    }
+    else if (b->key < 0) {}
+    else if (!gp_keyboard) EmulateKey(SDL_KEYUP, b->key);
+    else if (!kb_modifier(b->key))
+    {
+        /* the key, then the modifiers that waited for it */
+        EmulateKeyMod(SDL_KEYUP, b->key, kb_mods());
+        kb_disarm_all();
+    }
 }
 
 /* the pointer: a finger that came down away from the buttons, if none holds it */
@@ -548,6 +801,20 @@ static int gp_pad_with_finger(Sint64 finger)
     return -1;
 }
 
+/* open or close the keyboard as a button asked: what is held is let go, the
+ * other buttons are placed */
+static void gp_keyboard_follow(void)
+{
+    const int want = gp_keyboard_wanted;
+
+    gp_keyboard_wanted = -1;
+    if (want < 0 || want == gp_keyboard) return;
+    TouchGamepad_ReleaseAll();
+    gp_keyboard = want;
+    if (gp_W > 0 && gp_H > 0) gp_place_all(gp_W, gp_H);
+    gp_stamp++;
+}
+
 int TouchGamepad_Event(SDL_Event *event)
 {
     int x, y, idx, cur, pad;
@@ -559,6 +826,25 @@ int TouchGamepad_Event(SDL_Event *event)
         case SDL_FINGERUP:
         case SDL_FINGERMOTION:
             break;
+        case SDL_MOUSEMOTION:
+            /* SDL's mouse of a touch: not the game's while the keyboard is open */
+            return event->motion.which == SDL_TOUCH_MOUSEID && gp_keyboard;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+        {
+            const int bit = (event->button.button >= 1 && event->button.button <= 8) ? 1 << (event->button.button - 1) : 0;
+
+            if (event->button.which != SDL_TOUCH_MOUSEID || bit == 0) return 0;
+            if (event->type == SDL_MOUSEBUTTONDOWN)
+            {
+                if (!gp_keyboard) return 0;
+                gp_mouse_eaten |= bit;
+                return 1;
+            }
+            if (!(gp_mouse_eaten & bit)) return 0;
+            gp_mouse_eaten &= ~bit;
+            return 1;
+        }
         default:
             return 0;
     }
@@ -566,6 +852,30 @@ int TouchGamepad_Event(SDL_Event *event)
     x = (int)(event->tfinger.x * gp_W);
     y = (int)(event->tfinger.y * gp_H);
     finger = event->tfinger.fingerId;
+
+    if (gp_keyboard)
+    {
+        /* a finger keeps its key until it is lifted; one that comes down
+         * beside the keys (not between them) closes the keyboard when lifted */
+        if (event->type == SDL_FINGERDOWN)
+        {
+            idx = gp_button_at(x, y);
+            if (idx >= 0) { if (kb_buttons[idx].finger < 0) gp_press(idx, finger); }
+            else if (x < kb_x0 || x >= kb_x1 || y < kb_y0 || y >= kb_y1) kb_close_finger = finger;
+        }
+        else if (event->type == SDL_FINGERUP)
+        {
+            cur = gp_button_with_finger(finger);
+            if (cur >= 0) gp_release(cur);
+            if (finger == kb_close_finger)
+            {
+                kb_close_finger = -1;
+                gp_keyboard_wanted = 0;
+            }
+        }
+        gp_keyboard_follow();
+        return 1;
+    }
 
     pad = gp_pad_with_finger(finger);
 
@@ -629,6 +939,7 @@ int TouchGamepad_Event(SDL_Event *event)
         }
     }
 
+    gp_keyboard_follow();
     return 1;
 }
 
@@ -636,13 +947,19 @@ int TouchGamepad_Event(SDL_Event *event)
  * is held is let go, its fingers will not come back here */
 void TouchGamepad_ReleaseAll(void)
 {
-    int i;
+    int i, n;
+    const GPButton *set = gp_current(&n);
+    const int wanted = gp_keyboard_wanted;
 
     for (i = 0; i < gp_npads; i++) gp_pad[i].finger = -1;
-    for (i = 0; i < GP_NBUTTONS; i++)
+    for (i = 0; i < n; i++)
     {
-        if (gp_buttons[i].finger >= 0) gp_release(i);
+        if (set[i].finger >= 0) gp_release(i);
     }
+    if (gp_keyboard) kb_disarm_all();
+    kb_close_finger = -1;
+    /* letting go is not asking for the keyboard (KBD, HIDE) */
+    gp_keyboard_wanted = wanted;
     SDL_AtomicLock(&gp_pointer_lock);
     gp_pointer_finger = -1;
     SDL_AtomicUnlock(&gp_pointer_lock);
@@ -666,15 +983,26 @@ unsigned int TouchGamepad_Pointer(float *x, float *y, int *down)
     return touches;
 }
 
+int TouchGamepad_KeyboardShown(void)
+{
+    return gp_keyboard;
+}
+
 int TouchGamepad_ButtonAt(float x, float y)
 {
+    if (gp_keyboard) return 1;
     return gp_button_at((int)(x * gp_W), (int)(y * gp_H)) >= 0 || gp_pad_at((int)(x * gp_W), (int)(y * gp_H)) >= 0;
 }
 
 int TouchGamepad_HeldKey(int index, SDL_Keycode *key)
 {
-    if (index < 0 || index >= GP_NBUTTONS) return 0;
-    *key = (gp_buttons[index].finger >= 0 && gp_buttons[index].key != TOUCHGAMEPAD_MOUSE_LEFT) ? gp_buttons[index].key : SDLK_UNKNOWN;
+    int n, held;
+    const GPButton *set = gp_current(&n);
+
+    if (index < 0 || index >= n) return 0;
+    held = set[index].finger >= 0 || (set == kb_buttons && kb_armed[index]);
+    /* the keys below 0 are the port's (the mouse, the keyboard's own) */
+    *key = (held && set[index].key > 0) ? set[index].key : SDLK_UNKNOWN;
     return 1;
 }
 
@@ -706,6 +1034,11 @@ int TouchGamepad_Event(SDL_Event *event)
 
 void TouchGamepad_ReleaseAll(void)
 {
+}
+
+int TouchGamepad_KeyboardShown(void)
+{
+    return 0;
 }
 
 int TouchGamepad_ButtonAt(float x, float y)
