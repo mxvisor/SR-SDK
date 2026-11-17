@@ -60,6 +60,10 @@ int Game_DosGuestInterruptsEnabled(void);
 /* A timer callback registered with AIL, called as AIL's own ISR calls it once
  * it has re-enabled interrupts: `push user`, a near call, eax = user. */
 int Game_DosCallGuestTimer(uint32_t target, uint32_t user);
+/* A far procedure the game handed to a driver (the mouse's event handler,
+ * INT 33h 0Ch), called as the driver calls it from its interrupt: a far call,
+ * EAX, EBX, ECX, EDX, ESI and EDI from regs, IF set. */
+int Game_DosCallGuestFar(uint32_t target, const Game_DosRegs *regs);
 
 /* The host pointer of a guest address, NULL for 0. */
 void *Game_DosGuestPointer(uint32_t address);

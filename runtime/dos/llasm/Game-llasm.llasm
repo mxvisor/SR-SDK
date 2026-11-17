@@ -34,6 +34,18 @@ proc RunProcECX global c_RunProcECX
 
 endp ; end procedure RunProcECX
 
+; RunProcStack: the same for the address under the return address that
+; c_RunProcStack pushes, which it takes off the stack: every register is then
+; the callee's (a driver's callback takes its arguments in ecx too).
+proc RunProcStack global c_RunProcStack
+
+        POP tmp1
+        POP tmp2
+        PUSH tmp1
+        tcall tmp2
+
+endp ; end procedure RunProcStack
+
 ; The default handler for interrupt vectors nothing has registered.
 ; WATCOM/DOS4GW startup code (like the game's own INT 08h handler) commonly
 ; chains to "the previously installed handler" by overwriting its own return

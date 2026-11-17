@@ -491,7 +491,9 @@ the game's handlers run as hardware interrupts, INT 08h, 16h, 1Ah, 21h, 2Fh and 
 (`Game_dosrt.c`: the PIT, the keyboard, the VGA DAC and retrace, the segment-override accesses).
 Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Game_doskbd.c`),
 MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`), the VGA ports (`Game_dosvga.c`) and the
-Microsoft mouse driver of INT 33h with AH = 0 (`Game_dosmouse.c`: the host mouse in the 4:3 picture).
+Microsoft mouse driver of INT 33h with AH = 0 (`Game_dosmouse.c`: the host mouse in the 4:3 picture,
+polled, or the button events and the motion handed to the game's event handler of function 0Ch
+as an interrupt of the mouse; SR finds no such handler, `fixup_interpret_as_code.sci` lists it).
 The game's own services (INT, a memory dump) and ports come through hooks
 (`GAME_DOS_INTERRUPT`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
 in `Game_hooks.h`). It brings its sound, its llasm glue (with the handler every vector starts
@@ -561,7 +563,9 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dosrt.c`, `.h`: start and end of a DOS game's runtime, the I/O ports, the
   segment-override accesses (PSP, the last DOS block, a DOS address);
 - `Game_dosint.c`, `.h`: the interrupt vectors, the game's handlers run as hardware
-  interrupts and AIL timer callbacks, the software interrupts every DOS game here shares
+  interrupts, AIL timer callbacks and a driver's far callbacks with their registers (the
+  mouse's event handler: `RunProcStack` of `llasm/Game-llasm.llasm`, which takes the target from
+  the stack, so ECX is an argument), the software interrupts every DOS game here shares
   (INT 21h and DPMI as far as a flat game asks them), after the game's `Game_DosInterrupt`;
 - `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
 - `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h), Input Status #1 (3DAh), the Map Mask and the

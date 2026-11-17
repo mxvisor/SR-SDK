@@ -38,6 +38,10 @@ extern "C" {
  * re-enters its own services through INT 33h with the DOS function in AH, so
  * only a function number below 100h is the mouse's. */
 int Game_DosMouseCall(Game_DosRegs *regs);
+/* Game thread, as an interrupt of the mouse: the button events of the event
+ * loop (Game_EventMQueue) and the motion to the game's event handler
+ * (function 0Ch), if it has one; the events are taken either way. */
+void Game_DosMouseDeliverIrq(void);
 
 #ifdef __cplusplus
 }

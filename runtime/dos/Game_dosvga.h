@@ -41,7 +41,7 @@ int Game_DosVgaIn(uint16_t port, uint32_t *value);
  * entry goes to the display (Set_Palette_Value). */
 int Game_DosVgaOut(uint16_t port, uint8_t value);
 /* INT 10h AH=00h: the planes of mode 12h, or none for the other modes; clear:
- * bit 7 of AL was not set */
+ * bit 7 of AL was not set (the planes and the VGA window are cleared) */
 void Game_DosVgaSetMode(uint8_t mode, int clear);
 /* INT 10h AX=1000h/1007h: a palette register of the attribute controller */
 void Game_DosVgaSetAttribute(uint8_t index, uint8_t value);

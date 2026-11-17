@@ -31,6 +31,7 @@
 #include "Game_vars.h"
 #include "display.h"
 #include "Game_dosvga.h"
+#include "Game_dosmem.h"
 #include "Game_dosrt.h"
 #include "Game_hooks.h"
 
@@ -79,14 +80,19 @@ static uint8_t input_status1(void)
  * A0000h, a byte of a plane being eight pixels.  The translated code writes the
  * VGA window as plain memory, so the sequencer cannot route a write to the
  * planes of its Map Mask; the window holds one plane at a time instead.  When
- * the Map Mask (or, while it names several planes, the Read Map Select of the
- * graphics controller) changes, the window goes back into the planes it was
- * written for and the plane now addressed comes into it.  With several planes
- * in the mask a write reaches all of them, as far as it changed the byte of
- * the plane the window held.  Only write mode 0 with all bits of the Bit Mask
+ * the Map Mask or the Read Map Select of the graphics controller changes, the
+ * window goes back into the planes it was written for and the plane now
+ * addressed comes into it: the plane to read if the Read Map Select was set
+ * after the Map Mask (a game reading the planes one by one, to save what it
+ * draws over), else the plane of the Map Mask (with several planes there, the
+ * one to read if it is one of them).  A write reaches the planes of the Map
+ * Mask, as far as it changed the byte of the plane the window held.  Only write mode 0 with all bits of the Bit Mask
  * is there (no latches, no set/reset): what a game drawing whole bytes per
  * plane uses.  The picture is the four planes through the attribute
- * controller's 16 palette registers into the DAC. */
+ * controller's 16 palette registers into the DAC; the flip thread makes it
+ * under planes_lock, which the game's thread holds while the window changes
+ * planes (a game copying a picture tile by tile changes them hundreds of times
+ * a frame), so a picture never has a plane that is halfway into the window. */
 #define PLANAR_WIDTH 640
 #define PLANAR_HEIGHT 480
 #define PLANE_BYTES (PLANAR_WIDTH / 8 * PLANAR_HEIGHT)
@@ -96,7 +102,9 @@ static uint8_t snapshot[PLANE_BYTES];   /* the window as it was loaded */
 static int planar;                      /* mode 12h is set */
 static int window_plane = -1;           /* the plane in the window, -1: none */
 static uint8_t window_mask;             /* the planes its writes go to */
+static SDL_mutex *planes_lock;
 static uint8_t seq_index, map_mask = 0x0f;
+static int reading;                     /* Read Map Select set after the Map Mask */
 static uint8_t gc_index, gc[9] = { 0, 0, 0, 0, 0, 0, 0, 0x0f, 0xff };
 static uint8_t attribute[16];
 static Game_Flip_Procedure display_flip;
@@ -125,15 +133,18 @@ static void window_select(void)
     const uint8_t mask = map_mask & 0x0f, read_map = gc[4] & 3;
     int plane;
 
-    if (mask == 1 || mask == 2 || mask == 4 || mask == 8) plane = mask == 1 ? 0 : mask == 2 ? 1 : mask == 4 ? 2 : 3;
+    if (reading) plane = read_map;
+    else if (mask == 1 || mask == 2 || mask == 4 || mask == 8) plane = mask == 1 ? 0 : mask == 2 ? 1 : mask == 4 ? 2 : 3;
     else if (mask == 0 || (mask & (1u << read_map))) plane = read_map;
     else plane = (mask & 1) ? 0 : (mask & 2) ? 1 : (mask & 4) ? 2 : 3;
     if (plane == window_plane && mask == window_mask) return;
+    SDL_LockMutex(planes_lock);
     window_flush();
     window_plane = plane;
     window_mask = mask;
     memcpy(Game_FrameBuffer, planes[plane], PLANE_BYTES);
     if (mask != (1u << plane)) memcpy(snapshot, Game_FrameBuffer, PLANE_BYTES);
+    SDL_UnlockMutex(planes_lock);
 }
 
 /* The flip thread: mode 12h from the planes (the plane in the window from the
@@ -164,6 +175,7 @@ static void flip_planar(void *src, void *dst)
                 if (index & (0x80u >> bit)) spread[index] |= (uint64_t)1 << (bit * 8);
     }
     for (index = 0; index < 16; index++) colours[index] = palette[attribute[index] & 0x3f];
+    SDL_LockMutex(planes_lock);
     for (plane = 0; plane < 4; plane++)
         source[plane] = (window_plane == (int)plane && window_mask == (1u << plane)) ? window : planes[plane];
     for (index = 0; index < PLANE_BYTES; index++) {
@@ -172,33 +184,43 @@ static void flip_planar(void *src, void *dst)
         for (bit = 0; bit < 8; bit++) out[bit] = colours[(pixels >> (bit * 8)) & 0x0f];
         out += 8;
     }
+    SDL_UnlockMutex(planes_lock);
 }
 
 void Game_DosVgaSetMode(uint8_t mode, int clear)
 {
     static const uint8_t ega_palette[16] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
                                              0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f };
+    /* the BIOS clears the video memory when it sets a mode: a game leaving
+     * mode 12h does not see its planes in the window as a picture */
     if (mode != 0x12) {
+        if (planes_lock != NULL) SDL_LockMutex(planes_lock);
         planar = 0;
         window_plane = -1;
+        if (clear) memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
+        if (planes_lock != NULL) SDL_UnlockMutex(planes_lock);
         return;
     }
     if (display_flip == NULL) {
+        planes_lock = SDL_CreateMutex();
         display_flip = Display_Flip_Procedure;
         display_width = Render_Width;
         display_height = Render_Height;
         Display_Flip_Procedure = &flip_planar;
     }
     memcpy(attribute, ega_palette, sizeof(attribute));
+    SDL_LockMutex(planes_lock);
     if (clear) {
         memset(planes, 0, sizeof(planes));
-        memset(Game_FrameBuffer, 0, PLANE_BYTES);
+        memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
     }
     map_mask = 0x0f;
     gc[4] = 0;
+    reading = 0;
     window_plane = -1;
     window_mask = 0;
     planar = 1;
+    SDL_UnlockMutex(planes_lock);
     window_select();
 }
 
@@ -222,13 +244,17 @@ static void register_out(uint16_t port, uint8_t value)
     case 0x3c5:
         if (seq_index == 2) {
             map_mask = value;
+            reading = 0;
             if (planar) window_select();
         }
         break;
     case 0x3ce: gc_index = value; break;
     case 0x3cf:
         if (gc_index < sizeof(gc)) gc[gc_index] = value;
-        if (gc_index == 4 && planar) window_select();
+        if (gc_index == 4) {
+            reading = 1;
+            if (planar) window_select();
+        }
         if (planar && !warned && ((gc[5] & 3) != 0 || gc[8] != 0xff || gc[1] != 0)) {
             warned = 1;
             fprintf(stderr, GAME_NAME ": VGA write mode %u, bit mask %02x, set/reset %02x not emulated\n", gc[5] & 3, gc[8], gc[1]);

@@ -30,6 +30,7 @@
 #include "Game_thread.h"
 #include "Game_dosint.h"
 #include "Game_doskbd.h"
+#include "Game_dosmouse.h"
 #include "Game_dospit.h"
 #include "Game_dosrt.h"
 #include "Game_hooks.h"
@@ -40,10 +41,10 @@
 /* The default SR_CheckTimer of a DOS game: the translated code calls it from
  * every ACTION_* macro (at backward jumps and calls), so it is where the host
  * gets a turn: the window may have been closed, the keyboard is drained and its
- * interrupt delivered, the PIT's channel 0 interrupt (INT 8) is due, and the
- * screen is presented when nothing else (the retrace, Game_dosvga.c; a
- * game's own frame) has presented it for 16 ms (about 60 a second, the
- * host's vsync), and the IRQ of the Sound
+ * interrupt delivered, the PIT's channel 0 interrupt (INT 8) is due, the
+ * mouse's events go to the game's handler, and the screen is presented when
+ * nothing else (the retrace, Game_dosvga.c; a game's own frame) has presented
+ * it for 16 ms (about 60 a second, the host's vsync), and the IRQ of the Sound
  * Blaster is due (GAME_DOS_SOUNDBLASTER).  A game that has to do something
  * else at INT 8 (a sound driver's timer) says what in GAME_DOS_TIMER_TICK()
  * of Game_hooks.h, in place of Game_DosTimerTick (the guest's INT 8 and
@@ -68,6 +69,8 @@ extern "C" void SR_CheckTimer(void)
     Game_DosPitRun(pit_irq);
 
     Game_DosKbdDeliverIrq();
+
+    Game_DosMouseDeliverIrq();
 
 #ifdef GAME_DOS_SOUNDBLASTER
     Game_DosSbDeliverIrq();

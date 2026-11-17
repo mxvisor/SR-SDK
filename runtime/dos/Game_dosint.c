@@ -67,6 +67,7 @@
 /* the game's llasm glue: a tail call to the translated procedure in ecx, and
  * the end of the program as INT 21h AH=4Ch asks for it */
 extern "C" void CCALL c_RunProcECX(CPU);
+extern "C" void CCALL c_RunProcStack(CPU);
 extern "C" void CCALL Game_ExitMain_Asm(int32_t status);
 extern "C" _cpu *x86_initialize_cpu(void);
 
@@ -200,9 +201,6 @@ int Game_DosGuestInterruptsEnabled(void)
     return X86_InterruptFlag != 0 && !isr_running;
 }
 
-/* Runs the guest code at target with `words` dwords pushed (frame[0] ends up
- * at [esp]) and eflags with IF set.  A hardware interrupt leaves no trace in
- * the code it interrupts, so all of the CPU state is restored afterwards. */
 static void warn_not_code(uint32_t target)
 {
     static uint32_t reported[8];
@@ -212,10 +210,14 @@ static void warn_not_code(uint32_t target)
     if (count < sizeof(reported) / sizeof(reported[0])) reported[count++] = target;
     fprintf(stderr, GAME_NAME ": the handler at 0x%X is not translated code and will not run; "
             "SR does not find a handler that the program only hands to the system "
-            "(INT 21h AH=25h, a timer): list it in fixup_interpret_as_code.sci\n", (unsigned int)target);
+            "(INT 21h AH=25h, a timer, the mouse's event handler): list it in fixup_interpret_as_code.sci\n", (unsigned int)target);
 }
 
-static int run_guest(uint32_t target, const uint32_t *frame, unsigned int words, uint32_t eax)
+/* Runs the guest code at target with `words` dwords pushed (frame[0] ends up
+ * at [esp]), eflags with IF set, and eax, or with regs the registers of regs.
+ * A hardware interrupt leaves no trace in the code it interrupts, so all of
+ * the CPU state is restored afterwards. */
+static int run_guest(uint32_t target, const uint32_t *frame, unsigned int words, uint32_t eax, const Game_DosRegs *regs)
 {
     if (!code_address_valid(target)) {
         if (target != 0) warn_not_code(target);
@@ -228,12 +230,25 @@ static int run_guest(uint32_t target, const uint32_t *frame, unsigned int words,
     const uint32_t saved_flag = X86_InterruptFlag;
 
     cpu->_eflags = 0x3202u;
-    cpu->_eax = eax;
-    cpu->_ecx = target;
     cpu->_esp -= 4u * words;
     memcpy(Game_DosGuestPointer(cpu->_esp), frame, 4u * words);
     isr_running = 1;
-    c_RunProcECX(cpu);
+    if (regs == NULL) {
+        cpu->_eax = eax;
+        cpu->_ecx = target;
+        c_RunProcECX(cpu);
+    } else {
+        /* ecx is an argument: the target goes on the stack, for the glue to pop */
+        cpu->_eax = regs->eax;
+        cpu->_ebx = regs->ebx;
+        cpu->_ecx = regs->ecx;
+        cpu->_edx = regs->edx;
+        cpu->_esi = regs->esi;
+        cpu->_edi = regs->edi;
+        cpu->_esp -= 4u;
+        memcpy(Game_DosGuestPointer(cpu->_esp), &target, 4u);
+        c_RunProcStack(cpu);
+    }
     isr_running = 0;
 
     *cpu = saved;
@@ -255,7 +270,7 @@ int Game_DosCallGuestIsr(uint32_t target)
         0,          /* CS */
         0x3202u,    /* EFLAGS */
     };
-    return run_guest(target, frame, 3, x86_initialize_cpu()->_eax);
+    return run_guest(target, frame, 3, x86_initialize_cpu()->_eax, NULL);
 }
 
 int Game_CallGuestInterrupt(uint8_t vector)
@@ -287,34 +302,54 @@ int Game_DosCallGuestTimer(uint32_t target, uint32_t user)
 {
     /* the return address, then the cdecl argument, which the caller pops */
     const uint32_t frame[2] = { 0, user };
-    return run_guest(target, frame, 2, user);
+    return run_guest(target, frame, 2, user, NULL);
+}
+
+int Game_DosCallGuestFar(uint32_t target, const Game_DosRegs *regs)
+{
+    /* what its retf pops: the return address (0, back to the host) and CS */
+    const uint32_t frame[2] = { 0, 0 };
+    return run_guest(target, frame, 2, regs->eax, regs);
 }
 
 /* AH=2Ch: the local time, CH hour, CL minute, DH second, DL hundredths.
- * WATCOM's sleep() polls it until the second changes. */
+ * DOS counts it in the BIOS's ticks (18.2 a second, those of INT 1Ah), so the
+ * hundredths go up by 5 or 6 at a time: a game that waits for a number of
+ * them (the frame of an animation) waits whole ticks, as under DOS.  The
+ * host's time of day at the first call starts the count.  WATCOM's sleep()
+ * polls it until the second changes. */
+#define BIOS_TICKS_PER_DAY 0x1800b0u
+
 static void dos_get_time(Game_DosRegs *regs)
 {
-    struct tm *parts;
-    unsigned int hundredths;
+    static int counting;
+    static uint32_t midnight;           /* the BIOS ticks of the last midnight, mod a day */
+    uint32_t ticks, hundredths;
+
+    if (!counting) {
+        struct tm *parts;
+        uint32_t ms;
 #if defined(_WIN32)
-    struct timeb now;
-    ftime(&now);
-    parts = localtime(&now.time);
-    hundredths = now.millitm / 10;
+        struct timeb now;
+        ftime(&now);
+        parts = localtime(&now.time);
+        ms = now.millitm;
 #else
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    time_t seconds = now.tv_sec;
-    parts = localtime(&seconds);
-    hundredths = now.tv_usec / 10000;
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        time_t seconds = now.tv_sec;
+        parts = localtime(&seconds);
+        ms = (uint32_t)(now.tv_usec / 1000);
 #endif
-    if (parts == NULL) {
-        Game_DosSetCX(regs, 0);
-        Game_DosSetDX(regs, (uint16_t)hundredths);
-        return;
+        if (parts != NULL) ms += ((uint32_t)parts->tm_hour * 3600u + (uint32_t)parts->tm_min * 60u + (uint32_t)parts->tm_sec) * 1000u;
+        ticks = (uint32_t)(((uint64_t)ms * 1193182u) / (65536u * 1000u)) % BIOS_TICKS_PER_DAY;
+        midnight = (BIOS_TICKS_PER_DAY - Game_DosPitBiosTicks() % BIOS_TICKS_PER_DAY + ticks) % BIOS_TICKS_PER_DAY;
+        counting = 1;
     }
-    Game_DosSetCX(regs, (uint16_t)((parts->tm_hour << 8) | parts->tm_min));
-    Game_DosSetDX(regs, (uint16_t)((parts->tm_sec << 8) | hundredths));
+    ticks = (midnight + Game_DosPitBiosTicks() % BIOS_TICKS_PER_DAY) % BIOS_TICKS_PER_DAY;
+    hundredths = (uint32_t)(((uint64_t)ticks * 6553600u) / 1193182u);
+    Game_DosSetCX(regs, (uint16_t)(((hundredths / 360000u) << 8) | (hundredths / 6000u % 60u)));
+    Game_DosSetDX(regs, (uint16_t)(((hundredths / 100u % 60u) << 8) | (hundredths % 100u)));
 }
 
 static uint8_t video_mode = 3;
