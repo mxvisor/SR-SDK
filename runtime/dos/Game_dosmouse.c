@@ -50,6 +50,10 @@
  * from the on-screen buttons (gyro_mouse) and function 4 set it, so a tap puts
  * the pointer under the finger and the turns go on from there.  An on-screen
  * button may be the left button (TOUCHGAMEPAD_MOUSE_LEFT).
+ *
+ * A touch clicks only in the picture: one that comes down beside it, where
+ * the on-screen buttons are, is not the mouse's (no press until it is lifted,
+ * and with the gyroscope no move either).
  */
 
 #include <math.h>
@@ -89,6 +93,11 @@ static int gyro_was_on;
 static double gyro_x, gyro_y;
 static unsigned int pointer_touches;
 static float pointer_x, pointer_y;
+/* the pointer's touch came down beside the picture */
+static int pointer_beside;
+/* the event loop's buttons pressed by a touch beside the picture, until it is
+ * lifted (SDL's buttons, a bit each) */
+static int touch_beside_events;
 
 static int trace_mouse(void)
 {
@@ -99,9 +108,11 @@ static int trace_mouse(void)
 
 /* A place of the window (0..1) in the picture of the game, width x height
  * pixels: the picture is the largest 4:3 rectangle centred in the window (the
- * same as display/pc.c shows it). */
-static void window_to_picture(float window_fx, float window_fy, int width, int height, int *x, int *y)
+ * same as display/pc.c shows it).  Nonzero if it is in the picture; a place
+ * beside it is clamped to its edge. */
+static int window_to_picture(float window_fx, float window_fy, int width, int height, int *x, int *y)
 {
+    int inside;
     int window_width = 0, window_height = 0;
     int picture_width, picture_height;
 
@@ -120,29 +131,65 @@ static void window_to_picture(float window_fx, float window_fy, int width, int h
 
     *x = ((int)floorf(window_fx * window_width + 0.5f) - (window_width - picture_width) / 2) * width / picture_width;
     *y = ((int)floorf(window_fy * window_height + 0.5f) - (window_height - picture_height) / 2) * height / picture_height;
+    inside = *x >= 0 && *y >= 0 && *x < width && *y < height;
     if (*x < 0) *x = 0;
     if (*y < 0) *y = 0;
     if (*x > width - 1) *x = width - 1;
     if (*y > height - 1) *y = height - 1;
+    return inside;
 }
 
-/* The host's mouse in the picture, and its buttons. */
+/* Is a place of the window, in its pixels, in the picture? */
+static int window_point_in_picture(int window_x, int window_y)
+{
+    int window_width = 0, window_height = 0, x, y;
+
+    if (Game_Window != NULL) SDL_GetWindowSize(Game_Window, &window_width, &window_height);
+    if (window_width <= 0 || window_height <= 0) return 1;
+    return window_to_picture((float)window_x / window_width, (float)window_y / window_height, 320, 240, &x, &y);
+}
+
+/* The host's mouse in the picture, and its buttons.  On Android the mouse is
+ * a touch's (SDL's of the first finger): beside the picture it stays where
+ * the last touch in it was, and a button that goes down there stays up until
+ * it is released. */
 static void screen_mouse(int width, int height, int *x, int *y, int *buttons)
 {
     int window_x = 0, window_y = 0, window_width = 0, window_height = 0;
     const Uint32 state = SDL_GetMouseState(&window_x, &window_y);
+    int inside;
 
     if (Game_Window != NULL) SDL_GetWindowSize(Game_Window, &window_width, &window_height);
     if (window_width <= 0 || window_height <= 0) {
         window_width = width;
         window_height = height;
     }
-    window_to_picture((float)window_x / window_width, (float)window_y / window_height, width, height, x, y);
+    inside = window_to_picture((float)window_x / window_width, (float)window_y / window_height, width, height, x, y);
 
     *buttons = 0;
     if (state & SDL_BUTTON(SDL_BUTTON_LEFT)) *buttons |= 1;
     if (state & SDL_BUTTON(SDL_BUTTON_RIGHT)) *buttons |= 2;
     if (state & SDL_BUTTON(SDL_BUTTON_MIDDLE)) *buttons |= 4;
+#if defined(__ANDROID__)
+    {
+        /* the buttons pressed beside the picture, until they are released */
+        static int touch_beside, before, last_x = -1, last_y = -1;
+
+        if (inside || last_x < 0) {
+            last_x = *x;
+            last_y = *y;
+        } else {
+            *x = last_x;
+            *y = last_y;
+        }
+        touch_beside &= *buttons;
+        if (!inside) touch_beside |= *buttons & ~before;
+        before = *buttons;
+        *buttons &= ~touch_beside;
+    }
+#else
+    (void)inside;
+#endif
 }
 
 /* Gyro_Mouse: the driver's own position.  The touches are read from the
@@ -168,15 +215,19 @@ static void gyro_mouse(int width, int height, int *px, int *py, int *buttons)
     }
     if (touches != pointer_touches || (down && (fx != pointer_x || fy != pointer_y))) {
         int x, y;
+        const int inside = window_to_picture(fx, fy, width, height, &x, &y);
 
-        window_to_picture(fx, fy, width, height, &x, &y);
-        gyro_x = (x + 0.5) / width;
-        gyro_y = (y + 0.5) / height;
+        /* a touch beside the picture is not the mouse's, wherever it goes */
+        if (touches != pointer_touches) pointer_beside = !inside;
+        if (!pointer_beside) {
+            gyro_x = (x + 0.5) / width;
+            gyro_y = (y + 0.5) / height;
+        }
         pointer_touches = touches;
         pointer_x = fx;
         pointer_y = fy;
     }
-    *buttons = down ? 1 : 0;
+    *buttons = (down && !pointer_beside) ? 1 : 0;
 
     Game_GyroTake(&dx, &dy);
     gyro_x += dx;
@@ -343,6 +394,20 @@ void Game_DosMouseDeliverIrq(void)
         if (event.type == SDL_MOUSEBUTTONUP && hold_skip_up != 0 && event.button.button == hold_skip_up) {
             hold_skip_up = 0;
             continue;
+        }
+        /* a touch that comes down beside the picture: neither its press nor
+         * its release */
+        if (event.button.which == SDL_TOUCH_MOUSEID && event.button.button >= 1 && event.button.button <= 8) {
+            const int bit = 1 << (event.button.button - 1);
+
+            if (event.type == SDL_MOUSEBUTTONDOWN && !window_point_in_picture(event.button.x, event.button.y)) {
+                touch_beside_events |= bit;
+                continue;
+            }
+            if (event.type == SDL_MOUSEBUTTONUP && (touch_beside_events & bit)) {
+                touch_beside_events &= ~bit;
+                continue;
+            }
         }
         after = event_button_state(&event, event_buttons);
         if (after == event_buttons) continue;
