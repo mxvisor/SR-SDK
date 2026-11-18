@@ -23,31 +23,22 @@
 
 """Find the rets whose flags a caller reads after the call, from SR's llasm output.
 
-usage: retflags.py SEG01_CODE.llinc GAME.EXE  [existing instruction_flags.sci]
+usage: retflags.py SEG01_CODE.llinc GAME.EXE (PE32 or LE)  [existing instruction_flags.sci]
 prints sci lines  loc_<ret address>,0x3F,0x00 ; ret of <callee>
 """
-import re, sys, struct, collections
+import re, sys, collections
 import capstone
 
 llinc, exe = sys.argv[1], sys.argv[2]
 sci = sys.argv[3] if len(sys.argv) > 3 else None
 
-d = open(exe, 'rb').read()
-pe = struct.unpack_from('<I', d, 0x3c)[0]
-nsec = struct.unpack_from('<H', d, pe + 6)[0]
-opt = struct.unpack_from('<H', d, pe + 20)[0]
-base = struct.unpack_from('<I', d, pe + 24 + 28)[0]
-secs = []
-for i in range(nsec):
-    n, vs, va, rs, ro = struct.unpack_from('<8sIIII', d, pe + 24 + opt + i * 40)
-    secs.append((base + va, vs or rs, ro))    # the Watcom linker leaves VirtualSize 0
-def off(va):
-    for s, vs, ro in secs:
-        if s <= va < s + vs:
-            return ro + va - s
-    raise KeyError(hex(va))
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import exe_image
+img = exe_image.load(exe)          # PE32 or LE (DOS4GW), at the addresses SR uses
 cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
 
+icalls = []                             # (proc, x86 call, return point) of the indirect calls
 procs = collections.OrderedDict()       # name -> dict(instrs=[comment], succ=[], calls=[], ret=bool)
 cur = None
 lastpush = None
@@ -65,8 +56,9 @@ for line in open(llinc):
         cur = None
         continue
     if line.startswith(';'):
-        cur['instrs'].append(line[1:])
-        if line[1:].strip() == 'ret' or line[1:].startswith('ret '):
+        ins = re.sub(r'^(?:ACTION_[A-Z_]+;)+', '', line[1:])    # SR's DOS output: ;ACTION_CALL;call loc_X
+        cur['instrs'].append(ins)
+        if ins.strip() == 'ret' or ins.startswith('ret '):
             cur['ret'] = True
         continue
     m = re.match(r'PUSH (loc_[0-9A-Fa-f]+)$', line)
@@ -81,6 +73,13 @@ for line in open(llinc):
             cur['succ'].append(lastpush)              # control continues there in this procedure
         else:
             cur['succ'].append(tgt)
+        lastpush = None
+        continue
+    m = re.match(r'tcall (\w+)$', line)
+    if m and lastpush is not None:
+        # an indirect call (call [esi+0x36], call eax): its callees are not known here
+        icalls.append((cur['name'], cur['instrs'][-1].strip() if cur['instrs'] else '?', lastpush))
+        cur['succ'].append(lastpush)
         lastpush = None
         continue
     if line.startswith('PUSH') or line.startswith('POP'):
@@ -147,7 +146,7 @@ def ret_addr(pname):
     p = procs[pname]
     va = int(pname[4:], 16)
     n = len(p['instrs'])
-    ins = list(cs.disasm(d[off(va):off(va) + 16 * (n + 2)], va, count=n))
+    ins = list(cs.disasm(img.bytes_at(va, 16 * (n + 2)), va, count=n))
     if len(ins) != n or ins[-1].mnemonic != 'ret':
         return None
     return ins[-1].address
@@ -224,3 +223,12 @@ for a in sorted(rets):
     new += 1
     print("loc_%X,0x%02X,0x00 ; ret of %s" % (a, rets[a][0], ' '.join(sorted(rets[a][1]))[:60]))
 print("%d callees, %d rets, %d new" % (len(callees), len(rets), new), file=sys.stderr)
+
+# an indirect call has no callee list here: if the code after it reads the flags,
+# the rets of its targets (fields set with mov [reg+N], loc_X, the code addresses
+# of the fixups, a trace) need lines this tool cannot give
+iread = [(p, c, r, reads_flags_mask(r)) for p, c, r in icalls]
+iread = [x for x in iread if x[3]]
+print("%d indirect calls, %d read the flags after the return%s" % (len(icalls), len(iread), ':' if iread else ''), file=sys.stderr)
+for p, c, r, m in iread:
+    print("  %s: %s, returns to %s, reads 0x%02X" % (p, c, r, m), file=sys.stderr)

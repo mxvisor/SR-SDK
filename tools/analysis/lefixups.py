@@ -68,7 +68,7 @@ class Fixup:
 
 def fixups(exe_path):
     """Every relocation of the executable, in table order."""
-    d = open(exe_path, "rb").read()
+    d = leparse.le_data(exe_path)
     lf = u32(d, 0x3C)
     hdr = leparse.read_header(d, lf)
     pagesize = hdr["PageSize"]
@@ -112,7 +112,7 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
-    d = open(sys.argv[1], "rb").read()
+    d = leparse.le_data(sys.argv[1])
     lf = u32(d, 0x3C)
     hdr = leparse.read_header(d, lf)
     objtab = lf + hdr["ObjectTableOffset"]

@@ -128,7 +128,10 @@ its own), `exact_push16=yes` (a 16-bit push or pop moves esp by 2, as the CPU do
 that measures the distance of a pointer from esp after such pushes) and `global_prefix=<name>`
 (before every global name of the output; set by `scons/game.py` for `exe_modules=`).
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
-`TODO` lines of the launchers name what to fill in.
+`TODO` lines of the launchers name what to fill in. SR's warnings about the game's
+`fixup_interpret_as_code.sci` (a label of it that the code reads as memory: a table, not code) are
+shown on the build's output as `SR: ...`. [`PORTING_DOS.md`](PORTING_DOS.md) walks through a DOS port:
+what SR stops at, the crashes of a first run, the flags, the sound, the traps.
 
 ## Running the original
 
@@ -385,6 +388,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; WATCOM's startup builds the array of their addresses itself; for a game that starts at its main (`GAME_ENTRY`), which skips that, it is `Game_DosEnviron`, and `instruction_replacements.sci` points the C library's `getenv` at it |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
+| `GAME_DOS_DSMI` | `Game_dosdsmi.c`: DSMI's MCP (Otto Chrons' Multi Channel Player 2.6) mixed on the host: the game's `instruction_replacements.sci` puts `call Game_DsmiMcpGetDelta` at MCP's getdelta and `call Game_DsmiMcpPoll microseconds, vars, order` at its poll (CDI entries 38h and 34h; the head of the file says how to find them and MCP's variables); the rest of DSMI (AMP, the CDI, the game's effects) stays the game's |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `core/Game_audio.c`, the SDL_mixer device of every port (DOS and Win32): its channels (default SDL_mixer's 8) |
 | `GAME_AUDIO_ON_MIXER` | `core/Game_audiostream.c`: 1 plays the PCM streams (the Sound Blaster, DirectSound, a game's own driver) in SDL_mixer's output after its mix, 0 on devices of their own; the default is 1 on Android, where SDL has one playback device, and 0 elsewhere |
@@ -516,6 +520,7 @@ tools/android_sdl.sh    SDL2 and SDL2_mixer for Android
 tools/android_apk.py    the Android APK of a game
 tools/image/            disc images and installers: image.py and its format modules
 tools/distrib_cd.py    a distrib copy of a game's disc (game/distrib.cfg)
+tools/floppy.py         a game's floppy images and its installer's archives on them (floppy=)
 tools/sf2_subset.py     a SoundFont cut to some presets: the MIDI bank of a game (soundfont=)
 tools/font_cyrillic.py  the Cyrillic letters of the OSD font (runtime/core/Game_font_cyr.h)
 tools/gen_import_shim.py the llasm bridges of a Win32 port's imports (game/import_args.tsv)
@@ -601,6 +606,8 @@ skeleton/               a starting point for a new game repository -- to come
   game loads from its `.AD` file), one at a time; the game's `external_procedures.sci`
   routes its `AIL_register_driver` and the dispatcher of the driver functions to
   `SR_AIL2_register_driver` and `SR_AIL2_call_driver` (`llasm/ail2.llinc`, in every DOS game's llasm);
+- `Game_dosdsmi.c`: DSMI's MCP on the host (`GAME_DOS_DSMI`): its voices mixed into a stream of
+  the port, its time the stream's, for a game whose MCP mixes through a based ES selector;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_pad.c`, `.h`: the host's gamepads (`SDL_GameController`, up to four, plugged in and out
   while the game runs) with the state of XInput: its buttons, two sticks, two triggers, with or

@@ -64,8 +64,9 @@
 #                                      `scons image=<path>` builds from another
 #                                      (build/disc-image says which)
 #     floppy=<images>                  a game on floppies instead: the FAT12 images
-#                                      in order, their HUF archives unpacked as the
-#                                      installer does (floppy.py) into build/disc,
+#                                      in order, their HUF archives (or an F Install
+#                                      archive cut into DISK1, DISK2, ...) unpacked
+#                                      as the installer does (floppy.py) into build/disc,
 #                                      the disc of the copy; no audio tracks
 #     patch=<archive>[ <dir>]          archives over the disc, in order: the
 #                                      copy is taken from disc_tree.py's
@@ -84,7 +85,8 @@
 #     place=<glob> <dest>              disc-glob (or disc directory/) +
 #                                      destination, repeatable
 #     audio_dir=AUDIO                  where the tracks go
-#     audio_cue=<name>.cue             the tracks' cue sheet (required)
+#     audio_cue=<name>.cue             the tracks' cue sheet (required when the disc
+#                                      has audio tracks)
 #     audio=ogg                        flac, wav or ogg (default ogg)
 #     quality=6                        ogg only: -1..10
 # Patterns are fnmatch patterns, separated by spaces, matched in upper case
@@ -297,7 +299,7 @@ def main():
         audio_cue = cfg.get('audio_cue')
     else:
         cue_path = os.path.abspath(args.cue) if args.cue else disc_cue(root, cfg, args.cfg)
-        audio_cue = cfg.get('audio_cue') or fail(args.cfg + ' has no audio_cue')
+        audio_cue = cfg.get('audio_cue')   # a disc without audio tracks (one data track) needs none
     audio_dir = cfg.get('audio_dir', 'AUDIO')
     audio_format = args.audio or cfg.get('audio', 'ogg')
     if audio_format not in ('flac', 'wav', 'ogg'):
@@ -363,9 +365,13 @@ def main():
     # 3. the audio tracks and their cue sheet
     if not tracks:
         return
+    audio = [(position, t) for position, t in enumerate(tracks) if t['mode'] == 'AUDIO']
+    if not audio:
+        return
+    if not audio_cue:
+        fail(args.cfg + ' has no audio_cue')
     music = os.path.join(args.out, audio_dir)
     os.mkdir(music)
-    audio = [(position, t) for position, t in enumerate(tracks) if t['mode'] == 'AUDIO']
     cue_lines = []
     # where each track is on the disc, as a real disc's table of contents has it: the
     # game finds a track by that address (a track file's own INDEX 01 is 0)

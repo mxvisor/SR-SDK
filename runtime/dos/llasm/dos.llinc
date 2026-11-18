@@ -39,3 +39,7 @@ extern Game_DosEnviron
 ; routes AIL_register_driver and the dispatcher of the driver functions to them.
 proc SR_AIL2_register_driver external
 proc SR_AIL2_call_driver external
+; DSMI's MCP on the host (Game_dosdsmi.c, GAME_DOS_DSMI): the game's
+; instruction_replacements.sci calls them in place of MCP's getdelta and poll.
+func Game_DsmiMcpGetDelta
+func Game_DsmiMcpPoll microseconds, vars, order

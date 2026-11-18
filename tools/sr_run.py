@@ -71,6 +71,12 @@ def main():
         if not new:
             break
         found += new
+    # SR's warnings about the list (an address of it that the code reads as
+    # memory: a table, not code) are shown, the rest of its output is in sr.err
+    with open('sr.err', errors='replace') as err:
+        for line in err:
+            if line.startswith('Warning: ') and 'fixup_interpret_as_code.sci' in line:
+                sys.stderr.write('SR: ' + line)
     if not found and not base and os.path.exists(merged):
         os.remove(merged)       # nothing to tell SR: the same run as without this tool
     return 0

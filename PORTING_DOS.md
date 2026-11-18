@@ -1,0 +1,221 @@
+# Porting a DOS game
+
+A walk through a new port of a DOS/4GW (LE) game, from the original's files to a program that plays:
+what to run, what SR stops at and what to do about it, and the traps met so far. The README's
+[Starting a new port](README.md#starting-a-new-port) and [What a game provides](README.md#what-a-game-provides)
+are the reference; the tools are in [`tools/analysis/`](tools/analysis/README.md).
+
+Keep a journal while you port: every step with its command, not only its result, in the game's
+`research/` (never in the `-recomp` repository). What you did by hand twice is a candidate for the SDK.
+
+Addresses below are `loc_XXXXX`, SR's names: the linear address in the original, as its object
+table places it (the first object of a Watcom LE usually at 10000h).
+
+## 1. The original's files
+
+- The game comes on a CD image (`image=` of `game/distrib.cfg`, unpacked by `tools/image/image.py`)
+  or on floppies (`floppy=`: FAT12 images unpacked by `tools/floppy.py`, which knows the HUF
+  archives and the F Install archive cut into `DISK1`, `DISK2`, ...). An installer the SDK does not
+  know gets an unpacker in `tools/image/` or `floppy.py`, not a script of the game: the next game of
+  the same publisher has it too.
+- Several releases of a game differ in the executable (a patch, another language, a copy-protection
+  variant). Choose one and keep its sha256 (`game/recomp/<module>/<variant>/sha256`); the port is of
+  that executable only.
+- The game's own settings file (the sound card, the controls) is what its setup program wrote. A
+  default one comes with the distrib copy (`extra_files=` or the installer's own); the port's
+  settings live in `<program>.cfg`, not in it.
+
+## 2. The skeleton
+
+    SR-SDK/tools/new_game.sh <dir> <program> dos --image <disc image> --exe disc:<GAME>.EXE --env <GAME>
+
+then:
+
+- `game/distrib.cfg`: `skip_files=` for the installer's files; a disc with one data track needs no
+  `audio_cue`;
+- `game/game.cfg`: `devices=` (add `arm64-android` and `android_id=` when the game is ready for a
+  phone);
+- `scons stage=input` checks the sha256; the first `scons` builds SR itself (about a minute).
+
+## 3. The executable
+
+- `tools/analysis/leparse.py <exe>`: the objects, the entry point, the stack. A Watcom program bound
+  to DOS/4G is the extender's MZ and BW blocks followed by the program's own MZ and LE; SR and the
+  tools find the LE themselves (`exe_image.le_offset`).
+- `tools/analysis/exe_dis.py <exe> <address>`: the instructions around an address (an error of SR, a
+  crash, a `.sci` line).
+- `tools/analysis/exe_match.py`: a function of a port already done found in the new executable (the
+  C library, the extender's code, a sound library), so a known replacement can be reused.
+- Banners in the code name the libraries the game was linked with (`strings`): a sound library, a
+  timer library, a version. Each has its own traps; look at the SDK's runtime for one already done
+  (the Miles AIL 2 and 3, DSMI's MCP).
+
+## 4. SR's first run: `scons stage=recomp`
+
+SR writes `build/recomp/<module>/llasm/sr.err`. An error names the object and the offset in it in
+decimal (`Error: ... - 0 - 2775`): the address is the object's base plus the offset (`0x10000 + 2775`);
+most errors also print it in hex. Group the errors by instruction before fixing anything.
+
+**An instruction form SR does not translate.** SR knows most mnemonics but leaves some operand
+combinations as empty branches of `SR/SR/SR_full_llasm_instr.c` (the high byte registers `ah`..`bh`,
+an 8-bit or 16-bit memory operand, an immediate). Such a form is fixed in SR, by the pattern of the
+neighbouring branch (`not r8h`, `test r8h, r8l`, `rcl` by 1 of a byte, word or memory operand,
+`adc`/`sbb r16, mem16|imm`, `idiv r8|mem8`, `imul mem8` are done so): every
+later game gains. Check the flags: OF is bit 11, CF bit 0, so a byte's bit 7 is shifted left to OF,
+not right.
+
+**What SR cannot know** goes into the game's `instruction_replacements.sci`
+(`loc_X,<length>,;<the original, as a comment>|<llasm>|<llasm>...`):
+
+- 16-bit addressing (`[bx]`, `[si+2]`) in 32-bit code: SR has no 16-bit addresses. A read of the BIOS
+  data area through a real-mode segment (the video mode at 0040:0049, the columns, the rows) becomes
+  the constant the port's world has (text mode 3, 80, 24); a field of a structure addressed by `si`
+  becomes `[esi+N]`. Write down the assumption and check it when the code runs.
+- `call bx` (a 16-bit near pointer): `and tmp1, ebx, 0xffff|ACTION_CALL|PUSH loc_<next>|tcall tmp1|endp|proc loc_<next>`.
+  The return point becomes a procedure of its own, so declare it with `proc` at the end.
+- `lsl eax, eax` (the limit of DS): `load eax, Game_DosDsLimit, 4`.
+- `iretw` of a real-mode handler the port never runs: the body of `iretd`.
+- A `cmp` or `test` right before a `jcc` is fused by SR into one conditional jump on `tmpcnd`: a
+  replacement of the `cmp` writes `tmpcnd` (`sub tmpcnd, tmp1, 0xffff`), not `eflags`, and the
+  `jcc` still needs its `instruction_flags.sci` line.
+- llasm has no `movzx`: `and`, `load16z`, `ext8s`, `ins16` and the like do it.
+- A replacement that calls the runtime (`call Game_Something args`) needs the function declared
+  (`func` in `runtime/dos/llasm/dos.llinc` for the SDK's, in `game/llasm/` for the game's).
+
+**`unknown flags on start of region`.** A region (code after a call, a jump target) reads flags
+that SR does not see being set there: most often a callee returns a result in CF or ZF, and the
+caller's `jae`/`jnz` reads it after the call. `tools/analysis/sr_llcode.py flags` repeats SR and
+writes `loc_<return point>,0x00,<mask>` lines into `instruction_flags.sci` until SR passes or a
+region it cannot explain. The format is `loc_X,<flags this instruction must compute>,<flags taken as
+known before it>`, the masks of SR's `FL_*` (CF 01h, ZF 08h, all six 3Fh).
+
+**`unknown weak flags on start of region`** are warnings: look at each once (a `pushf`/`popf`
+pair around an `adc`, flags kept for a later instruction) and write down why it is right.
+
+## 5. llasm: `scons stage=bin`
+
+SR passed, `llasm.py` and LLVM now read its output. An error of `llasm.py` (`Wrong instruction
+parameter`, `Unknown word`, `Wrong number of instruction parameters`) names the line of
+`build/gen/<module>/llasm/*.llinc`: a register name that is not llasm's (`bx` of a 16-bit address), a
+replacement with a word llasm lacks, or data that SR took for code (`add al, [eax]` is two zero bytes).
+
+## 6. The first run
+
+`make distrib-data`, then `./run-sdl.sh --headless=N` (screenshots in `build/shots/sdl/`). An
+`unimplemented interrupt` line names a service the DOS runtime lacks; a harmless one (the cursor
+position of INT 10h, the joystick of INT 15h) can stay.
+
+**A crash that jumps into data or into the heap** is, most of the time, code SR never decoded: a
+routine whose address the program only stores (`mov ecx, loc_X`, a field of a structure, a table of
+handlers) and calls later through a pointer. SR left it as data (`dlabel loc_X`), so the pointer
+leads to bytes that are not the port's code.
+
+- `sr_llcode.py candidates`: the labels of code that SR wrote as data and whose address the program
+  takes (`mov reg, loc_X`, `PUSH loc_X`, `daddr loc_X`).
+- `sr_llcode.py add FILE` adds them one at a time (answering the flags, dropping what SR or
+  `llasm.py` rejects), `sr_llcode.py grow` repeats it until nothing new; `bisect` finds the lines SR
+  fails on. A routine of a driver called after `clc`/`stc` reads CF on entry: `add` writes its
+  `loc_X,0x00,0x01` line.
+- These are candidates. SR decodes data without a word when the list says it is code: a jump table
+  inside a routine, a table of offsets, a table of 16-bit values read with `mov ax, [ebx+loc_X]`.
+  The port's copy of those bytes then holds code, and the game goes wrong with no error (wrong notes,
+  wrong positions). SR warns (`Warning: loc_X is in fixup_interpret_as_code.sci, but loc_Y reads or
+  writes it as memory`, also on the build's stderr) and `tools/analysis/sr_codecheck.py` checks the
+  list; never add candidates in bulk without them, and keep the rejected ones in `research/`.
+
+Ways to find the place of a crash:
+
+- `LLASM_SYMBOLS=1` (delete `build/obj/ir/*.bc` first): every procedure keeps its `loc_` name for
+  `nm` and `gdb`.
+- `strace -f -e openat,read`: the last file the game read before the crash.
+- gdb: a breakpoint on `loc_X` with `ignore N`, then a Python loop of `nexti` that keeps the last
+  procedure names (`frame.name()`) until the signal: the chain of calls into the crash. `stepi`
+  walks into SDL and libc; `record full` fails on AVX-512 code of libc.
+- The guest's registers inside a procedure: the CPU structure at `$rdi`, eax at +0, ecx +4, edx +8,
+  ebx +0Ch, esp +10h, ebp +14h, esi +18h, edi +1Ch. A guest address plus `pointer_offset` is the
+  host's. `$bp` in gdb is a register, not a variable of the game.
+- Without gdb: the process's memory through `/proc/<pid>/mem` (the base from `/proc/<pid>/maps`)
+  at intervals, for an object's fields over time.
+- A watchpoint on a field that goes wrong names the instruction that writes it; its `loc_` is the
+  next lead.
+
+## 7. Flags across a `ret`
+
+SR does not carry flags from a `ret` to its caller unless told. A callee that returns its answer in
+ZF or CF (`xor dx, dx` / `dec dx` before the `ret`, a `stc`) and a caller that reads it after the
+call (`jnz`) go wrong in silence: the caller sees the flags of some instruction before the call. The
+game runs, but a decision in it is wrong (an object that never lands, a collision that never
+happens).
+
+    python3 SR-SDK/tools/analysis/retflags.py build/gen/<module>/llasm/seg01_code.llinc \
+        build/input/<module>/<module>.EXE game/recomp/<module>/<variant>/llasm/instruction_flags.sci
+
+prints `loc_<ret>,0x3F,0x00` lines (PE and LE). A `ret` right after `stc` or `clc` needs no line under
+SR. Its stderr lists the indirect calls whose return point reads the flags: their targets need lines
+it cannot find (`mov [reg+N], loc_X`, the fixups, a trace).
+
+## 8. A manual-lookup check
+
+A check that asks a word of the manual keeps its table of answers in the executable (the page, the
+line and the word, often in several languages), and picks the question at random. A headless run
+cannot answer it with fixed keys. Find the table and the compare (`strings`, the code around the
+prompt's text) and type the answer; while the port is being made, a replacement at the compare may
+take the table's own word for the typed one. Say in the line's comment what it does; whether it
+stays in the port is a decision of its own.
+
+## 9. Sound
+
+- `GAME_DOS_SOUNDBLASTER`: a Sound Blaster 2.0 for a game that drives the card itself
+  (`BLASTER=A220 I5 D1 T1`). The game's settings file chooses the card; a game set to no sound plays
+  none, so check what its default file says.
+- A sound library linked into the game (Miles AIL 2/3, DSMI) is often better run on the host than
+  emulated. Typical reasons: its mixer reads tables through a selector with a base of its own
+  (`mov es, [...]`, `mov ax, [es:ebx+ebx]`), and SR takes every segment as flat, so it mixes silence;
+  its clock is the card's DMA position, which the emulation hardly moves. Replace the entries of the
+  library's driver table that mix and that tell the time, and keep the rest (the module player, the
+  game's effects) as the game's code. `GAME_DOS_DSMI` (`runtime/dos/Game_dosdsmi.c`) is one such
+  replacement; its head says how to find the entries and the variables in a new game.
+- A stream that the host plays must never run dry: let the library's clock be the stream's queue
+  (how much it lacks to a target latency plus the device's buffers), not the wall clock, and never
+  drop what was mixed.
+- A sample loop: the loop end is past the last sample of the loop, and the interpolation at the seam
+  takes the loop's first sample. A sample lost at each turn of a short loop is a rasp, not a click.
+- `$<GAME>_TRACE_SOUND`, `$<GAME>_TRACE_PORTS`, `$<GAME>_TRACE_INT` trace the runtime; with
+  `SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=<file>` the output is raw S16 to look at (gaps, clipping,
+  jumps) with a script. Hearing it stays the user's check.
+
+## 10. Headless runs and keys
+
+- `--headless=N` takes N frames, not seconds; a screenshot comes every few seconds of real time.
+- `<GAME>_AUTO_KEYS` / `--keys=`: `delay_s:Key[~hold_ms],...`, with SDL's key names (`Left Ctrl`,
+  `Return`, `space`). Text typed too fast loses letters: a press every 0.45 s held 90 ms is safe.
+- Which key starts the game from its menu (Enter may start the demo, the fire key the game) matters
+  for every later check: a "level" reached through the demo is not the game.
+- A cheat of the game (a word typed on the title screen) is the quickest way to a later level for a
+  check; a temporary replacement that forces it is fine while debugging and goes before a commit.
+
+## 11. Android
+
+`devices=...,arm64-android`, `android_id=`, `android_name=`, `make apk` (with `ANDROID_HOME`). The
+on-screen buttons are `game/Game_touchlayout.h` (`touchlayout_default.h` otherwise): the controls the
+manual lists, a `TOUCHGAMEPAD_KEYBOARD` button for typed words and cheats. The user tries it on a
+device.
+
+## 12. Changes to SR and the SDK
+
+Make them in the root `SR-SDK/` (and its `SR/`), not in the game's copy; while you only try them, a
+diff of the copy (`git -C SR-SDK diff`, `git -C SR-SDK/SR diff`) kept in `research/` is the record.
+Before a commit: `SR-SDK/tools/regress/run_all.sh` (SR's output of its reference games must stay the
+same, every port must still build and start), then every game's SDK copy is moved to the commit.
+
+## Traps, in short
+
+| Symptom | Cause |
+|---|---|
+| SR `Error` on a form of a known instruction | an empty branch of `SR_full_llasm_instr.c`: fix SR |
+| `fixup operand mismatch` | a 16-bit address with a fixup: a replacement |
+| a crash into data or the heap | a routine SR left as data: `sr_llcode.py`, `fixup_interpret_as_code.sci` |
+| `Wrong number of instruction parameters` from `llasm.py` | data in `fixup_interpret_as_code.sci` |
+| wrong values in a table, no error | a table in `fixup_interpret_as_code.sci`: `sr_codecheck.py`, SR's warning |
+| a decision of the game goes wrong, no crash | flags returned through `ret`: `retflags.py` |
+| silence from a sound library | a based selector or the card's DMA clock: mix on the host |

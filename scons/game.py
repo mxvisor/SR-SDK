@@ -39,6 +39,7 @@
 #     scons stage=obj    stops before linking
 #     BUILD_DIR=...      puts build/ somewhere else
 
+import filecmp
 import glob
 import hashlib
 import os
@@ -597,8 +598,11 @@ def sha256_of(path):
 
 def copy_if_newer(source, target):
     """copy2, so the target keeps the source's mtime and an unchanged input
-    does not look new to SCons on the next run."""
-    if os.path.exists(target) and os.path.getmtime(source) <= os.path.getmtime(target) + 1:
+    does not look new to SCons on the next run.  A source changed within a
+    second of the last copy (a script that edits a .sci and runs scons again)
+    is told by its bytes."""
+    if (os.path.exists(target) and os.path.getmtime(source) <= os.path.getmtime(target) + 1
+            and filecmp.cmp(source, target, shallow=False)):
         return
     directory = os.path.dirname(target)
     if directory and not os.path.isdir(directory):

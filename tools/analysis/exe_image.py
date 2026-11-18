@@ -95,10 +95,11 @@ class LeImage(Image):
     """the objects' pages lie one after another in the file (as Watcom links them)"""
     def __init__(self, path):
         d = open(path, 'rb').read()
-        lf = struct.unpack_from('<I', d, 0x3C)[0]
+        mz = le_offset(d)
+        lf = mz + struct.unpack_from('<I', d, mz + 0x3C)[0]
         pagesize, lastpage = struct.unpack_from('<II', d, lf + 0x28)
         ot, nobj = struct.unpack_from('<II', d, lf + 0x40)
-        pos = struct.unpack_from('<I', d, lf + 0x80)[0]
+        pos = mz + struct.unpack_from('<I', d, lf + 0x80)[0]   # from the MZ the LE belongs to
         self.segments = []
         for i in range(nobj):
             vs, rb, fl, _, np, _ = struct.unpack_from('<IIIIII', d, lf + ot + i * 24)
@@ -111,13 +112,32 @@ class LeImage(Image):
         self.code = [(lo, lo + len(data)) for lo, data, c in self.segments if c]
 
 
+def le_offset(d):
+    """the MZ whose e_lfanew names the LE header: the file's own, or for an
+    executable bound to DOS/4G the one after the extender's BW blocks (each
+    holds the file offset of the next header at 0x1C)"""
+    pos = 0
+    for _ in range(16):
+        sig = d[pos:pos + 2]
+        if sig == b'MZ':
+            lf = pos + struct.unpack_from('<I', d, pos + 0x3C)[0]
+            if d[lf:lf + 2] == b'LE':
+                return pos
+            last, pages = struct.unpack_from('<HH', d, pos + 2)
+            pos += pages * 512 - (512 - last if last else 0)
+        elif sig == b'BW':
+            pos = struct.unpack_from('<I', d, pos + 0x1C)[0]
+        else:
+            break
+    return None
+
+
 def load(path):
     with open(path, 'rb') as f:
-        h = f.read(0x40)
-        f.seek(struct.unpack_from('<I', h, 0x3C)[0])
-        sig = f.read(4)
+        d = f.read()
+    sig = d[struct.unpack_from('<I', d, 0x3C)[0]:][:4]
     if sig == b'PE\0\0':
         return PeImage(path)
-    if sig[:2] == b'LE':
+    if le_offset(d) is not None:
         return LeImage(path)
     raise ValueError('%s: neither PE nor LE' % path)

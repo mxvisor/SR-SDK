@@ -34,13 +34,23 @@
 # writes (a batch file, empty directories) is the game's: extra_files= and
 # empty_dirs= of its distrib.cfg (distrib_cd.py).
 #
+# A set with no HUF archive may hold one archive of another installer, cut into
+# the files DISK1, DISK2, ... of the disks' roots (one on each disk): their
+# concatenation is unpacked when it is a known one.
+#
 # HUF: a sequence of entries while the 16-bit flag is 1 or 5, each an unsigned
 # 32-bit length and a NUL-terminated DOS path, then 00 00 and the data.  Every
 # entry's data is an unsigned 32-bit original size followed by an LZHUF stream
 # (N_CHAR 314, T 627, THRESHOLD 2, F 60, a 4096-byte ring) that unpacks to that
 # size.  A type-1 entry starts a new file, a type-5 entry appends to the last
 # type-1 file (say, a game's alternate graphics and palettes).
+#
+# "F Install ver 1": the 16 bytes 03 "F Install ver 1", an unsigned 16-bit
+# count, then for each file an unsigned 32-bit offset and size (from the
+# archive's start), its 12-byte name (NUL-padded) and 4 zero bytes; the files
+# are stored, not packed.
 import argparse
+import re
 import os
 import struct
 import sys
@@ -368,6 +378,36 @@ def fat_files(image):
     return files
 
 
+FINSTALL = b'\x03F Install ver 1'
+
+
+def finstall_entries(data):
+    """The (name, data) of the files of an "F Install ver 1" archive."""
+    count = struct.unpack_from('<H', data, len(FINSTALL))[0]
+    out = []
+    for index in range(count):
+        entry = len(FINSTALL) + 2 + 24 * index
+        offset, size = struct.unpack_from('<II', data, entry)
+        name = data[entry + 8:entry + 20].split(b'\0')[0].decode('latin1')
+        if not name or offset + size > len(data):
+            raise ValueError('bad F Install entry %d' % index)
+        out.append((name, data[offset:offset + size]))
+    return out
+
+
+def split_archive(images):
+    """The archive cut into DISK1, DISK2, ... of the roots, joined; b'' when there is none."""
+    parts = {}
+    for image in images:
+        for name, data in fat_files(image):
+            match = re.match(r'DISK(\d+)$', name.upper())
+            if match:
+                parts[int(match.group(1))] = data
+    if not parts or sorted(parts) != list(range(1, len(parts) + 1)):
+        return b''
+    return b''.join(parts[number] for number in sorted(parts))
+
+
 def unpack(images, out):
     archives = []
     for image in images:
@@ -376,6 +416,15 @@ def unpack(images, out):
                 archives.append((name, data))
     archives.sort(key=lambda item: item[0].upper())
     files = {}
+    if not archives:
+        joined = split_archive(images)
+        if not joined.startswith(FINSTALL):
+            raise ValueError('no HUF archive and no known archive in DISK1, DISK2, ...')
+        for name, data in finstall_entries(joined):
+            if '/' in name or '\\' in name or name in ('.', '..'):
+                raise ValueError('bad path %s' % name)
+            files[name.upper()] = data
+        print('floppy: F Install archive of %d disks' % len(images))
     current = None
     for name, data in archives:
         for flag, path, unpacked in huf_entries(data):
@@ -399,7 +448,7 @@ def unpack(images, out):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Unpacks a game's floppy images and HUF archives.")
+    parser = argparse.ArgumentParser(description="Unpacks a game's floppy images and the installer's archives on them.")
     parser.add_argument('out', help='the directory to make')
     parser.add_argument('images', nargs='+', help='the FAT12 floppy images')
     args = parser.parse_args()

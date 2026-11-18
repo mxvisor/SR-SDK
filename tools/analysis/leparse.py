@@ -27,10 +27,23 @@ Prints the LE header, object table, and (with --map) a file<->virtual
 address mapping for every byte of every object.
 
 Usage: leparse.py EXE [--map]
+
+An executable bound to DOS/4G (the extender's MZ and BW blocks before the
+program's own MZ) is read from the program's MZ on: its offsets are from there.
 """
 
+import os
 import struct
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from exe_image import le_offset
+
+
+def le_data(path):
+    """the bytes of the executable from the MZ its LE belongs to"""
+    data = open(path, "rb").read()
+    return data[le_offset(data) or 0:]
 
 
 def u16(data, off):
@@ -143,7 +156,7 @@ def main():
         print(__doc__)
         return 1
     path = sys.argv[1]
-    data = open(path, "rb").read()
+    data = le_data(path)
     lf = u32(data, 0x3C)
     if data[lf:lf + 2] != b"LE":
         print("not an LE executable")
