@@ -43,6 +43,7 @@ extern "C" {
 #endif
 
 uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, void *pUnkOuter);
+uint32_t CCALL DirectSoundEnumerateA_c(uint32_t lpDSEnumCallback, uint32_t lpContext);
 
 uint32_t CCALL IDirectSound_QueryInterface_c(struct IDirectSound_c *lpThis, void * riid, PTR32(void)* ppvObj);
 uint32_t CCALL IDirectSound_AddRef_c(struct IDirectSound_c *lpThis);

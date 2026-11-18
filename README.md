@@ -124,8 +124,9 @@ version of SR's `llasm` that is developed here; on SR's reference games its outp
 devices, `build/obj/ir/*.bc`; each device runs only `llc` on it, into `build/obj/<device>/gen/*.o`.
 To find a procedure of the original in a debugger, delete `build/obj/ir/*.bc` and build once with
 `LLASM_SYMBOLS=1`: every procedure and every label of the data keeps its name (`loc_XXXX`, the
-address in the original) in the object, for `nm` and `gdb` (the variable is not part of the
-command, so SCons does not see it change).
+address in the original) in the object, for `nm` and `gdb`, as a local symbol (the modules of
+`dll_modules=` have labels of the same names); the variable is not part of the command, so SCons
+does not see it change.
 
 ## Starting a new port
 
@@ -152,9 +153,14 @@ its own), `exact_push16=yes` (a 16-bit push or pop moves esp by 2, as the CPU do
 that measures the distance of a pointer from esp after such pushes), `self_modifying_code=yes`
 (the program writes immediates and displacements of its own instructions: each such instruction
 gets a copy in the data segment `smc`, the writes go to the copy and the instruction reads its
-operand from it; [PORTING_DOS.md](PORTING_DOS.md#4-srs-first-run-scons-stagerecomp)) and
+operand from it; SR and SRW; [PORTING_DOS.md](PORTING_DOS.md#4-srs-first-run-scons-stagerecomp)) and
 `global_prefix=<name>` (before every global name of the output; set by `scons/game.py` for
 `exe_modules=`).
+In SRW's `instruction_replacements.sci`, a replacement whose llasm ends with `endp` (after a `tcall`
+of its own) ends its procedure: the bytes after it are code only when something else reaches them,
+and a `loc_X` of data that it names gets a label. So a `call` whose callee pops the return address
+as the address of a table after the call (WATCOM's library: `call X` / `X: pop edi / ret`) becomes
+`mov edi, loc_<table>|POP tmp1|tcall tmp1|endp`.
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 `TODO` lines of the launchers name what to fill in. SR's warnings about the game's
 `fixup_interpret_as_code.sci` (a label of it that the code reads as memory: a table, not code) are
@@ -191,6 +197,10 @@ modules=Game-main       # the modules of the original, game/recomp/<module>/
 exe_modules=INTRO       # dos only: other programs the game runs (INT 21h AH=4Bh), in the same
                         # binary: game/recomp/<NAME>/, NAME.EXE of the disc (input_<NAME>=),
                         # their global names get the prefix <name>_ (SR.cfg global_prefix)
+dll_modules=DRV         # win32 only: DLLs of the original recompiled as modules of their own
+                        # (game/recomp/<NAME>/, NAME.DLL of the disc): LoadLibrary hands them out,
+                        # and the program's imports of them (its import table) link to them, their
+                        # DllMain run before its entry (tools/dll_exports.py)
 variants=default        # recognized versions of the original, by sha256
 input_exe=../path/to/GAME.EXE
 link=separate
@@ -481,6 +491,7 @@ in both, off/2/4/8, seen at the next frame). In `Game_hooks.h`, all optional:
 | `GAME_WINAPI_WAIL32` | 1: the Miles Sound System for Win32 (`WinApi-wail32.c`, AIL 3.03, over `core/Game_ail.c`): samples from WAV images or raw PCM, played on the port's mixer, and XMIDI sequences (`soundfont.sf2` of the game directory); a game that loads `WAIL32.DLL` with `LoadLibrary` lists the functions in `GAME_EXTRA_PROCS` and its import shim |
 | `GAME_DSOUND_CURSOR_BEHIND_MS` | optional: milliseconds; the play cursor of a DirectSound buffer is that far behind the mixer's, for a game that keeps its mix a fixed, long way ahead of it |
 | `GAME_DSOUND_HARDWARE` | defined: DirectSound answers as a sound card's driver, not the emulation: `GetCaps` has no `DSCAPS_EMULDRIVER`, the write cursor of a buffer is the hardware's (the play cursor and what the next mix takes, not the end of what the game wrote) and `DSSCL_WRITEPRIMARY` lets the game write the primary buffer, played as it is (a driver that keeps its mix a little way past the write cursor) |
+| `GAME_WINAPI_MIDI_TECHNOLOGY` | the `wTechnology` of the one MIDI output device (`midiOutGetDevCapsA`, `WinApi-midi.c`), the synthesizer of `Game_midi.c` with `soundfont.sf2`: by it a game picks its arrangements; default `MOD_SWSYNTH` (7), as Windows' software synthesizer; 2 `MOD_SYNTH`, 4 `MOD_FMSYNTH`, 6 `MOD_WAVETABLE` |
 | `GAME_WINAPI_TIMER_EVENTS` | 1: the callback of `timeSetEvent` runs, from the game's message pump (default 0: it never runs) |
 | `GAME_GUEST_PUMP` | 1: the thread that draws pumps SDL's events (a Win32 game's own thread, a DOS game's flip thread), as on Android (the default there; elsewhere 0: the host's main thread pumps); the host's main thread always reads them |
 | `GAME_EARLY_GL_WINDOW` | defined: the window of Direct3D on OpenGL comes up at the start of the program, not after the game's loading |

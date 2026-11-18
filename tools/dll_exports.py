@@ -27,7 +27,7 @@ runtime needs to load it.
     dll_exports.py alias  <module> <DLL> <global_aliases.sci>
         before SRW: adds the entry point of the DLL (DllMain) to the aliases SRW reads, so
         SRW decodes it as a procedure of its own, named DllEntry
-    dll_exports.py table  <module> <DLL> <master.llasm>
+    dll_exports.py table  <module> <DLL> <master.llasm> [<EXE>]
         after compact_source: appends to the master the table of the module,
         `<module>_dll` (a global data label the runtime declares):
 
@@ -38,7 +38,11 @@ runtime needs to load it.
         The names are the export names of the DLL as the PE has them (`_drv_init@0`),
         the strings follow the table.  The procedures SRW made global for the exports
         (`proc X global c_X`) become plain ones: the table is the module's interface, and
-        two modules may export the same names.
+        two modules may export the same names.  But the exports that <EXE> (the program,
+        the main module) imports from the DLL by its import table become `proc X public`:
+        its calls of them link to the module directly, and the runtime runs the DllMain
+        of such a module before the program's entry (GAME_DLL_STATIC of dll_modules.h,
+        made by scons/game.py with imported_names()).
 """
 import os
 import re
@@ -87,6 +91,54 @@ def read_pe(path):
     return base, base + entry if entry else 0, exports
 
 
+def imported_names(exe, module):
+    """The names the PE <exe> imports from the DLL <module> (<module>.dll, the case
+    ignored), by its import table; [] when it imports none."""
+    data = open(exe, 'rb').read()
+    pe = struct.unpack_from('<I', data, 0x3c)[0]
+    if data[pe:pe + 4] != b'PE\0\0':
+        return []
+    nsec, = struct.unpack_from('<H', data, pe + 6)
+    optsize, = struct.unpack_from('<H', data, pe + 20)
+    opt = pe + 24
+    imp_rva, _ = struct.unpack_from('<II', data, opt + 96 + 8)
+    sections = []
+    for i in range(nsec):
+        off = opt + optsize + 40 * i
+        vsize, vaddr, rawsize, rawptr = struct.unpack_from('<IIII', data, off + 8)
+        if rawptr:
+            sections.append((vaddr, max(vsize, rawsize), rawptr))
+
+    def at(rva):
+        for vaddr, size, rawptr in sections:
+            if vaddr <= rva < vaddr + size:
+                return rawptr + rva - vaddr
+        return None
+
+    def cstr(rva):
+        start = at(rva)
+        return data[start:data.index(b'\0', start)].decode('latin1')
+
+    names = []
+    off = at(imp_rva) if imp_rva else None
+    while off is not None:
+        ilt, _, _, name_rva, iat = struct.unpack_from('<IIIII', data, off)
+        if name_rva == 0:
+            break
+        dll = cstr(name_rva).lower()
+        if dll == module.lower() + '.dll' or dll == module.lower():
+            thunk = at(ilt or iat)
+            while thunk is not None:
+                value, = struct.unpack_from('<I', data, thunk)
+                if value == 0:
+                    break
+                if not value & 0x80000000:      # by ordinal: no name to link by
+                    names.append(cstr(value + 2))
+                thunk += 4
+        off += 20
+    return names
+
+
 def label(address):
     return 'loc_%X' % address          # as SR_get_label of SRW: no leading zeros
 
@@ -102,8 +154,9 @@ def alias(_module, dll, sci):
             out.write(line + '\n')
 
 
-def table(module, dll, master):
+def table(module, dll, master, exe=None):
     _, entry, exports = read_pe(dll)
+    public = set(imported_names(exe, module)) if exe else set()
     directory = os.path.dirname(os.path.abspath(master))
     text = open(master).read()
     rename = dict(re.findall(r'^define (loc_\w+) (\S+)\s*$', text, re.M))
@@ -113,7 +166,9 @@ def table(module, dll, master):
             path = os.path.join(directory, name)
             source = open(path).read()
             procs.update(re.findall(r'^proc (\S+)', source, re.M))
-            plain = re.sub(r'^(proc \S+) global \S+[ \t]*$', r'\1', source, flags=re.M)
+            plain = re.sub(r'^proc (\S+) global \S+[ \t]*$',
+                           lambda m: 'proc %s%s' % (m.group(1), ' public' if m.group(1) in public else ''),
+                           source, flags=re.M)
             if plain != source:
                 with open(path, 'w') as stream:
                     stream.write(plain)
@@ -139,6 +194,7 @@ def table(module, dll, master):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 5 or sys.argv[1] not in ('alias', 'table'):
+    if not (len(sys.argv) == 5 or (len(sys.argv) == 6 and sys.argv[1] == 'table')) \
+            or sys.argv[1] not in ('alias', 'table'):
         sys.exit(__doc__)
     {'alias': alias, 'table': table}[sys.argv[1]](*sys.argv[2:])

@@ -272,6 +272,22 @@ static uint32_t dll_module_proc(struct dll_module *module, const char *name)
         if (strcmp((const char *)GUEST_MEM(entry[0]), name) == 0) return entry[1];
     return 0;
 }
+
+/* the modules the program imports by its import table (GAME_DLL_STATIC of
+ * dll_modules.h): their calls are linked to the module, and Windows runs their
+ * DllMain before the program's entry; Game-asm.c calls this there */
+void Winapi_AttachStaticModules(void)
+{
+#ifdef GAME_DLL_STATIC
+#define DLL_MODULE_ATTACH(name) dll_module_load(#name);
+    GAME_DLL_STATIC(DLL_MODULE_ATTACH)
+#undef DLL_MODULE_ATTACH
+#endif
+}
+#else
+void Winapi_AttachStaticModules(void)
+{
+}
 #endif
 
 uint32_t CCALL LoadLibraryA_c(uint32_t a0)
@@ -556,6 +572,14 @@ uint32_t CCALL GlobalMemoryStatus_c(uint32_t a0)
         out[7] = 0x7fffffffu; /* dwAvailVirtual */
     }
     return 0;
+}
+
+/* WATCOM's C library grows its heap with it: LMEM_ZEROINIT (0x40) zeroes the
+ * block, LMEM_MOVEABLE is a fixed block (the handle is the address, as with
+ * GlobalAlloc) */
+uint32_t CCALL LocalAlloc_c(uint32_t a0, uint32_t a1)
+{
+    return winapi_alloc((a0 & 0x0040u) ? WINAPI_HEAP_ZERO : 0, a1);
 }
 
 uint32_t CCALL LocalFree_c(uint32_t a0)

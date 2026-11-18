@@ -35,6 +35,7 @@
 #include "Game_memory.h"
 #include "Game_audiostream.h"
 #include "Game_hooks.h"
+#include "WinApi-guest.h"
 
 
 #define make_hresult(s,f,c) ((uint32_t)(((unsigned long)(s)<<31)|((unsigned long)(f)<<16)|((unsigned long)(c))))
@@ -984,6 +985,32 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
     }
 }
 
+
+/* DirectSoundEnumerate: one device, the primary sound driver, which Windows
+ * names with a NULL GUID (the one DirectSoundCreate takes).  The callback is a
+ * guest LPDSENUMCALLBACKA (lpGuid, lpcstrDescription, lpcstrModule, lpContext),
+ * its strings live in guest memory. */
+uint32_t CCALL DirectSoundEnumerateA_c(uint32_t lpDSEnumCallback, uint32_t lpContext)
+{
+    static char *description, *module;
+    uint32_t args[4];
+
+    if (lpDSEnumCallback == 0) return DSERR_INVALIDPARAM;
+    if (description == NULL)
+    {
+        description = (char *)x86_malloc(32);
+        module = (char *)x86_malloc(4);
+        if (description == NULL || module == NULL) return DSERR_OUTOFMEMORY;
+        strcpy(description, "Primary Sound Driver");
+        module[0] = 0;
+    }
+    args[0] = 0;
+    args[1] = GAME_PTR_TO_GUEST32(description);
+    args[2] = GAME_PTR_TO_GUEST32(module);
+    args[3] = lpContext;
+    Winapi_CallGuest(lpDSEnumCallback, 4, args);
+    return DS_OK;
+}
 
 uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, void *pUnkOuter)
 {

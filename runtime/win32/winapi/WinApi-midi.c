@@ -44,6 +44,7 @@
 #include "Game_defs.h"
 #include "Game_memory.h"
 #include "Game_midi.h"
+#include "Game_hooks.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,8 @@ extern "C" {
 void Winapi_InputPut(const SDL_Event *event);
 
 #define MMSYSERR_NOERROR        0
+#define MMSYSERR_BADDEVICEID    2
+#define MMSYSERR_ALLOCATED      4
 #define MMSYSERR_INVALHANDLE    5
 #define MMSYSERR_NODRIVER       6
 #define MMSYSERR_INVALFLAG      10
@@ -400,6 +403,80 @@ uint32_t CCALL midiStreamProperty_c(uint32_t hms, uint32_t lppropdata, uint32_t 
     }
     Game_MidiUnlock();
     if (midi_log()) fprintf(stderr, "midi: midiStreamProperty %08x: %u\n", dwProperty, prop[1]);
+    return MMSYSERR_NOERROR;
+}
+
+/* The MIDI output device (midiOut*): the one device, this synthesizer, also as
+ * MIDI_MAPPER (-1).  midiOutOpen takes it as midiStreamOpen does, with no
+ * buffers: the game plays it with midiOutShortMsg itself (from its timer).
+ * Its technology tells a game which of its arrangements to play: MOD_SWSYNTH
+ * (7), as Windows' own software synthesizer, or GAME_WINAPI_MIDI_TECHNOLOGY of
+ * Game_hooks.h (MOD_SYNTH 2, MOD_FMSYNTH 4, MOD_WAVETABLE 6, ...). */
+#ifndef GAME_WINAPI_MIDI_TECHNOLOGY
+#define GAME_WINAPI_MIDI_TECHNOLOGY 7
+#endif
+
+uint32_t CCALL midiOutGetDevCapsA_c(uint32_t uDeviceID, uint32_t pmoc, uint32_t cbmoc)
+{
+    /* MIDIOUTCAPSA: wMid, wPid, vDriverVersion, szPname[32], wTechnology,
+     * wVoices, wNotes, wChannelMask, dwSupport */
+    uint8_t caps[52];
+    static const char name[] = "General MIDI Synthesizer";
+
+    if (pmoc == 0) return MMSYSERR_INVALPARAM;
+    if ((uDeviceID != 0) && (uDeviceID != 0xFFFFFFFFu)) return MMSYSERR_BADDEVICEID;
+    memset(caps, 0, sizeof(caps));
+    caps[0] = 1;                                    /* MM_MICROSOFT */
+    caps[5] = 1;                                    /* version 1.0 */
+    memcpy(caps + 8, name, sizeof(name));
+    caps[40] = GAME_WINAPI_MIDI_TECHNOLOGY;
+    caps[42] = 32;                                  /* voices */
+    caps[44] = 32;                                  /* notes */
+    caps[46] = 0xFF; caps[47] = 0xFF;               /* all 16 channels */
+    memcpy(GUEST_MEM(pmoc), caps, (cbmoc < sizeof(caps)) ? cbmoc : sizeof(caps));
+    return MMSYSERR_NOERROR;
+}
+
+uint32_t CCALL midiOutOpen_c(uint32_t lphmo, uint32_t uDeviceID, uint32_t dwCallback, uint32_t dwInstance, uint32_t fdwOpen)
+{
+    if (midi_log()) fprintf(stderr, "midi: midiOutOpen dev %d cb %08x inst %08x flags %08x\n", (int)uDeviceID, dwCallback, dwInstance, fdwOpen);
+    if (lphmo == 0) return MMSYSERR_INVALPARAM;
+    if ((uDeviceID != 0) && (uDeviceID != 0xFFFFFFFFu)) return MMSYSERR_BADDEVICEID;
+    if (((fdwOpen & CALLBACK_TYPEMASK) != CALLBACK_FUNCTION) && ((fdwOpen & CALLBACK_TYPEMASK) != CALLBACK_NULL))
+    {
+        fprintf(stderr, "midiOutOpen: callback type %08x is not served\n", fdwOpen & CALLBACK_TYPEMASK);
+        return MMSYSERR_INVALFLAG;
+    }
+    if (stream.open) return MMSYSERR_ALLOCATED;
+
+    memset(&stream, 0, sizeof(stream));
+    stream.callback = dwCallback;
+    stream.instance = dwInstance;
+    stream.callback_type = fdwOpen & CALLBACK_TYPEMASK;
+    stream.timediv = 96;
+    stream.tempo = 500000;
+
+    if (!Game_MidiStreamOpen(stream_pump, NULL))
+    {
+        fprintf(stderr, "midiOutOpen: no soundfont.sf2, no MIDI\n");
+        return MMSYSERR_NODRIVER;
+    }
+    stream.open = 1;
+    Game_MidiStreamPlay(1);     /* the synthesizer sounds from now on */
+    *(uint32_t *)GUEST_MEM(lphmo) = STREAM_HANDLE;
+    post_callback(MOM_OPEN, 0);
+    return MMSYSERR_NOERROR;
+}
+
+uint32_t CCALL midiOutClose_c(uint32_t hmo)
+{
+    if (midi_log()) fprintf(stderr, "midi: midiOutClose\n");
+    if ((hmo != STREAM_HANDLE) || !stream.open) return MMSYSERR_INVALHANDLE;
+    if (stream.count != 0) return MIDIERR_STILLPLAYING;
+
+    Game_MidiStreamClose();
+    stream.open = 0;
+    post_callback(MOM_CLOSE, 0);
     return MMSYSERR_NOERROR;
 }
 

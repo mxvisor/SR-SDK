@@ -800,6 +800,7 @@ def module_pipeline(MODULE, EXT, input_key):
             + ([] if SR_EXTRAS else [SR_SEGMENTS]) + [File(compact)]
         if EXT == '.DLL':
             gen_sources.append(File(os.path.join(SDK_ROOT, 'tools', 'dll_exports.py')))
+            gen_sources.append(MAIN_INPUT_EXE)
 
         # A game that lists its segments (compact / outputs) is built from that list.
         # Without one, every seg*.llinc SR wrote is taken: the list is what SR wrote.
@@ -813,16 +814,19 @@ def module_pipeline(MODULE, EXT, input_key):
             take_all_segments,
             shell_quote(MODULE))
         if EXT == '.DLL':
-            # the table the runtime loads the module by
-            gen_cmd += ' && python3 %s table %s %s %s' % (
+            # the table the runtime loads the module by; the exports the program
+            # imports by its import table stay public, for its calls to link
+            gen_cmd += ' && python3 %s table %s %s %s %s' % (
                 shell_quote(os.path.join(SDK_ROOT, 'tools', 'dll_exports.py')), MODULE,
-                shell_quote(INPUT_EXE), shell_quote(GEN_MAIN))
+                shell_quote(INPUT_EXE), shell_quote(GEN_MAIN), shell_quote(MAIN_INPUT_EXE))
         defaults += env.Command(gen_targets, gen_sources, gen_cmd)
 
     gen_deps = [os.path.join(GEN_SRC_DIR, name) for name in SR_EXTRAS] if SR_EXTRAS else [SR_SEGMENTS]
     return GEN_MAIN, GEN_SRC_DIR, gen_deps
 
 
+# the program's original (stage 0 puts it there): the DLL modules it imports by its import table
+MAIN_INPUT_EXE = os.path.join(STAGE_BUILD, 'input', MODULE, MODULE + '.EXE')
 GEN_MAIN, GEN_SRC_DIR, gen_deps = module_pipeline(MODULE, '.EXE', 'input_exe')
 # a DLL of the game recompiled as a module of its own: a master .llasm of its own
 DLL_MASTERS = []
@@ -863,6 +867,14 @@ if want('obj'):
         dll_header_dir = os.path.join(obj_device, 'include')
         os.makedirs(dll_header_dir, exist_ok=True)
         dll_header = '#define GAME_DLL_MODULES(X) ' + ' '.join('X(%s)' % m for m in DLL_MODULES) + '\n'
+        # and those the program imports by its import table: loaded before its entry
+        # (WinApi-process.c), as Windows loads them
+        sys.path.insert(0, os.path.join(SDK_ROOT, 'tools'))
+        import dll_exports   # noqa: E402
+        static = [m for m in DLL_MODULES
+                  if os.path.exists(MAIN_INPUT_EXE) and dll_exports.imported_names(MAIN_INPUT_EXE, m)]
+        if static:
+            dll_header += '#define GAME_DLL_STATIC(X) ' + ' '.join('X(%s)' % m for m in static) + '\n'
         dll_header_path = os.path.join(dll_header_dir, 'dll_modules.h')
         if not os.path.exists(dll_header_path) or open(dll_header_path).read() != dll_header:
             with open(dll_header_path, 'w') as stream:

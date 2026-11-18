@@ -68,7 +68,10 @@ class PeImage(Image):
             vs, va, rsz, rp = struct.unpack_from('<IIII', d, s + 8)
             chars = struct.unpack_from('<I', d, s + 36)[0]
             n = min(rsz, vs or rsz, len(img) - va)
-            img[va:va + n] = d[rp:rp + n]
+            # uninitialized data (WATCOM's .bss: a raw size, no raw data) stays zero
+            if not chars & 0x80 and rp:
+                m = max(0, min(n, len(d) - rp))
+                img[va:va + m] = d[rp:rp + m]
             secs.append((va, vs or rsz, bool(chars & 0x20000000)))
             s += 40
         self.img = bytes(img)

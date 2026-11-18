@@ -789,6 +789,7 @@ void Game_MidiShortMsg(uint32_t msg)
         midi_control(ch, d1, d2);
         break;
     case 0xc0:
+        MIDI_LOG("program %d, channel %d\n", d1, ch);
         tsf_channel_set_presetnumber(midi_synth, ch, d1, ch == 9);
         break;
     case 0xe0:

@@ -533,6 +533,31 @@ uint32_t CCALL waveOutGetNumDevs_c(void)
     return 1;
 }
 
+/* msacm32, the Audio Compression Manager: no codec here.  acmMetrics answers
+ * the size of the largest format (a program allocates its WAVEFORMATEX by it,
+ * then fills it: a 0 would leave it no room) and counts no drivers. */
+#define ACM_METRIC_MAX_SIZE_FORMAT_c    50
+#define ACM_METRIC_MAX_SIZE_FILTER_c    51
+
+uint32_t CCALL acmMetrics_c(uint32_t hao, uint32_t uMetric, uint32_t pMetric)
+{
+    (void)hao;
+    if (pMetric == 0) return 11;                        /* MMSYSERR_INVALPARAM */
+    switch (uMetric)
+    {
+        case ACM_METRIC_MAX_SIZE_FORMAT_c:
+            *(uint32_t *)GUEST_MEM(pMetric) = 50;       /* an ADPCMWAVEFORMAT with its 7 coefficients */
+            break;
+        case ACM_METRIC_MAX_SIZE_FILTER_c:
+            *(uint32_t *)GUEST_MEM(pMetric) = 32;       /* WAVEFILTER */
+            break;
+        default:
+            *(uint32_t *)GUEST_MEM(pMetric) = 0;        /* the counts of drivers and codecs */
+            break;
+    }
+    return 0;
+}
+
 /* sndPlaySound: one sound at a time, a file of the game or a WAV image in
  * memory (SND_MEMORY), on a channel of the port's SDL_mixer device */
 #define SND_ASYNC_c     0x0001

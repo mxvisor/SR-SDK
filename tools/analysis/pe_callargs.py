@@ -45,8 +45,9 @@ for dll, nm, va in imp:
 
 vaddr = vsize = raddr = None
 for name, va_, vs, ra, rs in secs:
-    if name in ('.text', 'CODE', '.code'):
-        vaddr, vsize, raddr = va_, vs, ra
+    # WATCOM's linker names the code BEGTEXT and leaves VirtualSize at 0
+    if name in ('.text', 'CODE', '.code', 'BEGTEXT'):
+        vaddr, vsize, raddr = va_, vs or rs, ra
 code = data[raddr:raddr + vsize]
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)

@@ -84,6 +84,14 @@ EXTERNC _cpu *x86_initialize_cpu(void)
     return cpu;
 }
 
+/* the guest stack of this thread as the TIB names it, for fs:[4] (StackBase,
+ * top != 0) and fs:[8] (StackLimit): X86_FS_mem.c */
+EXTERNC uint32_t x86_guest_stack_bound(int top)
+{
+    _cpu *cpu = x86_initialize_cpu();
+    return PTR2REG(top ? cpu->stack_top : cpu->stack_bottom);
+}
+
 /* the CPU of this thread, NULL on a thread that runs no guest code; nothing
  * is allocated (a crash report asks, Game-asm.c) */
 EXTERNC _cpu *x86_current_cpu(void)

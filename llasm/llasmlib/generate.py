@@ -105,7 +105,7 @@ def _write_header_and_data():
         # into data, a pointer: nm names the label), where PIC code has none
         for label in dataseg.labels:
             if (not G.position_independent_code) or label.isglobal or _keep_names:
-                add_output_line(_llref(label.name) + " = " + ("protected" if label.isglobal else ("hidden" if _keep_names else "private")) + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(label.offset) + ")")
+                add_output_line(_llref(label.name) + " = " + ("protected" if label.isglobal else ("internal" if _keep_names else "private")) + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(label.offset) + ")")
     return None
 
 
@@ -197,7 +197,7 @@ def _write_procedures():
 
         # LLASM_SYMBOLS=1: every procedure keeps its name in the object (nm,
         # a debugger), where it is private otherwise
-        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if (proc.ispublic or _keep_names) else "private")) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind" + (" noinline" if _keep_names else "") + " {")
+        add_output_line("define " + ("protected" if proc.isglobal else ("hidden" if proc.ispublic else ("internal" if _keep_names else "private"))) + " fastcc " + ("i8*" if G.no_tail_calls else "void") + " " + _llref(proc_name) + "(%_cpu* %cpu) nounwind" + (" noinline" if _keep_names else "") + " {")
 
         if not process_proc_body(proc_name):
             return 79

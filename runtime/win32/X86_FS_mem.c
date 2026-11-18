@@ -32,6 +32,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
+#include <stdio.h>
 #include <stdlib.h>
 
 uint32_t current_SEH_frame;
@@ -41,8 +42,19 @@ uint32_t current_SEH_frame;
 #ifdef __cplusplus
 extern "C"
 #endif
+uint32_t x86_guest_stack_bound(int top);    /* asm-cpu.c */
+
+#ifdef __cplusplus
+extern "C"
+#endif
 uint32_t CCALL X86_ReadFsDword(uint32_t addr)
 {
+    /* the bounds of the guest's stack (a C library's stack check: WATCOM's
+     * reads StackLimit), not of the host thread's */
+    if (addr == 4 || addr == 8)
+    {
+        return x86_guest_stack_bound(addr == 4);
+    }
 #ifdef _WIN32
     // addr == 0
     uint32_t *address;
@@ -57,6 +69,7 @@ uint32_t CCALL X86_ReadFsDword(uint32_t addr)
     }
     else
     {
+        fprintf(stderr, "fs:[0x%x]: a field of the TIB the port does not have (read)\n", (unsigned int)addr);
         exit(1);
     }
 #endif
@@ -81,6 +94,7 @@ void CCALL X86_WriteFsDword(uint32_t addr, uint32_t value)
     }
     else
     {
+        fprintf(stderr, "fs:[0x%x]: a field of the TIB the port does not have (write)\n", (unsigned int)addr);
         exit(1);
     }
 #endif

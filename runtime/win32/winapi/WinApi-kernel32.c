@@ -679,6 +679,16 @@ static void resolve_path(const char *src, char *dst)
         return;
     }
 
+    /* "\name": from the root of the current drive, C:, whose root is the game
+     * directory (a game that keeps an empty path prefix: its CD path when it
+     * runs from its own directory).  Only a backslash: a host path is "/..."
+     * here and has its drive on Windows */
+    if (src[0] == '\\' && src[1] != '\\' && current_directory[0] == 0)
+    {
+        snprintf(dst, MAX_PATH, "%s", src + 1);
+        return;
+    }
+
     snprintf(dst, MAX_PATH, "%s", src);
 }
 

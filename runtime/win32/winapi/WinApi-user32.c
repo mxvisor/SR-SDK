@@ -2692,6 +2692,9 @@ uint32_t CCALL PeekMessageA_c(void *lpMsg, void *hWnd, uint32_t wMsgFilterMin, u
     eprintf("PeekMessageA: 0x%" PRIxPTR ", %i, %i, %i\n", (uintptr_t)hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 #endif
 
+    /* PM_NOYIELD (2) only tells 16-bit Windows not to yield: nothing to do */
+    wRemoveMsg &= ~2u;
+
     /* the program has one window, so a handle names the same queue as NULL does */
     if ((wMsgFilterMin == 0) && (wMsgFilterMax == 0) && ((wRemoveMsg == 0) || (wRemoveMsg == 1)))
     {

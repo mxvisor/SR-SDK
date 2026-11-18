@@ -70,6 +70,10 @@ extern _cpu *x86_current_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
 extern void CCALL GAME_ENTRY(CPU);
+#ifdef GAME_HAVE_DLL_MODULES
+/* WinApi-process.c: the DllMain of the DLL modules the program imports */
+extern void Winapi_AttachStaticModules(void);
+#endif
 #ifdef GAME_ENTRY_IS_START
 /* the end of the stack object of the program, exported by SR */
 extern unsigned char stack_start;
@@ -150,6 +154,10 @@ int CCALL Game_Main_Asm(int argc, char *argv[])
         int retval;
 
         cpu = x86_initialize_cpu();
+
+#ifdef GAME_HAVE_DLL_MODULES
+        Winapi_AttachStaticModules();
+#endif
 
         eax = argc;
         edx = PTR2REG(argv);

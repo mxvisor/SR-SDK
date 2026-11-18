@@ -853,15 +853,6 @@ uint32_t CCALL LoadResource_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3
 }
 #endif
 
-#ifdef STUB_LocalAlloc
-uint32_t CCALL LocalAlloc_c(uint32_t a0, uint32_t a1)
-{
-    (void)a0; (void)a1;
-    GAME_STUBLOG("LocalAlloc");
-    return 0;
-}
-#endif
-
 #ifdef STUB_LockResource
 uint32_t CCALL LockResource_c(uint32_t a0)
 {

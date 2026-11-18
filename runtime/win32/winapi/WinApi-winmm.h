@@ -53,6 +53,7 @@ uint32_t CCALL joyReleaseCapture_c(uint32_t id);
 uint32_t CCALL sndPlaySoundA_c(uint32_t lpszSound, uint32_t fuSound);
 uint32_t CCALL midiOutGetNumDevs_c(void);
 uint32_t CCALL waveOutGetNumDevs_c(void);
+uint32_t CCALL acmMetrics_c(uint32_t hao, uint32_t uMetric, uint32_t pMetric);
 
 #ifdef __cplusplus
 }
