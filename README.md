@@ -35,8 +35,8 @@ else is SR-SDK's.
 
 - **DOS** (`runtime/dos`): DOS/4GW programs started at their own entry; INT 21h, DPMI,
   conventional memory and the PSP; the PIT and the INT 8 → INT 1Ch chain; the keyboard
-  controller, BIOS keyboard and INT 33h mouse; VGA mode 13h and its DAC; MSCDEX; an
-  emulated Sound Blaster 2.0 with DMA and its interrupt.
+  controller, BIOS keyboard and INT 33h mouse; VGA mode 13h (also unchained, "mode X") and
+  its DAC, mode 12h; MSCDEX; an emulated Sound Blaster 2.0 with DMA and its interrupt.
 - **Win32** (`runtime/win32/winapi`): kernel32, user32, gdi32, the registry, threads,
   the window menu and the game's dialogs, GDI with DIB sections and palettes,
   winmm and MCI (CD audio), DirectDraw,
@@ -504,7 +504,8 @@ Under it are the file functions of INT 21h (`Game_dosfile.c`), the keyboard (`Ga
 MSCDEX (`Game_doscd.c`), PIT channel 0 (`Game_dospit.c`), the VGA ports (`Game_dosvga.c`) and the
 Microsoft mouse driver of INT 33h with AH = 0 (`Game_dosmouse.c`: the host mouse in the 4:3 picture,
 polled, or the button events and the motion handed to the game's event handler of function 0Ch
-as an interrupt of the mouse; SR finds no such handler, `fixup_interpret_as_code.sci` lists it).
+as an interrupt of the mouse; SR finds no such handler, `fixup_interpret_as_code.sci` lists it;
+the game draws its pointer, so the host's is hidden over the window once it uses the driver).
 The game's own services (INT, a memory dump) and ports come through hooks
 (`GAME_DOS_INTERRUPT`, `GAME_DUMP_GUEST_MEMORY`, `GAME_DOS_PORT_IN`/`GAME_DOS_PORT_OUT`
 in `Game_hooks.h`). It brings its sound, its llasm glue (with the handler every vector starts

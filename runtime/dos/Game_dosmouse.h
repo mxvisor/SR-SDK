@@ -42,6 +42,11 @@ int Game_DosMouseCall(Game_DosRegs *regs);
  * loop (Game_EventMQueue) and the motion to the game's event handler
  * (function 0Ch), if it has one; the events are taken either way. */
 void Game_DosMouseDeliverIrq(void);
+/* INT 10h set a video mode of width x height pixels: the range goes back to
+ * the mode's virtual screen (640 wide for a mode up to 320 pixels), as a
+ * driver that follows the video BIOS does (a game may set its range before
+ * the mode). */
+void Game_DosMouseVideoMode(int width, int height);
 
 #ifdef __cplusplus
 }

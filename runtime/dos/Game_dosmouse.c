@@ -37,9 +37,10 @@
  * when the mouse moves or a button goes down or up.  Here the interrupt is
  * Game_DosMouseDeliverIrq, at the same points as the keyboard's: the button
  * events of the event loop, one call each, and a move to where the mouse is.
- * Such a game draws its own pointer (the driver's, functions 1 and 9, is not
- * drawn here), so the host's is hidden over the window while the handler is
- * set, as a DOS screen had one pointer.  It is held in the window too, as the
+ * A game that uses the driver (it reset it, function 0, or set a handler)
+ * draws its own pointer (the driver's, functions 1 and 9, is not drawn here),
+ * so the host's is hidden over the window, as a DOS screen had one pointer.
+ * While the handler is set the mouse is held in the window too, as the
  * mouse of a DOS screen never left it: the first click in the window (which
  * the game does not see) puts SDL's mouse in relative mode, the position still
  * its in the window, until the window loses the focus; the port's panel shows
@@ -357,11 +358,22 @@ static void mouse_position(int *x, int *y, int *buttons)
     if (*y > mouse_max_y) *y = mouse_max_y;
 }
 
-/* The host's pointer hidden while the game has an event handler. */
+void Game_DosMouseVideoMode(int width, int height)
+{
+    mouse_min_x = mouse_min_y = 0;
+    mouse_max_x = (width <= 320 ? 2 * width : width) - 1;
+    mouse_max_y = height - 1;
+    if (trace_mouse()) fprintf(stderr, "MOUSE video mode: range x 0..%d, y 0..%d\n", mouse_max_x, mouse_max_y);
+}
+
+/* The host's pointer hidden once the game has reset the driver or has an
+ * event handler: it draws its own. */
+static int driver_reset;
+
 static void host_pointer(void)
 {
     static int hidden;
-    const int hide = handler_address != 0 && handler_mask != 0;
+    const int hide = driver_reset || (handler_address != 0 && handler_mask != 0);
 
     if (hide == hidden) return;
     hidden = hide;
@@ -556,6 +568,7 @@ int Game_DosMouseCall(Game_DosRegs *regs)
         mouse_max_x = mouse_max_y = -1;
         handler_address = 0;
         handler_mask = 0;
+        driver_reset = 1;
         host_pointer();
         break;
     case 0x000c:

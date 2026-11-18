@@ -93,14 +93,31 @@ static uint8_t input_status1(void)
  * controller's 16 palette registers into the DAC; the flip thread makes it
  * under planes_lock, which the game's thread holds while the window changes
  * planes (a game copying a picture tile by tile changes them hundreds of times
- * a frame), so a picture never has a plane that is halfway into the window. */
+ * a frame), so a picture never has a plane that is halfway into the window.
+ *
+ * Mode 13h with the Chain 4 bit of the sequencer's Memory Mode cleared (index
+ * 4, "mode X"): 256 colours on the same four planes, 64 KB each, the pixel x of
+ * a line in plane x & 3, the window holding a plane as in mode 12h.  The
+ * picture is 320 pixels a line from the CRTC's Start Address (0Ch/0Dh), a line
+ * every Offset (13h) words, as many lines as its Vertical Display End and Maximum
+ * Scan Line give (200 or 240).  A copy through the latches (write mode 1, or
+ * write mode 0 with a Bit Mask of 0: a read loads a byte of each plane, a write
+ * stores them) cannot go through a window of one plane: the game's instruction_replacements.sci
+ * routes such copies to Game_DosVgaCopy. */
 #define PLANAR_WIDTH 640
 #define PLANAR_HEIGHT 480
 #define PLANE_BYTES (PLANAR_WIDTH / 8 * PLANAR_HEIGHT)
+#define PLANE_MAX DOS_VGA_SIZE
 
-static uint8_t planes[4][PLANE_BYTES];
-static uint8_t snapshot[PLANE_BYTES];   /* the window as it was loaded */
-static int planar;                      /* mode 12h is set */
+enum { PLANAR_NONE, PLANAR_16, PLANAR_256 };
+static uint8_t planes[4][PLANE_MAX];
+static uint8_t snapshot[PLANE_MAX];     /* the window as it was loaded */
+static int planar;                      /* PLANAR_16: mode 12h, PLANAR_256: mode 13h unchained */
+static uint32_t plane_bytes = PLANE_BYTES;
+static uint8_t bios_mode = 0x03;        /* the mode of INT 10h AH=00h */
+static uint8_t memory_mode;             /* the sequencer's Memory Mode (index 4) */
+static uint8_t crtc_index, crtc[0x19];  /* the standard CRTC registers */
+static int latch_copy;                  /* a latch copy was set up and Game_DosVgaCopy not called */
 static int window_plane = -1;           /* the plane in the window, -1: none */
 static uint8_t window_mask;             /* the planes its writes go to */
 static SDL_mutex *planes_lock;
@@ -140,10 +157,10 @@ static void window_flush(void)
 
     if (window_plane < 0 || window_mask == 0) return;
     if (window_mask == (1u << window_plane)) {
-        memcpy(planes[window_plane], window, PLANE_BYTES);
+        memcpy(planes[window_plane], window, plane_bytes);
         return;
     }
-    for (index = 0; index < PLANE_BYTES; index++) {
+    for (index = 0; index < plane_bytes; index++) {
         if (window[index] == snapshot[index]) continue;
         for (plane = 0; plane < 4; plane++)
             if (window_mask & (1u << plane)) planes[plane][index] = window[index];
@@ -165,8 +182,41 @@ static void window_select(void)
     window_flush();
     window_plane = plane;
     window_mask = mask;
-    memcpy(Game_FrameBuffer, planes[plane], PLANE_BYTES);
-    if (mask != (1u << plane)) memcpy(snapshot, Game_FrameBuffer, PLANE_BYTES);
+    memcpy(Game_FrameBuffer, planes[plane], plane_bytes);
+    if (mask != (1u << plane)) memcpy(snapshot, Game_FrameBuffer, plane_bytes);
+    SDL_UnlockMutex(planes_lock);
+}
+
+/* Bytes of the planes a character clock (four pixels) of mode 13h steps: 4 in
+ * the CRTC's doubleword mode, 2 in its word mode, 1 in its byte mode */
+static uint32_t crtc_step(void)
+{
+    if (crtc[0x14] & 0x40) return 4;
+    return (crtc[0x17] & 0x40) ? 1 : 2;
+}
+
+/* The flip thread: mode 13h unchained from the planes (the window flushed into
+ * them first) through the palette */
+static void flip_unchained(uint32_t *out)
+{
+    const uint32_t *palette = Game_GetPalette();
+    const uint32_t step = crtc_step(), pitch = crtc[0x13] * 2u * step;
+    const uint32_t start = (((uint32_t)crtc[0x0c] << 8) | crtc[0x0d]) * step;
+    const uint32_t end = (crtc[0x12] | ((crtc[0x07] & 0x02u) << 7) | ((crtc[0x07] & 0x40u) << 3)) + 1u;
+    uint32_t height = end / ((crtc[0x09] & 0x1fu) + 1u), x, y;
+
+    if (crtc[0x09] & 0x80) height /= 2;
+    if (height < 200 || height > 240) height = 200;
+    Render_Width = 320;
+    Render_Height = height;
+    SDL_LockMutex(planes_lock);
+    window_flush();
+    if (window_plane >= 0 && window_mask != (1u << window_plane)) memcpy(snapshot, Game_FrameBuffer, plane_bytes);
+    for (y = 0; y < height; y++) {
+        const uint32_t line = start + y * pitch;
+        for (x = 0; x < 320; x++) out[x] = palette[planes[x & 3][(line + (x >> 2) * step) & (PLANE_MAX - 1)]];
+        out += 320;
+    }
     SDL_UnlockMutex(planes_lock);
 }
 
@@ -229,6 +279,10 @@ static void flip_planar(void *src, void *dst)
         flip_vbe((uint32_t *)dst);
         return;
     }
+    if (planar == PLANAR_256) {
+        flip_unchained((uint32_t *)dst);
+        return;
+    }
     if (!planar) {
         Render_Width = display_width;
         Render_Height = display_height;
@@ -271,11 +325,20 @@ void Game_DosVgaSetMode(uint8_t mode, int clear)
 {
     static const uint8_t ega_palette[16] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
                                              0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f };
+    /* the CRTC of mode 13h, for a game that unchains it */
+    static const uint8_t crtc_13h[sizeof(crtc)] = {
+        0x5f, 0x4f, 0x50, 0x82, 0x54, 0x80, 0xbf, 0x1f, 0x00, 0x41, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x9c, 0x8e, 0x8f, 0x28, 0x40, 0x96, 0xb9, 0xa3, 0xff
+    };
+    bios_mode = mode & 0x7f;
+    memory_mode = bios_mode == 0x13 ? 0x0e : 0x06;
+    if (bios_mode == 0x13) memcpy(crtc, crtc_13h, sizeof(crtc));
+    else memset(crtc, 0, sizeof(crtc));
     /* the BIOS clears the video memory when it sets a mode: a game leaving
      * mode 12h does not see its planes in the window as a picture */
     if (mode != 0x12) {
         if (planes_lock != NULL) SDL_LockMutex(planes_lock);
-        planar = 0;
+        planar = PLANAR_NONE;
         window_plane = -1;
         vbe_mode = -1;
         if (clear) memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
@@ -286,6 +349,7 @@ void Game_DosVgaSetMode(uint8_t mode, int clear)
     vbe_mode = -1;
     memcpy(attribute, ega_palette, sizeof(attribute));
     SDL_LockMutex(planes_lock);
+    plane_bytes = PLANE_BYTES;
     if (clear) {
         memset(planes, 0, sizeof(planes));
         memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
@@ -295,9 +359,75 @@ void Game_DosVgaSetMode(uint8_t mode, int clear)
     reading = 0;
     window_plane = -1;
     window_mask = 0;
-    planar = 1;
+    planar = PLANAR_16;
     SDL_UnlockMutex(planes_lock);
     window_select();
+}
+
+/* Chain 4 cleared in mode 13h: its picture goes into the planes as the VGA
+ * keeps it (the byte at offset o of the window in plane o & 3, at o with its
+ * low two bits cleared), and the window holds a plane from now on; Chain 4
+ * set again: back to the window as the picture */
+static void set_memory_mode(uint8_t value)
+{
+    const uint8_t *window = Game_FrameBuffer;
+    uint32_t offset;
+
+    memory_mode = value;
+    if (bios_mode != 0x13 || vbe_mode >= 0) return;
+    if ((value & 0x08) == 0 && planar == PLANAR_NONE) {
+        install_flip();
+        SDL_LockMutex(planes_lock);
+        memset(planes, 0, sizeof(planes));
+        for (offset = 0; offset < DOS_VGA_SIZE; offset++) planes[offset & 3][offset & ~3u] = window[offset];
+        plane_bytes = PLANE_MAX;
+        reading = 0;
+        window_plane = -1;
+        window_mask = 0;
+        planar = PLANAR_256;
+        SDL_UnlockMutex(planes_lock);
+        window_select();
+    } else if ((value & 0x08) != 0 && planar == PLANAR_256) {
+        SDL_LockMutex(planes_lock);
+        window_flush();
+        for (offset = 0; offset < DOS_VGA_SIZE; offset++) Game_FrameBuffer[offset] = planes[offset & 3][offset & ~3u];
+        window_plane = -1;
+        planar = PLANAR_NONE;
+        SDL_UnlockMutex(planes_lock);
+    }
+}
+
+uint32_t Game_DosVgaCopy(uint32_t destination, uint32_t source, uint32_t count)
+{
+    const uint8_t mask = map_mask & 0x0f;
+    uint32_t index, plane;
+
+    if (planar == PLANAR_256 && ((gc[5] & 3) == 1 || ((gc[5] & 3) == 0 && gc[8] == 0)) &&
+        destination >= DOS_VGA_ADDRESS && destination - DOS_VGA_ADDRESS + count <= DOS_VGA_SIZE &&
+        source >= DOS_VGA_ADDRESS && source - DOS_VGA_ADDRESS + count <= DOS_VGA_SIZE) {
+        /* through the latches: each plane of the Map Mask from itself */
+        const uint32_t to = destination - DOS_VGA_ADDRESS, from = source - DOS_VGA_ADDRESS;
+        latch_copy = 0;
+        SDL_LockMutex(planes_lock);
+        window_flush();
+        for (plane = 0; plane < 4; plane++)
+            if (mask & (1u << plane))
+                for (index = 0; index < count; index++) planes[plane][to + index] = planes[plane][from + index];
+        if (window_plane >= 0) {
+            memcpy(Game_FrameBuffer, planes[window_plane], plane_bytes);
+            memcpy(snapshot, Game_FrameBuffer, plane_bytes);
+        }
+        SDL_UnlockMutex(planes_lock);
+        return count;
+    }
+    /* rep movsb */
+    {
+        uint8_t *to = (uint8_t *)Game_DosMemPtr(destination, count);
+        const uint8_t *from = (const uint8_t *)Game_DosMemPtr(source, count);
+        if (to == NULL || from == NULL) return 0;
+        for (index = 0; index < count; index++) to[index] = from[index];
+    }
+    return count;
 }
 
 void Game_DosVgaSetAttribute(uint8_t index, uint8_t value)
@@ -319,6 +449,28 @@ static int vbe_find(uint16_t mode)
     for (index = 0; index < sizeof(vbe_modes) / sizeof(vbe_modes[0]); index++)
         if (vbe_modes[index].mode == (mode & 0x1ffu)) return (int)index;
     return -1;
+}
+
+int Game_DosVgaModeSize(uint16_t mode, int *width, int *height)
+{
+    const int index = mode >= 0x100 ? vbe_find(mode) : -1;
+    if (index >= 0) {
+        *width = vbe_modes[index].width;
+        *height = vbe_modes[index].height;
+        return 1;
+    }
+    switch (mode & 0x7f) {
+    case 0x00: case 0x01: case 0x04: case 0x05: case 0x0d: case 0x13:
+        *width = 320; *height = 200; return 1;
+    case 0x02: case 0x03: case 0x06: case 0x07: case 0x0e:
+        *width = 640; *height = 200; return 1;
+    case 0x0f: case 0x10:
+        *width = 640; *height = 350; return 1;
+    case 0x11: case 0x12:
+        *width = 640; *height = 480; return 1;
+    default:
+        return 0;
+    }
 }
 
 /* AH=4Fh.  The block of 4F00h (VbeInfoBlock, 256 bytes) and of 4F01h
@@ -482,7 +634,7 @@ static void register_out(uint16_t port, uint8_t value)
             map_mask = value;
             reading = 0;
             if (planar) window_select();
-        }
+        } else if (seq_index == 4) set_memory_mode(value);
         break;
     case 0x3ce: gc_index = value; break;
     case 0x3cf:
@@ -491,9 +643,26 @@ static void register_out(uint16_t port, uint8_t value)
             reading = 1;
             if (planar) window_select();
         }
+        if (planar == PLANAR_256 && ((gc[5] & 3) == 1 || ((gc[5] & 3) == 0 && gc[8] == 0))) {
+            /* a latch copy: Game_DosVgaCopy is to be called before it ends */
+            latch_copy = 1;
+            break;
+        }
+        if (latch_copy && !warned) {
+            warned = 1;
+            fprintf(stderr, GAME_NAME ": a VGA latch copy without Game_DosVgaCopy: route the game's copy to it (instruction_replacements.sci)\n");
+        }
+        latch_copy = 0;
         if (planar && !warned && ((gc[5] & 3) != 0 || gc[8] != 0xff || gc[1] != 0)) {
             warned = 1;
             fprintf(stderr, GAME_NAME ": VGA write mode %u, bit mask %02x, set/reset %02x not emulated\n", gc[5] & 3, gc[8], gc[1]);
+        }
+        break;
+    case 0x3d4: crtc_index = value; break;
+    case 0x3d5:
+        if (crtc_index < sizeof(crtc)) {
+            crtc[crtc_index] = value;
+            if (planar == PLANAR_256 && (crtc_index == 0x0c || crtc_index == 0x0d)) Game_DosRequestPresent();
         }
         break;
     }
@@ -519,7 +688,9 @@ int Game_DosVgaIn(uint16_t port, uint32_t *value)
         *value = input_status1();
         return 1;
     case 0x3c4: *value = seq_index; return 1;
-    case 0x3c5: *value = seq_index == 2 ? map_mask : 0; return 1;
+    case 0x3c5: *value = seq_index == 2 ? map_mask : seq_index == 4 ? memory_mode : 0; return 1;
+    case 0x3d4: *value = crtc_index; return 1;
+    case 0x3d5: *value = crtc_index < sizeof(crtc) ? crtc[crtc_index] : 0; return 1;
     case 0x3ce: *value = gc_index; return 1;
     case 0x3cf: *value = gc_index < sizeof(gc) ? gc[gc_index] : 0; return 1;
     default:
@@ -554,6 +725,8 @@ int Game_DosVgaOut(uint16_t port, uint8_t value)
     case 0x3c5:
     case 0x3ce:
     case 0x3cf:
+    case 0x3d4:
+    case 0x3d5:
         register_out(port, value);
         return 1;
     default:

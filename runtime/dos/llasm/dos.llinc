@@ -43,3 +43,6 @@ proc SR_AIL2_call_driver external
 ; instruction_replacements.sci calls them in place of MCP's getdelta and poll.
 func Game_DsmiMcpGetDelta
 func Game_DsmiMcpPoll microseconds, vars, order
+; The VGA's latch copy in mode 13h unchained (Game_dosvga.c): the game's
+; instruction_replacements.sci calls it in place of a rep movsb in the window.
+func Game_DosVgaCopy destination, source, count

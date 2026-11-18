@@ -358,6 +358,13 @@ static void dos_get_time(Game_DosRegs *regs)
 
 static uint8_t video_mode = 3;
 
+/* a video mode set: the mouse's range is the mode's virtual screen again */
+static void new_video_mode(uint16_t mode)
+{
+    int width, height;
+    if (Game_DosVgaModeSize(mode, &width, &height)) Game_DosMouseVideoMode(width, height);
+}
+
 static int dos_call(Game_DosRegs *regs)
 {
     /* the file functions: Game_dosfile.c; the keyboard (08h, 0Bh): Game_doskbd.c */
@@ -667,6 +674,7 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
         case 0x00:
             video_mode = Game_DosAL(regs) & 0x7f;
             Game_DosVgaSetMode(video_mode, (Game_DosAL(regs) & 0x80) == 0);
+            new_video_mode(video_mode);
             Game_DosRequestPresent();
             Game_DosSetCarry(regs, 0);
             return;
@@ -696,11 +704,17 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
             if (Game_DosAL(regs) == 0x02 && Game_DosBX(regs) < 0x100) {
                 video_mode = (uint8_t)regs->ebx & 0x7f;
                 Game_DosVgaSetMode(video_mode, (Game_DosBX(regs) & 0x8000u) == 0);
+                new_video_mode(video_mode);
                 Game_DosRequestPresent();
                 Game_DosSetAX(regs, 0x004f);
                 return;
             }
-            Game_DosVbe(regs, realmode_es >= 0 ? ((uint32_t)realmode_es << 4) + (regs->edi & 0xffffu) : regs->edi);
+            {
+                const int set_mode = Game_DosAL(regs) == 0x02;
+                const uint16_t mode = Game_DosBX(regs) & 0x1ffu;
+                Game_DosVbe(regs, realmode_es >= 0 ? ((uint32_t)realmode_es << 4) + (regs->edi & 0xffffu) : regs->edi);
+                if (set_mode && Game_DosAX(regs) == 0x004f) new_video_mode(mode);
+            }
             Game_DosSetCarry(regs, 0);
             return;
 #endif

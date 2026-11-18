@@ -199,6 +199,21 @@ window at A0000h, banks (4F05h), the line length (4F06h) and the display start (
 default because a game that only probes VESA would change its modes: one of the ports sets 101h
 for its language screen when VBE answers.
 
+**Mode X.** A low resolution is often mode 13h unchained: the game clears Chain 4 (sequencer
+index 4 = 06h), draws on four planes through the Map Mask, flips pages through the CRTC's start
+address. Without it the picture is four squeezed copies side by side. The runtime follows the
+Memory Mode register by itself; what it cannot follow is a copy through the VGA's latches (write
+mode 1, or a Bit Mask of 0, then `rep movsb` from video memory to video memory): the translated
+code reads and writes one plane. Find the copies (a call that sets the Bit Mask to 0 before a
+`rep movsb` between page addresses; the runtime says `a VGA latch copy without Game_DosVgaCopy` when
+one ran) and replace each `rep movsb` with a call:
+
+    loc_X,2,;rep movsb: a copy between pages through the latches|call Game_DosVgaCopy edi, esi, ecx|add edi, edi, ecx|add esi, esi, ecx|mov ecx, 0
+
+**The mouse after a mode change.** The driver sets its range back to the mode's virtual screen when
+INT 10h sets a mode (640 wide for a 320-pixel mode), as real drivers and DOSBox do. A game may set
+the range first and the mode after: with the old range kept, its pointer stops halfway across.
+
 ## 7. Flags across a `ret`
 
 SR does not carry flags from a `ret` to its caller unless told. A callee that returns its answer in
@@ -283,4 +298,5 @@ same, every port must still build and start), then every game's SDK copy is move
 | `unknown flags on start of region` after `push`es and a `call`, a `sbb eax, eax` after it | WATCOM's `int386x()`: `int_stub_table=yes` and a `loc_X,0x00,0x01` line by hand |
 | `llasm instruction error - mov cr0, ...`, `smsw`, `sidt` | WATCOM's FPU emulator and FPU check: replacements on `Game_DosCr0`, `Game_DosIdtBase` |
 | `Can't set VESA mode`, `unimplemented interrupt 10 (AX=4f01)` | `GAME_DOS_VESA` |
+| four squeezed copies of the picture side by side | mode X (Chain 4 cleared): the runtime has it; latch copies go to `Game_DosVgaCopy` |
 | data among the `mov`/`daddr` candidates | strings, constants, a chained handler's old vector, jump-table entries: look at the bytes |
