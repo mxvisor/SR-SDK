@@ -26,10 +26,13 @@
 #define _GAME_DOSVGA_H_INCLUDED_
 
 #include <stdint.h>
+#include "Game_dosregs.h"
 
 /* The VGA of a DOS game: the DAC (3C7h, 3C8h, 3C9h), Input Status #1 (3DAh),
- * the sequencer's Map Mask (3C4h/3C5h), the graphics controller (3CEh/3CFh)
- * and mode 12h, 640x480 in 16 colours on four planes (Game_dosvga.c). */
+ * the sequencer's Map Mask (3C4h/3C5h), the graphics controller (3CEh/3CFh),
+ * mode 12h, 640x480 in 16 colours on four planes, and the VESA BIOS (VBE 1.2)
+ * with its 256-colour modes, banked through the window at A0000h
+ * (Game_dosvga.c). */
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +49,10 @@ void Game_DosVgaSetMode(uint8_t mode, int clear);
 /* INT 10h AX=1000h/1007h: a palette register of the attribute controller */
 void Game_DosVgaSetAttribute(uint8_t index, uint8_t value);
 uint8_t Game_DosVgaAttribute(uint8_t index);
+/* INT 10h AH=4Fh, the VESA BIOS: 1 if served (AX = 004Fh, or 014Fh for a
+ * function or mode it lacks).  buffer: the DOS address of ES:DI (a real-mode
+ * call through DPMI 0300h) or the flat EDI, the block 4F00h and 4F01h fill. */
+int Game_DosVbe(Game_DosRegs *regs, uint32_t buffer);
 
 #ifdef __cplusplus
 }

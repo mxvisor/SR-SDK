@@ -117,6 +117,10 @@ void Game_DosVectors(uint32_t *copy, int restore)
 }
 
 /* <GAME>_TRACE_INT: every software interrupt with its registers before and after */
+/* the ES of a real-mode interrupt (DPMI 0300h) while it runs, -1 otherwise: a
+ * buffer at ES:DI is at the DOS address ES * 16 + DI */
+static int realmode_es = -1;
+
 static int trace_int(void)
 {
     static int enabled = -1;
@@ -383,6 +387,16 @@ static int dos_call(Game_DosRegs *regs)
         }
         break;
     }
+    case 0x2a: {
+        /* the date: CX year, DH month, DL day, AL day of the week (0 Sunday) */
+        const time_t seconds = time(NULL);
+        const struct tm *parts = localtime(&seconds);
+        if (parts == NULL) break;
+        Game_DosSetCX(regs, (uint16_t)(parts->tm_year + 1900));
+        Game_DosSetDX(regs, (uint16_t)(((parts->tm_mon + 1) << 8) | parts->tm_mday));
+        Game_DosSetAL(regs, (uint8_t)parts->tm_wday);
+        break;
+    }
     case 0x2c:
         dos_get_time(regs);
         break;
@@ -586,7 +600,7 @@ static int dpmi_call(Game_DosRegs *regs)
         memcpy(&flags, structure + 0x20, 2);
         memcpy(&es, structure + 0x22, 2);
         nested.eflags = flags;
-        if (trace_int()) fprintf(stderr, "  real-mode int %02x ax=%04x bx=%04x es=%04x\n", vector, Game_DosAX(&nested), Game_DosBX(&nested), es);
+        if (trace_int()) fprintf(stderr, "  real-mode int %02x ax=%04x bx=%04x cx=%04x es=%04x\n", vector, Game_DosAX(&nested), Game_DosBX(&nested), Game_DosCX(&nested), es);
         if (vector == 0x2f && Game_DosCdCall(&nested, es)) {
             /* served */
 #ifdef GAME_DOS_REALMODE_INTERRUPT
@@ -594,7 +608,9 @@ static int dpmi_call(Game_DosRegs *regs)
             /* the game's */
 #endif
         } else if (vector == 0x10 || vector == 0x1a || vector == 0x21 || vector == 0x2f) {
+            realmode_es = es;
             Game_DosDispatch(vector, &nested);
+            realmode_es = -1;
         } else {
             Game_DosSetCarry(&nested, 1);
         }
@@ -672,6 +688,22 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
             else if (Game_DosAL(regs) > 0x03) break;
             Game_DosSetCarry(regs, 0);
             return;
+#ifdef GAME_DOS_VESA
+        case 0x4f:
+            /* the VESA BIOS (Game_dosvga.c), for a game that says GAME_DOS_VESA:
+             * a game that only probes it would change its modes; 4F02h with a
+             * VGA mode is AH=00h */
+            if (Game_DosAL(regs) == 0x02 && Game_DosBX(regs) < 0x100) {
+                video_mode = (uint8_t)regs->ebx & 0x7f;
+                Game_DosVgaSetMode(video_mode, (Game_DosBX(regs) & 0x8000u) == 0);
+                Game_DosRequestPresent();
+                Game_DosSetAX(regs, 0x004f);
+                return;
+            }
+            Game_DosVbe(regs, realmode_es >= 0 ? ((uint32_t)realmode_es << 4) + (regs->edi & 0xffffu) : regs->edi);
+            Game_DosSetCarry(regs, 0);
+            return;
+#endif
         case 0x12:
             /* alternate select: BL = 36h turns the refresh off (AL = 1) or on
              * (AL = 0), a faster VRAM while a game draws; the picture goes on

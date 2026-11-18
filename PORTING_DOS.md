@@ -20,7 +20,9 @@ table places it (the first object of a Watcom LE usually at 10000h).
   the same publisher has it too.
 - Several releases of a game differ in the executable (a patch, another language, a copy-protection
   variant). Choose one and keep its sha256 (`game/recomp/<module>/<variant>/sha256`); the port is of
-  that executable only.
+  that executable only. A disc may carry a DOS and a Windows 95 program of the same game, and a patch
+  may exist for one of them only: write down which one the port is of and why. The other one's files
+  (its setup, DirectX) go into `skip_files=` and `skip_dirs=`.
 - The game's own settings file (the sound card, the controls) is what its setup program wrote. A
   default one comes with the distrib copy (`extra_files=` or the installer's own); the port's
   settings live in `<program>.cfg`, not in it.
@@ -29,10 +31,10 @@ table places it (the first object of a Watcom LE usually at 10000h).
 
     SR-SDK/tools/new_game.sh <dir> <program> dos --image <disc image> --exe disc:<GAME>.EXE --env <GAME>
 
-then:
+It writes `audio_*` into `game/distrib.cfg` only for a disc with audio tracks. In `.gitmodules` it
+names the SDK's public origin, and the clone's own origin stays the local SDK. Then:
 
-- `game/distrib.cfg`: `skip_files=` for the installer's files; a disc with one data track needs no
-  `audio_cue`;
+- `game/distrib.cfg`: `skip_files=` for the installer's files;
 - `game/game.cfg`: `devices=` (add `arm64-android` and `android_id=` when the game is ready for a
   phone);
 - `scons stage=input` checks the sha256; the first `scons` builds SR itself (about a minute).
@@ -74,6 +76,15 @@ not right.
 - `call bx` (a 16-bit near pointer): `and tmp1, ebx, 0xffff|ACTION_CALL|PUSH loc_<next>|tcall tmp1|endp|proc loc_<next>`.
   The return point becomes a procedure of its own, so declare it with `proc` at the end.
 - `lsl eax, eax` (the limit of DS): `load eax, Game_DosDsLimit, 4`.
+- WATCOM's library also brings system instructions: the setup of its FPU emulator and the FPU check
+  of the start-up (`smsw [m]`, `sidt [esp]`, `mov r32, cr0`, `mov cr0, r32`). SR stops at them as
+  `unknown flags` or `llasm instruction error`. Replace every one, a read of cr0 too:
+  - `smsw`: `mov tmp1, 0x0013|store16 tmp1, loc_X, 2`;
+  - `sidt`: `mov tmp1, 0x07ff|store16 tmp1, esp, 4|load tmp2, Game_DosIdtBase, 4|add tmpadr, esp, 2|store tmp2, tmpadr, 2`;
+  - `mov ecx, cr0`: `load ecx, Game_DosCr0, 4`;
+  - `mov cr0, ecx`: `store ecx, Game_DosCr0, 4`.
+
+  The address of `smsw` is the one SR's error prints (`[loc_7D0E6]`), not the raw bytes.
 - `iretw` of a real-mode handler the port never runs: the body of `iretd`.
 - A `cmp` or `test` right before a `jcc` is fused by SR into one conditional jump on `tmpcnd`: a
   replacement of the `cmp` writes `tmpcnd` (`sub tmpcnd, tmp1, 0xffff`), not `eflags`, and the
@@ -91,6 +102,35 @@ known before it>`, the masks of SR's `FL_*` (CF 01h, ZF 08h, all six 3Fh).
 
 **`unknown weak flags on start of region`** are warnings: look at each once (a `pushf`/`popf`
 pair around an `adc`, flags kept for a later instruction) and write down why it is right.
+
+**WATCOM's `int386x()`** calls a stub of a table of 256 `int N / ret` with a `ret`
+(`lea eax, [esi*3+table]`, `push eax`, `ret`), and after the call stores CF with `sbb eax, eax`.
+SR needs `int_stub_table=yes` in `SR.cfg` (it finds the table and gives that `lea` a stub of its
+own). SR still sees no flags through that return, and `sr_llcode.py flags` cannot explain the region
+(`cannot explain the flags 0x1`, a run of `push`es and a `call`). The line is written by hand, at
+the start of `int386x` (the region SR names): `loc_X,0x00,0x01 ; sbb eax,eax after int386x's int`.
+The segment-register variant (`pushfd` after its call) gives a weak-flags warning, which is right.
+
+**Hundreds of `reading inside of instruction`, from a few routines**: self-modifying code. A setup
+routine writes the immediates and displacements of an inner loop (`mov [loc_582E3], esi`), and then
+the loop runs with them (`imul eax, eax, 0`, `add esi, 0`, `mov ah, [eax+0]`, the zeros being
+placeholders). SR has no code bytes in memory, so the writes go nowhere. Put
+`self_modifying_code=yes` into `SR.cfg`:
+
+- each instruction written into gets a copy in the data segment `smc` (`smc_<address>`);
+- the writes, and the pointers in tables to such an operand (`daddr`), go to the copy;
+- the instruction reads its operand from the copy: a written immediate becomes a memory operand,
+  and a written displacement is loaded and added to the address.
+
+SR lists them on stderr (`Self-modifying code: loc_X, bytes ... written`). It handles `mov`, `add`,
+`sub`, `adc`, `sbb`, `and`, `or`, `xor`, `cmp`, `test` and `push` with an immediate of the operand's
+size, `imul r32, r32, imm32`, and a disp32 of any memory operand. Any other written byte stops SR
+(`Error: self-modifying code: SR cannot read byte N of loc_X`) and needs a replacement.
+
+A table of patch sites can point into routines SR never decoded. Its entries then show up as
+`daddr` candidates in the middle of instructions (6.); they are operands, not code entries. If no
+reference to such a routine's entry exists, the routine and its setup are dead code (another
+resolution, another mode) and can stay data.
 
 ## 5. llasm: `scons stage=bin`
 
@@ -118,6 +158,11 @@ leads to bytes that are not the port's code.
   `loc_X,0x00,0x01` line.
 - These are candidates. SR decodes data without a word when the list says it is code: a jump table
   inside a routine, a table of offsets, a table of 16-bit values read with `mov ax, [ebx+loc_X]`.
+  Look at the bytes of every candidate (`exe_dis.py`) before `add`, and do not `grow` blindly. A
+  `mov reg, loc_X` also takes the address of a string (`????0`), a table of floating-point constants,
+  or a variable right before a handler (the old vector of a chained interrupt, `dd 0` followed by
+  `jmp far [old]`). A `daddr` also points at an entry of a jump table or at a written operand
+  (self-modifying code, 4.).
   The port's copy of those bytes then holds code, and the game goes wrong with no error (wrong notes,
   wrong positions). SR warns (`Warning: loc_X is in fixup_interpret_as_code.sci, but loc_Y reads or
   writes it as memory`, also on the build's stderr) and `tools/analysis/sr_codecheck.py` checks the
@@ -125,8 +170,12 @@ leads to bytes that are not the port's code.
 
 Ways to find the place of a crash:
 
-- `LLASM_SYMBOLS=1` (delete `build/obj/ir/*.bc` first): every procedure keeps its `loc_` name for
-  `nm` and `gdb`.
+- `LLASM_SYMBOLS=1` (delete `build/obj/ir/*.bc` first): every procedure and every label of the data
+  keeps its `loc_` name for `nm` and `gdb`. The crash report prints the binary and the offset of the
+  address the program jumped to (`<program>-x64+0x1ccbb8`). The symbol of `nm -n` at that offset
+  names it: a `D` label is a routine SR left as data, and the label is the candidate to add. Without
+  the symbols, the offset in a data segment has to be counted from the segment's start, and the
+  compacted output has `db N dup K` lines.
 - `strace -f -e openat,read`: the last file the game read before the crash.
 - gdb: a breakpoint on `loc_X` with `ignore N`, then a Python loop of `nexti` that keeps the last
   procedure names (`frame.name()`) until the signal: the chain of calls into the crash. `stepi`
@@ -138,6 +187,17 @@ Ways to find the place of a crash:
   at intervals, for an object's fields over time.
 - A watchpoint on a field that goes wrong names the instruction that writes it; its `loc_` is the
   next lead.
+
+**A service the runtime lacks.** `unimplemented interrupt`, `unimplemented DOS function` and
+`$<GAME>_TRACE_INT=1` show what the game asks for. Add a missing service to the runtime, not to the
+game: INT 21h AH=2Ah (the date) was added so.
+
+**SVGA.** A game that draws in VESA's modes (`Can't set VESA mode`, INT 10h AX=4F01h/4F02h through
+DPMI 0300h with a DOS block at ES:DI) says `GAME_DOS_VESA` in `Game_hooks.h`. The runtime then has a
+VBE 1.2 BIOS: the 256-colour modes 100h, 101h, 103h and 105h, a 2 MB frame seen through the 64 KB
+window at A0000h, banks (4F05h), the line length (4F06h) and the display start (4F07h). It is off by
+default because a game that only probes VESA would change its modes: one of the ports sets 101h
+for its language screen when VBE answers.
 
 ## 7. Flags across a `ret`
 
@@ -219,3 +279,8 @@ same, every port must still build and start), then every game's SDK copy is move
 | wrong values in a table, no error | a table in `fixup_interpret_as_code.sci`: `sr_codecheck.py`, SR's warning |
 | a decision of the game goes wrong, no crash | flags returned through `ret`: `retflags.py` |
 | silence from a sound library | a based selector or the card's DMA clock: mix on the host |
+| hundreds of `reading inside of instruction`, from a few routines | self-modifying code: `self_modifying_code=yes` in `SR.cfg` |
+| `unknown flags on start of region` after `push`es and a `call`, a `sbb eax, eax` after it | WATCOM's `int386x()`: `int_stub_table=yes` and a `loc_X,0x00,0x01` line by hand |
+| `llasm instruction error - mov cr0, ...`, `smsw`, `sidt` | WATCOM's FPU emulator and FPU check: replacements on `Game_DosCr0`, `Game_DosIdtBase` |
+| `Can't set VESA mode`, `unimplemented interrupt 10 (AX=4f01)` | `GAME_DOS_VESA` |
+| data among the `mov`/`daddr` candidates | strings, constants, a chained handler's old vector, jump-table entries: look at the bytes |

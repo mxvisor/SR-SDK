@@ -101,9 +101,11 @@ def _write_header_and_data():
         add_output_line("%_" + dataseg_name + " = type <{ " + dataseg_type + " }>")
         add_output_line(_llref(dataseg_name) + " = private " + ("constant" if (dataseg.isconstant and not dataseg.addr_in_ctor) else "global") + " %_" + dataseg_name + " <{ " + dataseg_values + " }>, align 4")
 
+        # LLASM_SYMBOLS=1: every label of the data keeps its name too (a crash
+        # into data, a pointer: nm names the label), where PIC code has none
         for label in dataseg.labels:
-            if (not G.position_independent_code) or label.isglobal:
-                add_output_line(_llref(label.name) + " = " + ("protected" if label.isglobal else "private") + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(label.offset) + ")")
+            if (not G.position_independent_code) or label.isglobal or _keep_names:
+                add_output_line(_llref(label.name) + " = " + ("protected" if label.isglobal else ("hidden" if _keep_names else "private")) + " alias " + get_load_type("i8") + " getelementptr (" + get_load_type("i8") + " bitcast (%_" + dataseg_name + "* " + _llref(dataseg_name) + " to i8*), i32 " + str(label.offset) + ")")
     return None
 
 

@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
 
@@ -110,6 +111,28 @@ static uint8_t attribute[16];
 static Game_Flip_Procedure display_flip;
 static uint32_t display_width, display_height;
 
+/* The VESA BIOS, VBE 1.2: the 256-colour modes of vbe_modes, packed pixels in
+ * a frame of VBE_MEMORY bytes (the card's memory) of which the 64 KB window at
+ * A0000h shows one bank, as the card's window A does with a granularity of
+ * 64 KB.  The translated code writes the window as plain memory; when the bank
+ * changes (4F05h) the window goes back into the frame and the new bank comes
+ * into it.  The picture is the frame from the display start (4F07h), a line
+ * every vbe_pitch bytes (4F06h), the bank in the window from the window; the
+ * flip thread makes it under planes_lock, which the game's thread holds while
+ * the window changes banks.  No linear frame buffer (VBE 2.0), no window B,
+ * no window function to call (WinFuncPtr 0): a game changes banks with
+ * INT 10h. */
+#define VBE_MEMORY (2u * 1024u * 1024u)
+#define VBE_BANK 0x10000u
+static const struct { uint16_t mode, width, height; } vbe_modes[] = {
+    { 0x100, 640, 400 }, { 0x101, 640, 480 }, { 0x103, 800, 600 }, { 0x105, 1024, 768 }
+};
+static uint8_t *vbe_frame;
+static int vbe_mode = -1;               /* the index of the mode set in vbe_modes, -1: none */
+static uint32_t vbe_bank;               /* the bank in the window */
+static uint32_t vbe_pitch;              /* bytes from a line to the next */
+static uint32_t vbe_start;              /* the frame's byte at the top left of the picture */
+
 static void window_flush(void)
 {
     const uint8_t *window = Game_FrameBuffer;
@@ -147,9 +170,51 @@ static void window_select(void)
     SDL_UnlockMutex(planes_lock);
 }
 
+/* the window into the bank of the frame it shows (under planes_lock) */
+static void vbe_window_flush(void)
+{
+    const uint32_t offset = vbe_bank * VBE_BANK;
+    if (offset < VBE_MEMORY) memcpy(vbe_frame + offset, Game_FrameBuffer, VBE_MEMORY - offset < VBE_BANK ? VBE_MEMORY - offset : VBE_BANK);
+}
+
+static void vbe_set_bank(uint32_t bank)
+{
+    const uint32_t offset = bank * VBE_BANK;
+    SDL_LockMutex(planes_lock);
+    vbe_window_flush();
+    vbe_bank = bank;
+    if (offset < VBE_MEMORY) memcpy(Game_FrameBuffer, vbe_frame + offset, VBE_MEMORY - offset < VBE_BANK ? VBE_MEMORY - offset : VBE_BANK);
+    else memset(Game_FrameBuffer, 0, VBE_BANK);
+    SDL_UnlockMutex(planes_lock);
+}
+
+/* The flip thread: a VESA mode from the frame through the palette */
+static void flip_vbe(uint32_t *out)
+{
+    const uint32_t *palette = Game_GetPalette();
+    const uint32_t width = vbe_modes[vbe_mode].width, height = vbe_modes[vbe_mode].height;
+    uint32_t x, y;
+
+    Render_Width = width;
+    Render_Height = height;
+    SDL_LockMutex(planes_lock);
+    vbe_window_flush();
+    for (y = 0; y < height; y++) {
+        const uint32_t line = vbe_start + y * vbe_pitch;
+        const uint8_t *pixels = vbe_frame + line;
+        if (line + width > VBE_MEMORY) {
+            memset(out, 0, (size_t)(height - y) * width * sizeof(*out));
+            break;
+        }
+        for (x = 0; x < width; x++) out[x] = palette[pixels[x]];
+        out += width;
+    }
+    SDL_UnlockMutex(planes_lock);
+}
+
 /* The flip thread: mode 12h from the planes (the plane in the window from the
- * window, where the game may have written since), the other modes as the
- * display shows them. */
+ * window, where the game may have written since), a VESA mode from its frame,
+ * the other modes as the display shows them. */
 static void flip_planar(void *src, void *dst)
 {
     static uint64_t spread[256];
@@ -160,6 +225,10 @@ static void flip_planar(void *src, void *dst)
     const uint8_t *source[4];
     unsigned int index, plane, bit;
 
+    if (vbe_mode >= 0) {
+        flip_vbe((uint32_t *)dst);
+        return;
+    }
     if (!planar) {
         Render_Width = display_width;
         Render_Height = display_height;
@@ -187,6 +256,17 @@ static void flip_planar(void *src, void *dst)
     SDL_UnlockMutex(planes_lock);
 }
 
+/* the flip of mode 12h and of the VESA modes in place of the display's */
+static void install_flip(void)
+{
+    if (display_flip != NULL) return;
+    planes_lock = SDL_CreateMutex();
+    display_flip = Display_Flip_Procedure;
+    display_width = Render_Width;
+    display_height = Render_Height;
+    Display_Flip_Procedure = &flip_planar;
+}
+
 void Game_DosVgaSetMode(uint8_t mode, int clear)
 {
     static const uint8_t ega_palette[16] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
@@ -197,17 +277,13 @@ void Game_DosVgaSetMode(uint8_t mode, int clear)
         if (planes_lock != NULL) SDL_LockMutex(planes_lock);
         planar = 0;
         window_plane = -1;
+        vbe_mode = -1;
         if (clear) memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
         if (planes_lock != NULL) SDL_UnlockMutex(planes_lock);
         return;
     }
-    if (display_flip == NULL) {
-        planes_lock = SDL_CreateMutex();
-        display_flip = Display_Flip_Procedure;
-        display_width = Render_Width;
-        display_height = Render_Height;
-        Display_Flip_Procedure = &flip_planar;
-    }
+    install_flip();
+    vbe_mode = -1;
     memcpy(attribute, ega_palette, sizeof(attribute));
     SDL_LockMutex(planes_lock);
     if (clear) {
@@ -232,6 +308,166 @@ void Game_DosVgaSetAttribute(uint8_t index, uint8_t value)
 uint8_t Game_DosVgaAttribute(uint8_t index)
 {
     return index < 16 ? attribute[index] : 0;
+}
+
+static void put16(uint8_t *block, unsigned int offset, uint16_t value) { memcpy(block + offset, &value, 2); }
+static void put32(uint8_t *block, unsigned int offset, uint32_t value) { memcpy(block + offset, &value, 4); }
+
+static int vbe_find(uint16_t mode)
+{
+    unsigned int index;
+    for (index = 0; index < sizeof(vbe_modes) / sizeof(vbe_modes[0]); index++)
+        if (vbe_modes[index].mode == (mode & 0x1ffu)) return (int)index;
+    return -1;
+}
+
+/* AH=4Fh.  The block of 4F00h (VbeInfoBlock, 256 bytes) and of 4F01h
+ * (ModeInfoBlock, 256 bytes) at buffer; the mode list of 4F00h is in the
+ * reserved part of its block, at offset E0h. */
+int Game_DosVbe(Game_DosRegs *regs, uint32_t buffer)
+{
+    static int warned;
+    uint8_t *block;
+    int index;
+
+    switch (Game_DosAL(regs)) {
+    case 0x00: {
+        /* the controller: "VESA", 1.2, the modes, the memory */
+        static const char oem[] = GAME_NAME " VBE";
+        unsigned int count;
+        block = (uint8_t *)Game_DosMemPtr(buffer, 256);
+        if (block == NULL) break;
+        memset(block, 0, 256);
+        memcpy(block, "VESA", 4);
+        put16(block, 0x04, 0x0102);
+        memcpy(block + 0xc0, oem, sizeof(oem) < 0x20 ? sizeof(oem) : 0x1f);
+        put32(block, 0x06, ((buffer >> 4) << 16) | ((buffer & 0x0f) + 0xc0));
+        put32(block, 0x0a, 0);                  /* capabilities: a 6-bit DAC */
+        put32(block, 0x0e, ((buffer >> 4) << 16) | ((buffer & 0x0f) + 0xe0));
+        for (count = 0; count < sizeof(vbe_modes) / sizeof(vbe_modes[0]); count++) put16(block, 0xe0 + 2 * count, vbe_modes[count].mode);
+        put16(block, 0xe0 + 2 * count, 0xffff);
+        put16(block, 0x12, VBE_MEMORY / VBE_BANK);
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    }
+    case 0x01:
+        /* a mode: CX */
+        index = vbe_find(Game_DosCX(regs));
+        block = (uint8_t *)Game_DosMemPtr(buffer, 256);
+        if (index < 0 || block == NULL) break;
+        memset(block, 0, 256);
+        put16(block, 0x00, 0x001b);             /* supported, extra information, colour, graphics */
+        block[0x02] = 0x07;                     /* window A: there, readable, writable */
+        put16(block, 0x04, VBE_BANK / 1024);    /* granularity and size, KB */
+        put16(block, 0x06, VBE_BANK / 1024);
+        put16(block, 0x08, DOS_VGA_ADDRESS >> 4);
+        put16(block, 0x10, vbe_modes[index].width);
+        put16(block, 0x12, vbe_modes[index].width);
+        put16(block, 0x14, vbe_modes[index].height);
+        block[0x16] = 8;                        /* the character cell */
+        block[0x17] = 16;
+        block[0x18] = 1;                        /* planes */
+        block[0x19] = 8;                        /* bits per pixel */
+        block[0x1a] = 1;                        /* banks (of the memory model) */
+        block[0x1b] = 4;                        /* packed pixels */
+        block[0x1d] = (uint8_t)(VBE_MEMORY / ((uint32_t)vbe_modes[index].width * vbe_modes[index].height) - 1);
+        block[0x1e] = 1;
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    case 0x02:
+        /* set a mode: BX, bit 15 = keep the memory */
+        index = vbe_find(Game_DosBX(regs));
+        if (index < 0) break;
+        if (vbe_frame == NULL) {
+            vbe_frame = (uint8_t *)calloc(VBE_MEMORY, 1);
+            if (vbe_frame == NULL) break;
+        }
+        install_flip();
+        SDL_LockMutex(planes_lock);
+        planar = 0;
+        window_plane = -1;
+        if ((Game_DosBX(regs) & 0x8000u) == 0) {
+            memset(vbe_frame, 0, VBE_MEMORY);
+            memset(Game_FrameBuffer, 0, DOS_VGA_SIZE);
+        }
+        vbe_mode = index;
+        vbe_bank = 0;
+        vbe_pitch = vbe_modes[index].width;
+        vbe_start = 0;
+        SDL_UnlockMutex(planes_lock);
+        if (Game_DosBX(regs) & 0x4000u) {
+            /* a linear frame buffer (VBE 2.0) is not there */
+            vbe_mode = -1;
+            break;
+        }
+        Game_DosRequestPresent();
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    case 0x03:
+        Game_DosSetBX(regs, vbe_mode >= 0 ? vbe_modes[vbe_mode].mode : 0x0013);
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    case 0x05:
+        /* the window: BH = 0 set, 1 get; BL = the window (A); DX = the bank */
+        if ((uint8_t)regs->ebx != 0 || vbe_mode < 0) break;
+        if ((uint8_t)(regs->ebx >> 8) == 0) vbe_set_bank(Game_DosDX(regs));
+        else Game_DosSetDX(regs, (uint16_t)vbe_bank);
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    case 0x06: {
+        /* the logical line: BL = 0 set CX pixels, 1 get, 2 set CX bytes, 3 the largest */
+        const uint8_t function = (uint8_t)regs->ebx;
+        if (vbe_mode < 0 || function > 3) break;
+        if (function == 0 || function == 2) {
+            const uint32_t pitch = Game_DosCX(regs);
+            if (pitch < vbe_modes[vbe_mode].width || pitch * vbe_modes[vbe_mode].height > VBE_MEMORY) break;
+            SDL_LockMutex(planes_lock);
+            vbe_pitch = pitch;
+            SDL_UnlockMutex(planes_lock);
+        }
+        if (function == 3) {
+            Game_DosSetBX(regs, (uint16_t)(VBE_MEMORY / vbe_modes[vbe_mode].height > 0xffffu ? 0xffffu : VBE_MEMORY / vbe_modes[vbe_mode].height));
+            Game_DosSetCX(regs, Game_DosBX(regs));
+        } else {
+            Game_DosSetBX(regs, (uint16_t)vbe_pitch);
+            Game_DosSetCX(regs, (uint16_t)vbe_pitch);
+            Game_DosSetDX(regs, (uint16_t)(VBE_MEMORY / vbe_pitch > 0xffffu ? 0xffffu : VBE_MEMORY / vbe_pitch));
+        }
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    }
+    case 0x07: {
+        /* the display start: BL = 00h/80h set (CX pixel, DX line), 01h get */
+        const uint8_t function = (uint8_t)regs->ebx;
+        if (vbe_mode < 0) break;
+        if (function == 0x00 || function == 0x80) {
+            SDL_LockMutex(planes_lock);
+            vbe_start = Game_DosDX(regs) * vbe_pitch + Game_DosCX(regs);
+            SDL_UnlockMutex(planes_lock);
+            Game_DosRequestPresent();
+        } else if (function == 0x01) {
+            regs->ebx &= 0xffff00ffu;
+            Game_DosSetCX(regs, (uint16_t)(vbe_start % vbe_pitch));
+            Game_DosSetDX(regs, (uint16_t)(vbe_start / vbe_pitch));
+        } else break;
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    }
+    case 0x08:
+        /* the DAC's width: 6 bits, whatever is asked */
+        if ((uint8_t)regs->ebx > 1) break;
+        regs->ebx = (regs->ebx & 0xffff00ffu) | 0x0600u;
+        Game_DosSetAX(regs, 0x004f);
+        return 1;
+    default:
+        break;
+    }
+    if (!warned) {
+        warned = 1;
+        fprintf(stderr, GAME_NAME ": VESA BIOS function %04x (BX=%04x CX=%04x) not supported\n", Game_DosAX(regs), Game_DosBX(regs), Game_DosCX(regs));
+    }
+    Game_DosSetAX(regs, 0x014f);
+    return 1;
 }
 
 /* the sequencer (3C4h/3C5h) and the graphics controller (3CEh/3CFh) */

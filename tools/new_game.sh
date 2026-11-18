@@ -96,11 +96,6 @@ image=$REL_IMAGE
 # the disc's files the game's installer does not copy (the installer itself; what
 # it copies elsewhere is moved with place=, see distrib_cd.py): add them here
 skip_files=AUTORUN.* SETUP.* INSTALL.*
-
-# music: the audio tracks of the disc
-audio_dir=AUDIO
-audio_cue=$CUE_BASE.cue
-audio=ogg
 EOF
 case "$EXE" in
   disc:*)
@@ -123,6 +118,19 @@ if [ -n "$EXE" ] && [ -z "${DISC_NAME:-}" ]; then
   [ -f "$SRC" ] || { echo "No such file: $SRC" >&2; exit 1; }
   SHA="$(sha256sum "$SRC" | cut -d' ' -f1)"; INPUT_EXE="$EXE"
   ORIG_NAME="$(basename "$SRC" | tr '[:lower:]' '[:upper:]')"
+fi
+# CD music only when the disc has audio tracks (the cue sheet is made by disc_tree.py)
+CUE_FILE="$DIR/build/cd/$CUE_BASE.cue"
+if [ -n "$IMAGE" ] && [ -f "$CUE_FILE" ] && ! grep -q 'AUDIO' "$CUE_FILE"; then
+  printf '\n# no CD music: the disc has one data track\n' >> "$DIR/game/distrib.cfg"
+else
+  cat >> "$DIR/game/distrib.cfg" <<EOF
+
+# music: the audio tracks of the disc
+audio_dir=AUDIO
+audio_cue=$CUE_BASE.cue
+audio=ogg
+EOF
 fi
 TITLE="$(printf '%s' "$NAME" | tr '-' ' ')"
 COPYRIGHT="Copyright (C) $(date +%Y) $(git config user.name 2>/dev/null || echo 'the author')"
@@ -223,6 +231,10 @@ fi
 
 git init -q
 git -c protocol.file.allow=always submodule add -q "$SDK_URL" SR-SDK
+# a local SDK is the clone's origin; .gitmodules names its public origin, for clones of the repository
+if [ -d "$SDK_URL" ] && PUBLIC_URL="$(git -C "$SDK_URL" remote get-url origin 2>/dev/null)"; then
+  git config -f .gitmodules submodule.SR-SDK.url "$PUBLIC_URL"
+fi
 SDK_HEAD="$(git -C "$SDK_DIR" rev-parse HEAD)"
 git -C SR-SDK fetch -q --no-recurse-submodules origin
 git -C SR-SDK checkout -q --no-recurse-submodules "$SDK_HEAD"

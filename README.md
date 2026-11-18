@@ -100,8 +100,9 @@ version of SR's `llasm` that is developed here; on SR's reference games its outp
 [`llasm/README.md`](llasm/README.md)). `llasm.py` and `opt` make one bitcode per `.llasm` for all
 devices, `build/obj/ir/*.bc`; each device runs only `llc` on it, into `build/obj/<device>/gen/*.o`.
 To find a procedure of the original in a debugger, delete `build/obj/ir/*.bc` and build once with
-`LLASM_SYMBOLS=1`: every procedure keeps its name (`loc_XXXX`, the address in the original) in the
-object, for `nm` and `gdb` (the variable is not part of the command, so SCons does not see it change).
+`LLASM_SYMBOLS=1`: every procedure and every label of the data keeps its name (`loc_XXXX`, the
+address in the original) in the object, for `nm` and `gdb` (the variable is not part of the
+command, so SCons does not see it change).
 
 ## Starting a new port
 
@@ -125,8 +126,12 @@ also gets `esp_dword_aligned`, `ebp_dword_aligned` and `code_writable` in its `S
 `int_stub_table=yes` (a WATCOM library whose int386x() returns into a table of 256 stubs
 `int N / ret`: SR finds the table and gives the instruction that takes its address a stub of
 its own), `exact_push16=yes` (a 16-bit push or pop moves esp by 2, as the CPU does: for code
-that measures the distance of a pointer from esp after such pushes) and `global_prefix=<name>`
-(before every global name of the output; set by `scons/game.py` for `exe_modules=`).
+that measures the distance of a pointer from esp after such pushes), `self_modifying_code=yes`
+(the program writes immediates and displacements of its own instructions: each such instruction
+gets a copy in the data segment `smc`, the writes go to the copy and the instruction reads its
+operand from it; [PORTING_DOS.md](PORTING_DOS.md#4-srs-first-run-scons-stagerecomp)) and
+`global_prefix=<name>` (before every global name of the output; set by `scons/game.py` for
+`exe_modules=`).
 Next come `main.c`, SR's inputs (`SR.cfg`, `*.sci`) and the game's hooks. The
 `TODO` lines of the launchers name what to fill in. SR's warnings about the game's
 `fixup_interpret_as_code.sci` (a label of it that the code reads as memory: a table, not code) are
@@ -388,6 +393,7 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; WATCOM's startup builds the array of their addresses itself; for a game that starts at its main (`GAME_ENTRY`), which skips that, it is `Game_DosEnviron`, and `instruction_replacements.sci` points the C library's `getenv` at it |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
+| `GAME_DOS_VESA` | the VESA BIOS of `Game_dosvga.c` (INT 10h AH=4Fh, VBE 1.2): the 256-colour modes 100h, 101h, 103h and 105h, banked through the window at A0000h (4F05h, no window function), with 4F06h and 4F07h; the blocks of 4F00h and 4F01h at ES:DI of a real-mode call (DPMI 0300h). Without it AH=4Fh fails as before: a game that only probes VESA keeps its VGA modes |
 | `GAME_DOS_DSMI` | `Game_dosdsmi.c`: DSMI's MCP (Otto Chrons' Multi Channel Player 2.6) mixed on the host: the game's `instruction_replacements.sci` puts `call Game_DsmiMcpGetDelta` at MCP's getdelta and `call Game_DsmiMcpPoll microseconds, vars, order` at its poll (CDI entries 38h and 34h; the head of the file says how to find them and MCP's variables); the rest of DSMI (AMP, the CDI, the game's effects) stays the game's |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
 | `GAME_MIXER_CHANNELS` | `core/Game_audio.c`, the SDL_mixer device of every port (DOS and Win32): its channels (default SDL_mixer's 8) |
@@ -576,7 +582,10 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dosregs.h`: the registers of an interrupt and their 8- and 16-bit parts;
 - `Game_dosvga.c`, `.h`: the VGA DAC (3C7h-3C9h), Input Status #1 (3DAh), the Map Mask and the
   graphics controller, and mode 12h (640x480, 16 colours, four planes: the VGA window holds the
-  plane the Map Mask addresses, the picture is made of the planes through the attribute palette);
+  plane the Map Mask addresses, the picture is made of the planes through the attribute palette),
+  and the VESA BIOS of `GAME_DOS_VESA` (VBE 1.2: modes 100h, 101h, 103h, 105h in 256 colours,
+  a frame of 2 MB that the window at A0000h shows 64 KB of, the bank of 4F05h, the line of 4F06h
+  and the display start of 4F07h);
 - `Game_dosmem.c`, `.h`: DOS conventional memory of a DOS4GW game (DPMI blocks, real-mode
   buffers, the PSP) at its own addresses in the low memory of the guest window (zeros below
   the PSP at 10000h, the VGA window at A0000h), and the memory block of a
