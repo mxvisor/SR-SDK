@@ -1,8 +1,9 @@
 # Porting a DOS game
 
 A walk through a new port of a DOS/4GW (LE) game, from the original's files to a program that plays:
-what to run, what SR stops at and what to do about it, and the traps met so far. The README's
-[Starting a new port](README.md#starting-a-new-port) and [What a game provides](README.md#what-a-game-provides)
+what to run, what SR stops at and what to do about it, and the traps met so far.
+[Starting a new port](tools/README.md#starting-a-new-port), [SR's inputs](scons/README.md#srs-inputs) and
+what a game provides ([every port](runtime/README.md#what-a-game-provides), [a DOS game](runtime/dos/README.md#what-a-dos-game-provides))
 are the reference; the tools are in [`tools/analysis/`](tools/analysis/README.md).
 
 Keep a journal while you port: every step with its command, not only its result, in the game's
