@@ -13,7 +13,7 @@ not the SDK's (see [Regression data](#regression-data)):
 | `smoke` | the port starts under Xvfb, runs, closes by `WM_DELETE_WINDOW`, exits by itself and leaves no process; Linux and Wine | `smoke.sh`, `xclose.py` |
 | `image` | the disc images of `images.tsv` through `tools/image/image.py`: the hash of the cue sheet, the bin, the ISO and of every file of the data track must not change | `image_check.py` |
 | `aslr` | three runs in a row at different load addresses: each has to stay alive; under Linux the image base must change between the runs | `aslr.sh` |
-| `prefixes` | no tracked file of a game (name or text) carries another game's name or prefix (`markers.tsv`), and no tracked file of the SDK, `*.md` included, names any game | `check_prefixes.py` |
+| `prefixes` | no tracked file of a game (name or text) carries another game's name or prefix (`markers.tsv`), and no tracked file of the SDK, `*.md` included, names any game, except the table of ports in its `README.md` (between `<!-- ports -->` and `<!-- /ports -->`) | `check_prefixes.py` |
 | `layout` | a game's repository holds no `research/`, no `tools/` and no `*.md` at its root, tracked or only on the disk: the notes of a port live in `<GAME>/` | `check_layout.py` |
 | `stubs` | the Win32 stubs (`WinApi-stubs.c`) of each win32 game's x64-linux build: how many the program links, and that the `func <name>_c` of the llasm sources predict them all; row `sdk`: no stub that every game defines itself (it would never be linked) | `check_stubs.py` |
 | `llasm-gen`, `llasm-llvm` | hashes of `build/gen/**` and of the LLVM IR that `llasm.py` makes of it | `llasm_hashes.py` |
@@ -58,7 +58,7 @@ It means that the change must be looked at, and then the reference saved again.
 
 ## Regression data
 
-The SDK names no game. What a workspace checks is in a directory of its own, `$REGRESS_CONF`
+The SDK names no game, except in the table of ports of its `README.md`. What a workspace checks is in a directory of its own, `$REGRESS_CONF`
 (default: `regress/` in the workspace root, the parent of `SR-SDK/`; `$DOS_RECOMP_ROOT`
 overrides the root), best a repository of its own, since the reference changes with it:
 

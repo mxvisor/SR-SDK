@@ -57,6 +57,29 @@ else is SR-SDK's.
   Linux and Wine, at different load addresses, and compares SR's output for SR's own
   reference games.
 
+## Ports
+
+The games ported with SR-SDK so far. This is the one place the SDK names them: nothing
+else in it is written for one game. A name links to the port's repository, where it is
+published.
+
+<!-- ports -->
+| Game | Original | Builds | State |
+|---|---|---|---|
+| [Comix Zone](https://github.com/mxvisor/comix_zone-recomp) | Windows 95: WinG, Miles | Linux, Windows, Android | plays |
+| [Cyberia](https://github.com/mxvisor/cyberia-recomp) | DOS, DOS/4GW | Linux, Windows, Android | plays |
+| [Ignition](https://github.com/mxvisor/ignition-recomp) | three programs: DOS; Windows, DirectDraw; Windows, Glide (3dfx) | Linux, Windows, Android | all three play |
+| [Nightmare Creatures](https://github.com/mxvisor/nightmare_creatures-recomp) | Windows, Direct3D | Linux, Windows, Android | menus, levels, fighting; a full playthrough not checked |
+| [Take No Prisoners](https://github.com/mxvisor/take_no_prisoners-recomp) | Windows, DirectDraw and Direct3D | Linux, Windows, Android | plays, with known bugs |
+| Mass Destruction | DOS, DOS/4GW | Linux, Windows, Android | plays; an enhanced renderer (mod) |
+| Incoming | Windows, Direct3D | Linux, Windows, Android | plays |
+| Need for Speed III: Hot Pursuit | Windows, Direct3D and Glide | Linux, Windows | menus and races |
+| Pitfall: The Mayan Adventure | Windows 95, GDI | Linux, Windows | plays; the settings dialog not yet |
+| Syndicate | DOS (with its intro program) | Linux, Windows, Android | intro, menus, a mission's start |
+| The Lion King | DOS, DOS/4G | Linux, Windows, Android | plays: levels, sound (DSMI) |
+| Ecstatica II | DOS, DOS/4GW | Linux, Windows, Android | work in progress: the intro with music and sound |
+<!-- /ports -->
+
 ## A game repository
 
 ```
