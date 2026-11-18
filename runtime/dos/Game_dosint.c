@@ -51,6 +51,7 @@
 #include "Game_dospit.h"
 #include "Game_dosvga.h"
 #include "Game_dosexec.h"
+#include "Game_dosreal.h"
 #include "Game_hooks.h"
 #include "llasm_cpu.h"
 
@@ -191,6 +192,7 @@ void Game_DosIntInit(uint32_t null_isr)
     default_isr = null_isr;
     for (unsigned int vector = 0; vector < MAX_VECTORS; vector++) vectors[vector] = null_isr;
     isr_running = 0;
+    Game_DosRealReset();
     if (code_end == 0) find_code_bounds();
     if (code_end == 0) fprintf(stderr, GAME_NAME ": the translated code was not found; the game's interrupt handlers will not run\n");
 }
@@ -280,6 +282,34 @@ int Game_DosCallGuestIsr(uint32_t target)
 int Game_CallGuestInterrupt(uint8_t vector)
 {
     return Game_DosCallGuestIsr(vectors[vector]);
+}
+
+/* Set by the null ISR (its llasm glue): a handler chained to the vector it
+ * found, and the interrupt went on. */
+static int null_isr_reached;
+
+extern "C" void Game_DosNullIsrReached(void)
+{
+    null_isr_reached = 1;
+}
+
+int Game_DosHardwareInterrupt(uint8_t vector)
+{
+    Game_DosRegs regs;
+    int ran = 0;
+
+    if (!Game_DosGuestInterruptsEnabled()) return 0;
+    if (vectors[vector] != default_isr) {
+        null_isr_reached = 0;
+        if (!Game_CallGuestInterrupt(vector)) return 0;
+        if (!null_isr_reached) return 1;
+        ran = 1;
+    }
+    /* DOS/4GW passes an IRQ that no protected-mode handler took, or that the
+     * handler chained on, to the real-mode vector */
+    memset(&regs, 0, sizeof(regs));
+    regs.eflags = 0x3202u;
+    return Game_DosRealInterrupt(vector, &regs, -1, -1) || ran;
 }
 
 int Game_DosTimerTick(void)
@@ -525,7 +555,12 @@ static int dpmi_call(Game_DosRegs *regs)
         Game_DosSetAX(regs, 0x0053);
         break;
     case 0x0001:    /* free a descriptor */
-    case 0x0201:    /* set a real-mode interrupt vector */
+        Game_DosSetAX(regs, 0);
+        break;
+    case 0x0201:
+        /* Set a real-mode interrupt vector: BL = vector, CX:DX = the handler
+         * (Game_dosreal.c runs it when it lies in the DOS memory). */
+        Game_DosRealSetVector((uint8_t)regs->ebx, Game_DosCX(regs), Game_DosDX(regs));
         Game_DosSetAX(regs, 0);
         break;
     case 0x0002:
@@ -590,7 +625,7 @@ static int dpmi_call(Game_DosRegs *regs)
         uint8_t *structure = (uint8_t *)Game_DosGuestPointer(regs->edi);
         const uint8_t vector = (uint8_t)regs->ebx;
         Game_DosRegs nested;
-        uint16_t flags, es;
+        uint16_t flags, es, ds;
 
         if (structure == NULL) {
             Game_DosError(regs, 0x8021);
@@ -606,6 +641,7 @@ static int dpmi_call(Game_DosRegs *regs)
         memcpy(&nested.eax, structure + 0x1c, 4);
         memcpy(&flags, structure + 0x20, 2);
         memcpy(&es, structure + 0x22, 2);
+        memcpy(&ds, structure + 0x24, 2);
         nested.eflags = flags;
         if (trace_int()) fprintf(stderr, "  real-mode int %02x ax=%04x bx=%04x cx=%04x es=%04x\n", vector, Game_DosAX(&nested), Game_DosBX(&nested), Game_DosCX(&nested), es);
         if (vector == 0x2f && Game_DosCdCall(&nested, es)) {
@@ -618,6 +654,8 @@ static int dpmi_call(Game_DosRegs *regs)
             realmode_es = es;
             Game_DosDispatch(vector, &nested);
             realmode_es = -1;
+        } else if (Game_DosRealInterrupt(vector, &nested, ds, es)) {
+            /* the handler the game put into its DOS memory */
         } else {
             Game_DosSetCarry(&nested, 1);
         }
@@ -632,7 +670,16 @@ static int dpmi_call(Game_DosRegs *regs)
         memcpy(structure + 0x20, &flags, 2);
         break;
     }
-    case 0x0200:    /* get a real-mode vector */
+    case 0x0200:
+        /* Get a real-mode vector: the one the game set (DPMI 0201h); before
+         * that, as 0204h. */
+        if (Game_DosRealGetVector((uint8_t)regs->ebx) != 0) {
+            const uint32_t vector = Game_DosRealGetVector((uint8_t)regs->ebx);
+            Game_DosSetCX(regs, (uint16_t)(vector >> 16));
+            Game_DosSetDX(regs, (uint16_t)vector);
+            break;
+        }
+        /* fall through */
     case 0x0204:    /* get a protected-mode vector */
         /* BL = vector, CX:EDX = the handler. */
         regs->ecx = 0;
@@ -791,6 +838,9 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
     default:
         break;
     }
+    /* what the extender does with an interrupt protected mode does not take:
+     * the real-mode vector, a driver in the DOS memory (Game_dosreal.c) */
+    if (Game_DosRealInterrupt(number, regs, -1, -1)) return;
     fprintf(stderr, GAME_NAME ": unimplemented interrupt %02x (AX=%04x)\n", number, Game_DosAX(regs));
     Game_DosSetCarry(regs, 1);
 }

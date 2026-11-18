@@ -55,9 +55,14 @@ endp ; end procedure RunProcStack
 ; that chain lands somewhere safe: it returns at once, popping the iretd frame
 ; (eip, cs, eflags) the way SR translates `iretd`.  An ISR must leave every
 ; guest register exactly as it found it, so the return address goes in a
-; scratch temp, not in eax.
+; scratch temp, not in eax.  Game_DosNullIsrReached tells the runtime that
+; the chain got here: a hardware interrupt then goes on to the real-mode
+; handler of its vector, as DOS/4GW passes it on (Game_DosHardwareInterrupt).
+funcv Game_DosNullIsrReached
+
 proc Game_DosNullIsr global c_Game_DosNullIsr
 
+        call Game_DosNullIsrReached
         POP tmp1
         add esp, esp, 4
         POPFD

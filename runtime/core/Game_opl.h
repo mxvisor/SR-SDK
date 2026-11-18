@@ -48,10 +48,18 @@ typedef void (*Game_OplServe)(void *user);
 int Game_OplOpen(Game_OplServe serve, void *user, int rate);
 /* silences and frees the chip */
 void Game_OplClose(void);
+/* Until the chip is closed, its output loses its DC as a card's output does
+ * (its capacitor): the half-sine waveforms of the chip have one.  The FM chip
+ * of Game_dossb.c (GAME_DOS_SB_OPL) sets it. */
+void Game_OplDcBlock(void);
 void Game_OplLock(void);
 void Game_OplUnlock(void);
 /* register 0x00-0xff of the chip */
 void Game_OplWrite(unsigned int reg, unsigned int value);
+/* The same from another thread than the audio one (a driver run by the game,
+ * at its own timer): the write goes in at its time, a buffer of the output
+ * later (no lock needed). */
+void Game_OplWriteTimed(unsigned int reg, unsigned int value);
 
 #ifdef __cplusplus
 }

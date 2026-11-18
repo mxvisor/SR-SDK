@@ -146,7 +146,9 @@ the distrib copy (`build/distrib/data`): DOSBox mounts it as `C:` with an overla
 the disc's cue sheet (`build/cd/`) as `D:`; Wine runs on a `fuse-overlayfs` mount of it
 (a copy when it is missing), and `D:` is the unpacked disc (`build/disc`). What the
 original writes lands in `build/run/orig-*`. `--headless[=N]` takes screenshots under
-Xvfb (`build/shots/orig-*`), `--keys=` sends keys. The common part is
+Xvfb (`build/shots/orig-*`), `--keys=` sends keys. A run in a window keeps what the
+earlier runs wrote (saves, settings), a headless one starts clean, as the key sequences
+expect; `--fresh` and `--keep-overlay` choose otherwise. The common part is
 `tools/run_orig_common.sh`.
 
 ## Using it in a game repository
@@ -254,10 +256,13 @@ It builds SDL2 and SDL2_mixer for arm64 once (`tools/android_sdl.sh`, into
 `build/sysroot-android-arm64/`), then `libmain.so` with
 `scons device=arm64-android`. The gradle project is put together in
 `build/android/project/` from SDL's own `android-project` of the same release,
-with `android/app.gradle` and `android/GameActivity.java` over it, and the
+with `android/app.gradle` and `android/*.java` over it, and the
 game's `game/android/res/` (its icons) over that. On the first launch, and
-after each update of the APK, `GameActivity` unpacks the data from the APK's
-assets: the port reads its files with `fopen`.
+after each update of the APK, `UnpackActivity` (the launcher's) unpacks the data
+from the APK's assets on a thread of its own, with its progress on the screen
+(`assets/game.files` lists the tree), then starts `GameActivity` (SDL's): the
+port reads its files with `fopen`, and a copy of hundreds of MB on the
+activity's thread makes Android close the program as one that does not answer.
 
 `tools/distrib_cd.py OUT_DIR`, from the game repository's root, makes the
 game's data directory the port runs from, the directory the game's fullest
@@ -393,6 +398,9 @@ A DOS game (`runtime/dos`) also takes, all optional:
 | `GAME_RUNTIME_INIT()` / `GAME_RUNTIME_DEINIT()` | the game's own part of the runtime (nonzero: failed). `Game_dosmain.c` makes the DOS world of every game first: conventional memory at its own addresses (`Game_dosmem.h`: the PSP with the command line and its environment at 10000h, the VGA window at A0000h as `Game_FrameBuffer`), the disc and the music; the game's end comes before the world's |
 | `GAME_DOS_ENV` | the variables of the DOS environment, `"NAME=VALUE"` strings separated by commas; WATCOM's startup builds the array of their addresses itself; for a game that starts at its main (`GAME_ENTRY`), which skips that, it is `Game_DosEnviron`, and `instruction_replacements.sci` points the C library's `getenv` at it |
 | `GAME_DOS_SOUNDBLASTER` | the Sound Blaster 2.0 of `Game_dossb.c` (DSP, 8-bit DMA, the IRQ from `SR_CheckTimer`), with `BLASTER=A220 I5 D1 T1` in the environment; `GAME_SB_BASE`, `GAME_SB_IRQ`, `GAME_SB_DMA` change the card. The IRQ handler the game installs has to be translated code: SR finds a handler given to INT 21h AH=25h by itself (see below) |
+| `GAME_DOS_SB_OPL` | with `GAME_DOS_SOUNDBLASTER`: the card's FM chip, at base+8/9 and at the Ad Lib's 388h/389h (the OPL2 of `core/Game_opl.c`, opened at the first write; the status with the chip's two timers), for a driver that plays its music on the card's FM |
+| `GAME_DOS_REALMODE` | `Game_dosreal.c`: an interpreter of the 8086 (with the 80186's additions) for the 16-bit code a game loads into its DOS memory at run time and calls through a real-mode vector (a sound driver read from a file), which SR cannot translate: DPMI 0201h, an INT that protected mode does not handle, DPMI 0300h, and the card's IRQ the game's handler passes on. Without it those find no real-mode handler, as before |
+| `GAME_DOS_KBD_MIN_HOLD_MS` | `Game_doskbd.c`: how long (ms) a key's press reaches the game's INT 9 handler before its release, and its release before its next press (default 60: a tap the event loop hands over in one batch is seen by a game that reads the keys once a frame); counted for each key on its own, so the keys of two fingers keep their times. 0 hands the bytes over as they come, as DOSBox does |
 | `GAME_DOS_VESA` | the VESA BIOS of `Game_dosvga.c` (INT 10h AH=4Fh, VBE 1.2): the 256-colour modes 100h, 101h, 103h and 105h, banked through the window at A0000h (4F05h, no window function), with 4F06h and 4F07h; the blocks of 4F00h and 4F01h at ES:DI of a real-mode call (DPMI 0300h). Without it AH=4Fh fails as before: a game that only probes VESA keeps its VGA modes |
 | `GAME_DOS_DSMI` | `Game_dosdsmi.c`: DSMI's MCP (Otto Chrons' Multi Channel Player 2.6) mixed on the host: the game's `instruction_replacements.sci` puts `call Game_DsmiMcpGetDelta` at MCP's getdelta and `call Game_DsmiMcpPoll microseconds, vars, order` at its poll (CDI entries 38h and 34h; the head of the file says how to find them and MCP's variables); the rest of DSMI (AMP, the CDI, the game's effects) stays the game's |
 | `GAME_LOG_FILE` | Windows: the name of the log file of a program without a console (default `<program>.log`) |
@@ -599,8 +607,9 @@ skeleton/               a starting point for a new game repository -- to come
 - `Game_dosfile.c`, `.h`: the file functions of INT 21h (open, create, read, write, seek,
   close, FindFirst/FindNext, the DTA, the devices CON and NUL);
 - `Game_doskbd.c`, `.h`: the keyboard: the controller's bytes (port 60h, E0 before a grey
-  key) delivered to the game's INT 9 handler, the BIOS buffer behind INT 16h, INT 21h
-  08h/0Bh and WATCOM's kbhit/getch;
+  key) delivered to the game's INT 9 handler, each key held at least `GAME_DOS_KBD_MIN_HOLD_MS`
+  (a tap again while its press still waits is left out: quick taps do not pile up), the BIOS
+  buffer behind INT 16h, INT 21h 08h/0Bh and WATCOM's kbhit/getch;
 - `Game_doscd.c`, `.h`: MSCDEX on drive D:: the install and drive checks, the table of
   contents and the audio status (IOCTL input), PLAY/STOP/RESUME AUDIO through `Game_music.c`;
 - `Game_dospit.c`, `.h`: PIT channel 0 on the host clock: the reload value and the counter
@@ -618,6 +627,14 @@ skeleton/               a starting point for a new game repository -- to come
   `SR_AIL2_register_driver` and `SR_AIL2_call_driver` (`llasm/ail2.llinc`, in every DOS game's llasm);
 - `Game_dosdsmi.c`: DSMI's MCP on the host (`GAME_DOS_DSMI`): its voices mixed into a stream of
   the port, its time the stream's, for a game whose MCP mixes through a based ES selector;
+- `Game_dossb.c`, `.h`: the Sound Blaster 2.0 of `GAME_DOS_SOUNDBLASTER` (the DSP, the 8-bit
+  DMA, the IRQ at the end of a block, the mixer's volume), with the FM chip of `GAME_DOS_SB_OPL`;
+- `Game_dosreal.c`, `.h`: real-mode code in the DOS memory (`GAME_DOS_REALMODE`), on an
+  interpreter of the 8086 and the 80186 of its own: a driver the game loads into a DOS block
+  and calls through a real-mode vector (DPMI 0201h, an INT the protected-mode code does not
+  handle, DPMI 0300h), its handler of the card's IRQ
+  (INT 21h AH=25h of the driver) reached when the game's protected-mode handler passes the IRQ
+  on (`Game_DosHardwareInterrupt` of `Game_dosint.c`), and the ports of the translated code;
 - `Game_keys.c`, `.h`: the PC scancode of an SDL key, `<GAME>_AUTO_KEYS`;
 - `Game_pad.c`, `.h`: the host's gamepads (`SDL_GameController`, up to four, plugged in and out
   while the game runs) with the state of XInput: its buttons, two sticks, two triggers, with or
@@ -625,7 +642,8 @@ skeleton/               a starting point for a new game repository -- to come
   `Gamepad=off` in the settings file: nothing is opened. `$<GAME>_DEBUG_PAD` logs the pads and
   every change of their state;
 - `touchgamepad.c`, `.h`: the on-screen buttons of the Android build, drawn over the game and
-  pressing keys; a game's `game/Game_touchlayout.h` places them (`touchlayout_default.h` otherwise).
+  pressing keys; a game's `game/Game_touchlayout.h` places them (`touchlayout_default.h` otherwise),
+  and may define `GP_SECOND_KEY(index)`, a second key a button holds with its own (a chord: Ctrl+Alt of one thumb).
   A button with the key `TOUCHGAMEPAD_KEYBOARD` opens a translucent PC keyboard (F1-F12, Esc,
   Shift, Ctrl, Alt and the arrows; EN/RU changes only its labels, the game makes the keys
   letters) in place of the buttons: its HIDE key, or a touch above it, closes it, and while it is
@@ -634,8 +652,9 @@ skeleton/               a starting point for a new game repository -- to come
   button of the DOS mouse where the finger is, until it is lifted;
 - `Game_gyro.c`, `.h`: the host's gyroscope (a phone, a tablet) as the pointer, the mod
   `Gyro_Mouse=on` with `Gyro_Mouse_Speed=1..9` (5: the picture's width in a turn of 38 degrees);
-  opened on the thread that pumps the events, only while the mod is on. The INT 33h driver of
-  `runtime/dos` then keeps its own position, which turning the device moves; a touch away from the
+  opened on the thread that pumps the events, only while the mod is on, and closed there before
+  that thread ends (`Game_GyroQuit`: on Android its events come through that thread's looper).
+  The INT 33h driver of `runtime/dos` then keeps its own position, which turning the device moves; a touch away from the
   on-screen buttons (the pointer of `touchgamepad.c`, not SDL's mouse of the first finger) puts
   it under the finger and presses the button, and the turns go on from there. An on-screen button
   with the key `TOUCHGAMEPAD_MOUSE_LEFT` is the mouse's left button; a layout may give it to a

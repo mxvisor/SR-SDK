@@ -52,6 +52,11 @@ int  Game_GyroConfig(const char *key, const char *value);
 /* the thread that pumps SDL's events, before each pump: opens or closes the
  * sensor as the mod is turned on or off, and counts its motion */
 void Game_GyroPump(void);
+/* the same thread, before it ends: closes the sensor.  On Android its events
+ * come through the looper of that thread, which goes with the thread: closed
+ * later (by SDL_Quit on another thread) it would be reached through a looper
+ * that is gone (a destroyed mutex, the process aborts) */
+void Game_GyroQuit(void);
 /* nonzero while the mod is on, with a sensor or not */
 int  Game_GyroMod(void);
 /* nonzero while the mod is on and the sensor is open */

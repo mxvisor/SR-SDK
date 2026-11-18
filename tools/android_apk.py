@@ -34,10 +34,12 @@
 #
 # 1. SDL2 and SDL2_mixer for arm64, by tools/android_sdl.sh, unless there;
 # 2. libmain.so, by scons device=arm64-android (libgameloader.so, which loads it, here);
-# 3. <build>/android/jniLibs/, assets/game/ and assets/NOTICE.txt: the .so files,
-#    the data, SR-SDK's LICENSE and NOTICE.md;
+# 3. <build>/android/jniLibs/, assets/game/, assets/game.files and assets/NOTICE.txt:
+#    the .so files, the data and its list (for UnpackActivity), SR-SDK's LICENSE and
+#    NOTICE.md;
 # 4. <build>/android/project/: SDL's android-project of the same SDL release,
-#    with android/app.gradle, android/GameActivity.java, the game's name and icon from
+#    with android/app.gradle, android/*.java (UnpackActivity, the launcher's: it
+#    unpacks the data on the first launch; GameActivity: SDL's), the game's name and icon from
 #    game.cfg and the game's game/android/res/ over it;
 # 5. gradle assembleDebug, all of its output in <build>/android/.
 #
@@ -171,6 +173,18 @@ def main():
     assets = os.path.join(android, 'assets')
     shutil.rmtree(assets, ignore_errors=True)
     shutil.copytree(data, os.path.join(assets, 'game'), copy_function=link_or_copy)
+    # the tree for UnpackActivity: "d <path>" for a directory, "<size> <path>" for a
+    # file (AssetManager.list() of each directory would be slow, and gives no sizes)
+    with open(os.path.join(assets, 'game.files'), 'wt', encoding='utf-8', newline='\n') as stream:
+        for top, dirs, files in os.walk(os.path.join(assets, 'game')):
+            dirs.sort()
+            rel = os.path.relpath(top, os.path.join(assets, 'game'))
+            if rel != '.':
+                stream.write('d %s\n' % rel.replace(os.sep, '/'))
+            for name in sorted(files):
+                path = os.path.join(top, name)
+                stream.write('%d %s\n' % (os.path.getsize(path),
+                    os.path.relpath(path, os.path.join(assets, 'game')).replace(os.sep, '/')))
     # the licenses of the code and the font in libmain.so and of SDL
     with open(os.path.join(assets, 'NOTICE.txt'), 'wb') as stream:
         stream.write(b'\n\n'.join(open(os.path.join(SDK_ROOT, name), 'rb').read().rstrip()
@@ -186,7 +200,8 @@ def main():
                  os.path.join(project, 'app', 'build.gradle'))
     java_dir = os.path.join(project, 'app', 'src', 'main', 'java', *ACTIVITY_PACKAGE.split('.'))
     os.makedirs(java_dir)
-    shutil.copy2(os.path.join(SDK_ROOT, 'android', 'GameActivity.java'), java_dir)
+    for source in sorted(glob.glob(os.path.join(SDK_ROOT, 'android', '*.java'))):
+        shutil.copy2(source, java_dir)
 
     manifest = os.path.join(project, 'app', 'src', 'main', 'AndroidManifest.xml')
     with open(manifest, 'rt') as stream:
@@ -199,6 +214,27 @@ def main():
     text, count = re.subn(r'(<activity android:name="\.GameActivity")', r'\1\n            android:screenOrientation="sensorLandscape"', text)
     if count != 1:
         fail("SDL's AndroidManifest.xml: no activity to give an orientation")
+    # the launcher starts UnpackActivity, which unpacks the data and starts GameActivity;
+    # it has no task of its own in the list of recent programs
+    text, count = re.subn(r'\s*<intent-filter>\s*<action android:name="android\.intent\.action\.MAIN" />'
+                          r'\s*<category android:name="android\.intent\.category\.LAUNCHER" />'
+                          r'\s*</intent-filter>', '', text)
+    if count != 1:
+        fail("SDL's AndroidManifest.xml: no launcher's intent-filter to move")
+    text, count = re.subn(r'(\n([ \t]*)<activity android:name="\.GameActivity")',
+                          r'\n\2<activity android:name=".UnpackActivity"\n'
+                          r'\2    android:label="@string/app_name"\n'
+                          r'\2    android:screenOrientation="sensorLandscape"\n'
+                          r'\2    android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"\n'
+                          r'\2    android:excludeFromRecents="true"\n'
+                          r'\2    android:exported="true">\n'
+                          r'\2    <intent-filter>\n'
+                          r'\2        <action android:name="android.intent.action.MAIN" />\n'
+                          r'\2        <category android:name="android.intent.category.LAUNCHER" />\n'
+                          r'\2    </intent-filter>\n'
+                          r'\2</activity>\n\1', text)
+    if count != 1:
+        fail("SDL's AndroidManifest.xml: no GameActivity to put UnpackActivity before")
     # SDL's template asks to be started when a USB device is plugged in
     text = re.sub(r'\s*<!-- Let Android know that we can handle some USB devices[^>]*-->'
                   r'\s*<intent-filter>\s*<action android:name="android\.hardware\.usb\.'

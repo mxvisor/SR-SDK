@@ -49,8 +49,8 @@ extern "C" {
 int Game_DosSbIn(uint16_t port, uint32_t *value);
 int Game_DosSbOut(uint16_t port, uint32_t value);
 
-/* The IRQ of the card at the end of a block of the DMA transfer, from the
- * game's timer (SR_CheckTimer). */
+/* From the game's timer (SR_CheckTimer): the card takes the samples of the
+ * DMA buffer the output needs, and raises its IRQ at the end of a block. */
 void Game_DosSbDeliverIrq(void);
 
 /* Closes the audio device. */

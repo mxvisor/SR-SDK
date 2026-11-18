@@ -43,9 +43,19 @@
 #define KBD_RAW_SIZE 128u   /* controller bytes, a power of 2 */
 #define KBD_BIOS_SIZE 64u   /* BIOS buffer, a power of 2 */
 /* The event loop can hand over a key's press and release in one batch; a game
- * that samples the key state once a frame would miss the press, so a release
- * waits this long after it. */
-#define KBD_MIN_HOLD_MS 60u
+ * that samples the key state once a frame would miss the press, so a key's
+ * release waits this long after its own press, and a press of the key just
+ * released waits as long after the release (a game that acts on a new press,
+ * the key up in one frame and down in the next, would miss the second of two
+ * quick taps).  Only the key's own press counts: the times between different
+ * keys stay as they were (DOSBox holds none, it hands over the bytes as they
+ * come), so a release never comes together with another key's.  A game whose
+ * frame is longer may say how long in Game_hooks.h. */
+#ifndef GAME_DOS_KBD_MIN_HOLD_MS
+#define GAME_DOS_KBD_MIN_HOLD_MS 60u
+#endif
+/* (a variable: 0 would make the comparisons always false, a warning) */
+static uint32_t min_hold_ms = GAME_DOS_KBD_MIN_HOLD_MS;
 
 
 typedef struct {
@@ -171,8 +181,30 @@ void Game_DosKbdInit(void)
     Game_AutoKeysStart();
 }
 
+/* The press of the key (byte, after E0 if grey) is in the controller's queue,
+ * not yet handed to the game. */
+static int raw_pending_make(uint8_t byte, int grey)
+{
+    unsigned int i;
+    int after_e0 = 0;
+
+    for (i = raw_read; i != raw_write; i = (i + 1u) & (KBD_RAW_SIZE - 1u)) {
+        if (raw_queue[i] == 0xe0u) {
+            after_e0 = 1;
+            continue;
+        }
+        if (raw_queue[i] == byte && after_e0 == grey) return 1;
+        after_e0 = 0;
+    }
+    return 0;
+}
+
 void Game_DosKbdDrain(void)
 {
+    /* the taps left out of the controller's queue, by code (E0 keys | 80h):
+     * their releases go too */
+    static uint8_t dropped[256];
+
     while (Game_KQueueRead != Game_KQueueWrite) {
         const SDL_Event *event = &Game_EventKQueue[Game_KQueueRead];
         uint8_t code;
@@ -184,11 +216,26 @@ void Game_DosKbdDrain(void)
         if (code != 0) {
             const int grey = (code & 0x80u) != 0;
             const uint8_t byte = (uint8_t)((code & 0x7fu) | (event->type == SDL_KEYUP ? 0x80u : 0u));
-            /* the grey keys send E0 first: how a game tells them from the keypad */
-            if (grey) raw_put(0xe0);
-            raw_put(byte);
+            int drop;
+
+            /* The presses and the releases are held apart (GAME_DOS_KBD_MIN_HOLD_MS):
+             * taps quicker than that would pile up and reach the game long after
+             * the last one.  A press of a key whose press still waits in the
+             * queue is left out, and its release; the BIOS buffer keeps it. */
+            if (event->type == SDL_KEYDOWN) {
+                drop = raw_pending_make((uint8_t)(code & 0x7fu), grey);
+                dropped[code] = (uint8_t)drop;
+            } else {
+                drop = dropped[code];
+                dropped[code] = 0;
+            }
+            if (!drop) {
+                /* the grey keys send E0 first: how a game tells them from the keypad */
+                if (grey) raw_put(0xe0);
+                raw_put(byte);
+            }
             code &= 0x7fu;
-            if (trace_keys()) fprintf(stderr, "KEY queue %s%02x\n", grey ? "e0 " : "", byte);
+            if (trace_keys()) fprintf(stderr, "KEY queue %s%02x%s\n", grey ? "e0 " : "", byte, drop ? " dropped" : "");
         }
         if (event->type == SDL_KEYDOWN) {
             const uint8_t ascii = key_ascii(event->key.keysym.sym, event->key.keysym.mod);
@@ -212,7 +259,8 @@ uint8_t Game_DosKbdPort(uint16_t port)
 
 void Game_DosKbdDeliverIrq(void)
 {
-    static uint32_t make_tick;
+    /* by code (E0 keys | 80h): the last press, the last release */
+    static uint32_t make_tick[256], break_tick[256];
 
     /* The handler starts with an ACTION checkpoint, which comes back here
      * before it reads port 60h: delivering again then would hand it an empty
@@ -222,17 +270,25 @@ void Game_DosKbdDeliverIrq(void)
     while (raw_read != raw_write) {
         const unsigned int before = raw_read;
         uint8_t code = raw_queue[raw_read];
+        unsigned int key;
+        uint32_t now;
 
         if (code == 0xe0u) {
             /* an E0 goes with the code after it, which may not be here yet */
             const unsigned int next = (raw_read + 1u) & (KBD_RAW_SIZE - 1u);
             if (next == raw_write) break;
             code = raw_queue[next];
-        }
-        if (code & 0x80u) {
-            if (SDL_GetTicks() - make_tick < KBD_MIN_HOLD_MS) break;
+            key = (code & 0x7fu) | 0x80u;
         } else {
-            make_tick = SDL_GetTicks();
+            key = code & 0x7fu;
+        }
+        now = SDL_GetTicks();
+        if (code & 0x80u) {
+            if (now - make_tick[key] < min_hold_ms) break;
+            break_tick[key] = now;
+        } else {
+            if (now - break_tick[key] < min_hold_ms) break;
+            make_tick[key] = now;
         }
         if (trace_keys()) fprintf(stderr, "KEY irq %02x\n", raw_queue[raw_read]);
         /* One handler call takes one byte.  A handler that cannot run (IF

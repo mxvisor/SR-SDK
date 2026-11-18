@@ -51,6 +51,11 @@ uint32_t Game_DosGetVector(uint8_t vector);
 int Game_DosCallGuestIsr(uint32_t target);
 /* The same for the handler of a vector (the keyboard's IRQ 1, IRQ 0). */
 int Game_CallGuestInterrupt(uint8_t vector);
+/* A hardware interrupt (a sound card's IRQ): the game's handler of the
+ * vector, and, when there is none or it chains to the vector it found (the
+ * null ISR), the real-mode handler of the vector (Game_dosreal.c), as DOS/4GW
+ * passes it on.  0 if nothing ran. */
+int Game_DosHardwareInterrupt(uint8_t vector);
 /* The timer interrupt (IRQ 0): the game's INT 8 handler, or, as the BIOS does
  * when the game did not take INT 8, its INT 1Ch one. */
 int Game_DosTimerTick(void);

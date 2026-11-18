@@ -54,7 +54,10 @@
 #                    in <repo>/build/shots/orig-{dosbox,wine}/
 #   --keys=SPEC      headless: send keys, SPEC = delay_s:Key[,...] (xdotool names)
 #   --cd=FILE|none   (DOSBox) the cue sheet to mount on D:, (Wine) the directory for D:
-#   --keep-overlay   do not clear what the previous run wrote
+#   --keep-overlay   keep what the previous runs wrote (saves, settings): the default of a
+#                    run in a window
+#   --fresh          clear it first: the default of --headless, whose key sequences
+#                    (research/auto-keys.md) expect the first start of the game
 #   --help
 
 _orig_init() {
@@ -71,7 +74,7 @@ _orig_init() {
   elif [ -z "$CD" ]; then
     CD="$(compgen -G "$GAME_REPO/build/cd/*.cue" | head -n 1 || true)"
   fi
-  HEADLESS=0; N_SHOTS=4; KEYS=(); KEEP=0
+  HEADLESS=0; N_SHOTS=4; KEYS=(); KEEP=
 }
 
 _orig_parse() {
@@ -83,10 +86,14 @@ _orig_parse() {
       --keys=*)     IFS=',' read -r -a KEYS <<< "${1#*=}" ;;
       --cd=*)       CD="${1#*=}"; [ "$CD" != none ] || CD="" ;;
       --keep-overlay) KEEP=1 ;;
+      --fresh)        KEEP=0 ;;
       *) echo "Unknown argument: $1 (see --help)" >&2; exit 1 ;;
     esac
     shift
   done
+  if [ -z "$KEEP" ]; then
+    if [ "$HEADLESS" -eq 1 ]; then KEEP=0; else KEEP=1; fi
+  fi
 }
 
 _orig_need() {

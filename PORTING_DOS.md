@@ -243,6 +243,24 @@ stays in the port is a decision of its own.
 - `GAME_DOS_SOUNDBLASTER`: a Sound Blaster 2.0 for a game that drives the card itself
   (`BLASTER=A220 I5 D1 T1`). The game's settings file chooses the card; a game set to no sound plays
   none, so check what its default file says.
+- A sound driver the game reads from a file (a `.BIN` of its own) is 16-bit code that the
+  game loads into a DOS block, points a real-mode vector at (DPMI 0201h) and calls with INT n from
+  protected mode. SR cannot translate it (it is not in the executable, and the game patches it), so
+  `Game_dosreal.c` (`GAME_DOS_REALMODE`) runs it on an interpreter of the 8086: the call, its
+  INT 21h AH=25h on the card's IRQ, and the IRQ itself, which reaches the driver's real-mode handler when the game's protected-mode handler of that
+  IRQ passes it on (`jmp far` to the old vector: the null ISR of `Game-llasm.llasm` marks it,
+  `Game_DosHardwareInterrupt`). The driver sees the card through the same ports as the translated
+  code. Its settings file must name the card the runtime has (port, IRQ, DMA): make it as the game's
+  installer would and give it with `extra_files=` in `distrib.cfg`.
+- A driver with a small double buffer (two blocks of 20 ms) fills the block the card has just played,
+  at the IRQ. The card has to take its samples when the time comes and raise the IRQ at the end of the
+  block (`Game_dossb.c` does it on the game's thread), not when the host's output asks: the output
+  asks in pieces of its own (23 ms on SDL_mixer), bigger than a block, and would read blocks the driver
+  has not filled yet (crackle, broken effects). A driver may also change the rate after it starts the
+  card (D0h, 40h, D4h).
+- Such a driver usually plays its music on the card's FM chip (`out` to base+8/9 or 388h/389h):
+  `GAME_DOS_SB_OPL` gives `GAME_DOS_SOUNDBLASTER` that chip. Without it the effects play and the
+  music is silent. `$<GAME>_TRACE_PORTS` shows which ports the driver writes.
 - A sound library linked into the game (Miles AIL 2/3, DSMI) is often better run on the host than
   emulated. Typical reasons: its mixer reads tables through a selector with a base of its own
   (`mov es, [...]`, `mov ax, [es:ebx+ebx]`), and SR takes every segment as flat, so it mixes silence;
@@ -257,7 +275,9 @@ stays in the port is a decision of its own.
   takes the loop's first sample. A sample lost at each turn of a short loop is a rasp, not a click.
 - `$<GAME>_TRACE_SOUND`, `$<GAME>_TRACE_PORTS`, `$<GAME>_TRACE_INT` trace the runtime; with
   `SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=<file>` the output is raw S16 to look at (gaps, clipping,
-  jumps) with a script. Hearing it stays the user's check.
+  jumps) with a script. On a desktop the card's stream has a device of its own, and the two devices
+  write the same file: record with `GAME_AUDIO_ON_MIXER 1` in `Game_hooks.h` for the time of it.
+  Hearing it stays the user's check.
 
 ## 10. Headless runs and keys
 
@@ -268,6 +288,15 @@ stays in the port is a decision of its own.
   for every later check: a "level" reached through the demo is not the game.
 - A cheat of the game (a word typed on the title screen) is the quickest way to a later level for a
   check; a temporary replacement that forces it is fine while debugging and goes before a commit.
+- A key the game misses when tapped quickly: find what its INT 9 handler writes (a table of keys
+  down, a mask, the last key pressed) and how often the code that reads it runs. A game that acts on
+  a new press (up in one frame, down in the next) or on the last key pressed misses a press and a
+  release that come in one frame. `Game_doskbd.c` holds each key apart from its own press and
+  release (`GAME_DOS_KBD_MIN_HOLD_MS`, 60 ms); the times between different keys stay the fingers'.
+  A hold counted from any key's press would hand over the releases of two keys together (an arrow
+  held, then fire: the game never sees fire alone). A game that reads the keys in its own loop often
+  enough takes 0, as DOSBox: the least delay. On-screen buttons give taps of 1 ms, a keyboard 16 ms
+  and more; `$<GAME>_TRACE_KEYS` shows when each byte reaches the handler.
 
 ## 11. Android
 
@@ -275,6 +304,15 @@ stays in the port is a decision of its own.
 on-screen buttons are `game/Game_touchlayout.h` (`touchlayout_default.h` otherwise): the controls the
 manual lists, a `TOUCHGAMEPAD_KEYBOARD` button for typed words and cheats. The user tries it on a
 device.
+
+- A game that "crashes at once" may not crash: `adb shell dumpsys activity exit-info <package>`
+  gives the reason (ANR, a signal), `adb logcat -b crash` the native aborts, `dumpsys dropbox --print
+  data_app_anr` the stacks of an ANR, `Android/data/<package>/files/startup.txt` the steps before
+  the native side starts. Hundreds of MB of data unpacked on the activity's thread were an ANR at
+  the first touch; `UnpackActivity` does it on a thread of its own.
+- What a thread of the port opens through its Android looper (the gyroscope's sensor, on the thread
+  that pumps the events) is closed by that thread before it ends: `SDL_Quit` later reaches a looper
+  that is gone, and the process aborts on the way out.
 
 ## 12. Changes to SR and the SDK
 
@@ -299,4 +337,7 @@ same, every port must still build and start), then every game's SDK copy is move
 | `llasm instruction error - mov cr0, ...`, `smsw`, `sidt` | WATCOM's FPU emulator and FPU check: replacements on `Game_DosCr0`, `Game_DosIdtBase` |
 | `Can't set VESA mode`, `unimplemented interrupt 10 (AX=4f01)` | `GAME_DOS_VESA` |
 | four squeezed copies of the picture side by side | mode X (Chain 4 cleared): the runtime has it; latch copies go to `Game_DosVgaCopy` |
+| a crash writing into `.text` at a handler the game patches (`mov [loc_X], ds`) | a variable (the old vector) listed in `fixup_interpret_as_code.sci` before the handler: list only the handler |
+| a game's sound driver in a file plays effects, no music | its music is FM: `GAME_DOS_SB_OPL` |
+| a quick tap, or a tap with another key held, is lost | how the game's INT 9 handler keeps the keys; `GAME_DOS_KBD_MIN_HOLD_MS` (§10) |
 | data among the `mov`/`daddr` candidates | strings, constants, a chained handler's old vector, jump-table entries: look at the bytes |

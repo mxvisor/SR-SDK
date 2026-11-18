@@ -24,9 +24,8 @@
 
 package io.github.mxvisor.srsdk;
 
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
-import android.content.res.AssetManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -39,33 +38,15 @@ import android.view.WindowManager;
 import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 
 /**
- * SDLActivity that unpacks the game's data before the native side starts:
- * the port reads everything with fopen, which cannot see APK assets.
- *
- * Layout after the first launch:
- *   files/game/   the game's data from the APK's assets/game/
- *   files/write/  the write root: saves, screenshots, the port's log
- *
- * Game_android.c hands both to the port.  The copy goes to game.staging and
- * is renamed into place, so a failed or interrupted run never leaves a
- * half-extracted game/ behind; game/.installed holds the time the APK was
- * installed, so an updated APK unpacks its data again.
+ * The SDLActivity of the game.  UnpackActivity, the launcher's, unpacks the
+ * game's data first; started without it (from the list of recent programs
+ * after an update of the APK) this one hands over to it.
  */
 public class GameActivity extends SDLActivity {
-    private static final int BUFFER = 64 * 1024;
-    private static final String STAMP = ".installed";
-
     private String tag = "SR-SDK";
 
     @Override
@@ -77,12 +58,13 @@ public class GameActivity extends SDLActivity {
             if (previous != null) previous.uncaughtException(thread, throwable);
         });
         startup("onCreate");
-        try {
-            prepareData();
-            startup("data ready");
-        } catch (IOException e) {
-            startup("data failed: " + e);
-            Log.e(tag, "cannot unpack the game's data", e);
+        if (!UnpackActivity.ready(this)) {
+            // finished before its window shows: SDL's surface, and so the
+            // native side, never start (onDestroy undoes the rest of SDL's
+            // onCreate)
+            startup("no data: to UnpackActivity");
+            startActivity(new Intent(this, UnpackActivity.class));
+            finish();
         }
         startup("super.onCreate");
         super.onCreate(savedInstanceState);
@@ -128,23 +110,14 @@ public class GameActivity extends SDLActivity {
         if (hasFocus) hideSystemBars();
     }
 
-    /* A file the user can read without adb: Android/data/<package>/files/.
-     * The Java crash and the steps before the native side starts. */
-    private File externalFile(String name) {
-        File dir = getExternalFilesDir(null);
-        return new File(dir != null ? dir : getFilesDir(), name);
-    }
-
+    /* The Java crash and the steps before the native side starts, in files the
+     * user can read without adb: Android/data/<package>/files/. */
     private void startup(String message) {
-        try (PrintWriter out = new PrintWriter(new FileWriter(externalFile("startup.txt"), true))) {
-            out.println(System.currentTimeMillis() + " " + message);
-        } catch (IOException e) {
-            Log.w(tag, "cannot write startup.txt", e);
-        }
+        UnpackActivity.startup(this, message);
     }
 
     private void writeJavaCrash(Throwable throwable) {
-        try (PrintWriter out = new PrintWriter(externalFile("crash-java.txt"))) {
+        try (PrintWriter out = new PrintWriter(UnpackActivity.externalFile(this, "crash-java.txt"))) {
             throwable.printStackTrace(out);
         } catch (IOException e) {
             Log.w(tag, "cannot write crash-java.txt", e);
@@ -207,93 +180,5 @@ public class GameActivity extends SDLActivity {
         if (error != null) {
             throw new UnsatisfiedLinkError(error);
         }
-    }
-
-    private void prepareData() throws IOException {
-        File files = getFilesDir();
-        File game = new File(files, "game");
-        String installed = installTime();
-        new File(files, "write").mkdirs();
-        if (installed.equals(readStamp(new File(game, STAMP)))) {
-            return;
-        }
-        long start = System.currentTimeMillis();
-        File staging = new File(files, "game.staging");
-        deleteRecursively(staging);
-        copyTree(getAssets(), "game", staging);
-        try (OutputStream out = new FileOutputStream(new File(staging, STAMP))) {
-            out.write(installed.getBytes(StandardCharsets.UTF_8));
-        }
-        deleteRecursively(game);
-        if (!staging.renameTo(game)) {
-            throw new IOException("cannot rename " + staging + " to " + game);
-        }
-        Log.i(tag, "game data ready in " + (System.currentTimeMillis() - start) + " ms");
-    }
-
-    private String installTime() {
-        try {
-            return Long.toString(getPackageManager()
-                    .getPackageInfo(getPackageName(), 0).lastUpdateTime);
-        } catch (PackageManager.NameNotFoundException e) {
-            return "";
-        }
-    }
-
-    private static String readStamp(File stamp) {
-        byte[] buffer = new byte[64];
-        try (InputStream in = new FileInputStream(stamp)) {
-            int read = in.read(buffer);
-            return read > 0 ? new String(buffer, 0, read, StandardCharsets.UTF_8) : "";
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /** Copies the asset tree below assetPath to destination (file or dir). */
-    private static void copyTree(AssetManager assets, String assetPath, File destination)
-            throws IOException {
-        String[] children = assets.list(assetPath);
-        if (children != null && children.length > 0) {
-            if (!destination.isDirectory() && !destination.mkdirs()) {
-                throw new IOException("cannot create " + destination);
-            }
-            for (String name : children) {
-                copyTree(assets, assetPath + "/" + name, new File(destination, name));
-            }
-            return;
-        }
-        // An empty list is either a file or an empty directory; only the
-        // open() tells them apart, so a directory failing to open becomes one.
-        InputStream in = null;
-        try {
-            in = assets.open(assetPath, AssetManager.ACCESS_STREAMING);
-        } catch (IOException e) {
-            if (destination.isDirectory() || destination.mkdirs()) {
-                return;
-            }
-            throw e;
-        }
-        try (OutputStream out = new FileOutputStream(destination)) {
-            byte[] buffer = new byte[BUFFER];
-            int read;
-            while ((read = in.read(buffer)) > 0) {
-                out.write(buffer, 0, read);
-            }
-        } finally {
-            in.close();
-        }
-    }
-
-    private static void deleteRecursively(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteRecursively(child);
-                }
-            }
-        }
-        file.delete();
     }
 }

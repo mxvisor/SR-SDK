@@ -84,6 +84,12 @@ static SDL_Renderer *gp_renderer;
 #if !defined(GP_HAVE_LAYOUT)
 #include "touchlayout_default.h"
 #endif
+/* A layout may define GP_SECOND_KEY(index): a key the button `index` holds
+ * down with its own, pressed before it and let go after it (a chord, such as
+ * Ctrl+Alt of one thumb); SDLK_UNKNOWN for none. */
+#if !defined(GP_SECOND_KEY)
+#define GP_SECOND_KEY(index) SDLK_UNKNOWN
+#endif
 
 static SDL_Texture *gp_glyph[GAME_UI_GLYPHS];
 static int gp_stamp;
@@ -708,7 +714,11 @@ static void gp_press(int idx, Sint64 finger)
     else if (b->key < 0) {}     /* the port's own: when it is let go */
     else if (gp_keyboard && kb_modifier(b->key)) kb_arm(idx, !kb_armed[idx]);
     else if (gp_keyboard) EmulateKeyMod(SDL_KEYDOWN, b->key, kb_mods());
-    else EmulateKey(SDL_KEYDOWN, b->key);
+    else
+    {
+        if (GP_SECOND_KEY(idx) != SDLK_UNKNOWN) EmulateKey(SDL_KEYDOWN, GP_SECOND_KEY(idx));
+        EmulateKey(SDL_KEYDOWN, b->key);
+    }
 }
 
 static void gp_release(int idx)
@@ -728,7 +738,11 @@ static void gp_release(int idx)
         kb_labels();
     }
     else if (b->key < 0) {}
-    else if (!gp_keyboard) EmulateKey(SDL_KEYUP, b->key);
+    else if (!gp_keyboard)
+    {
+        EmulateKey(SDL_KEYUP, b->key);
+        if (GP_SECOND_KEY(idx) != SDLK_UNKNOWN) EmulateKey(SDL_KEYUP, GP_SECOND_KEY(idx));
+    }
     else if (!kb_modifier(b->key))
     {
         /* the key, then the modifiers that waited for it */

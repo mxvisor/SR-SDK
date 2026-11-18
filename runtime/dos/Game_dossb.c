@@ -34,7 +34,13 @@
  * The IRQ is delivered to the guest's handler when SR_CheckTimer runs
  * (Game_dostimer.c), and the handler has to be translated code: SR does not
  * find a handler that is reached only through the pointer the game gives to
- * INT 21h AH=25h, so the game's fixup_interpret_as_code.sci lists it. */
+ * INT 21h AH=25h, so the game's fixup_interpret_as_code.sci lists it.
+ *
+ * With GAME_DOS_SB_OPL the card's FM chip is there too, at base+8/9 and at the
+ * Ad Lib's 388h/389h: the index, then the data, written to the OPL2 of
+ * Game_opl.h (opened at the first write; the driver's own timer writes it, so
+ * the chip has no service routine), and the status with the chip's two timers,
+ * which a driver runs to find the chip. */
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -52,10 +58,15 @@
 #include "Game_dosint.h"
 #include "Game_dossb.h"
 #include "Game_audiostream.h"
+#ifdef GAME_DOS_SB_OPL
+#include "Game_opl.h"
+#endif
 
 #define SB_BASE GAME_SB_BASE
 #define SB_DMA GAME_SB_DMA
 #define DMA_CHANNELS 4
+
+static int trace_sb(void);
 
 static const uint8_t dma_page_port[DMA_CHANNELS] = { 0x87, 0x83, 0x81, 0x82 };
 
@@ -101,10 +112,87 @@ static uint32_t play_rate;
 static volatile int playing;
 static uint32_t play_start;
 static uint32_t play_length;
-static uint32_t play_position;
-static uint64_t play_stamp;
-static uint64_t irq_last_stamp;
-static uint32_t irq_last_position;
+static uint32_t play_position;      /* the card's place in the DMA buffer */
+
+/* The samples the card has taken from the DMA buffer, for the output to play
+ * (under audio_lock).  The card takes them on the game's thread, when
+ * SR_CheckTimer runs, up to the end of a block, and raises the IRQ there,
+ * as the card does: the driver fills the block the card has just played, so
+ * what the card takes is always what the driver wrote before.  The output
+ * takes them on its own thread, in pieces of its own size, which may be
+ * bigger than a block of the driver (a double buffer of 20 ms blocks against
+ * the 23 ms of SDL_mixer's buffer): it never reads the DMA buffer itself. */
+#define FIFO_SIZE 16384u
+static uint8_t fifo[FIFO_SIZE];
+static uint32_t fifo_read;
+static uint32_t fifo_count;
+static uint8_t fifo_last = 0x80;
+static unsigned int fifo_underruns;
+/* the card is at the end of a block, its IRQ not taken yet */
+static int irq_due;
+static uint64_t irq_due_stamp;
+
+#ifdef GAME_DOS_SB_OPL
+/* The FM chip: the index register, the timers (02h: timer 1, 80 us a step;
+ * 03h: timer 2, 320 us a step; 04h: their control) and the status. */
+static uint8_t opl_index;
+static uint8_t opl_timer[2];
+static uint8_t opl_control;
+static uint8_t opl_status;
+static uint64_t opl_timer_start[2];
+static int opl_open;
+
+static uint8_t opl_read_status(void)
+{
+    const uint64_t now = SDL_GetPerformanceCounter();
+    const uint64_t frequency = SDL_GetPerformanceFrequency();
+
+    for (unsigned int timer = 0; timer < 2; timer++) {
+        const uint8_t flag = (uint8_t)(0x40u >> timer);
+        uint64_t period;
+
+        if (!(opl_control & (1u << timer)) || (opl_control & flag)) continue;
+        period = (uint64_t)(256u - opl_timer[timer]) * (timer == 0 ? 80u : 320u) * frequency / 1000000u;
+        if (now - opl_timer_start[timer] >= period) opl_status |= (uint8_t)(0x80u | flag);
+    }
+    /* bits 1-2 read as 1 on an OPL2 */
+    return (uint8_t)(opl_status | 0x06u);
+}
+
+static void opl_write(uint8_t value)
+{
+    switch (opl_index) {
+        case 0x02: opl_timer[0] = value; break;
+        case 0x03: opl_timer[1] = value; break;
+        case 0x04:
+            if (value & 0x80u) {
+                opl_status = 0;
+                break;
+            }
+            for (unsigned int timer = 0; timer < 2; timer++) {
+                if ((value & (1u << timer)) && !(opl_control & (1u << timer))) {
+                    opl_timer_start[timer] = SDL_GetPerformanceCounter();
+                }
+            }
+            opl_control = value;
+            break;
+        default: break;
+    }
+    /* the audio device may come later than the first write */
+    if (!opl_open) {
+        opl_open = Game_OplOpen(NULL, NULL, 1);
+        if (!opl_open) return;
+        Game_OplDcBlock();
+    }
+    Game_OplWriteTimed(opl_index, value);
+}
+
+/* 1 when the port is the FM chip's */
+static int opl_port(uint16_t port)
+{
+    return port == SB_BASE + 8u || port == SB_BASE + 9u || port == 0x388u || port == 0x389u;
+}
+#endif
 
 static uint32_t current_rate(void)
 {
@@ -126,31 +214,63 @@ static void mixer_update(void)
     mixer_gain = mixer_level(mixer_regs[0x04]) * mixer_level(mixer_regs[0x22]) / 256;
 }
 
-/* The next length samples the DSP takes from the DMA buffer (under audio_lock). */
-static void sb_fill(Uint8 *stream, int length)
-{
-    uint8_t *buffer;
-    int index;
-
-    buffer = playing ? Game_DosMemPtr(play_start, 1) : NULL;
-    if (buffer == NULL || play_length == 0 || !dsp_speaker) {
-        memset(stream, 0x80, (size_t)length);
-        if (buffer != NULL && play_length != 0) play_position = (play_position + (uint32_t)length) % play_length;
-    } else {
-        for (index = 0; index < length; index++) {
-            stream[index] = (uint8_t)(0x80 + ((buffer[play_position] - 0x80) * mixer_gain >> 8));
-            if (++play_position >= play_length) play_position = 0;
-        }
-    }
-}
-
+/* The output: the samples the card has taken.  Short of them, it holds the
+ * last one (no click), or the silence when the card has stopped. */
 static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int length)
 {
+    uint32_t count;
+
     (void)userdata;
     SDL_LockMutex(audio_lock);
-    sb_fill(stream, length);
-    play_stamp = SDL_GetPerformanceCounter();
+    count = (uint32_t)length < fifo_count ? (uint32_t)length : fifo_count;
+    for (uint32_t index = 0; index < count; index++) {
+        stream[index] = fifo[fifo_read];
+        fifo_read = (fifo_read + 1u) % FIFO_SIZE;
+    }
+    fifo_count -= count;
+    if (count != 0) fifo_last = stream[count - 1u];
+    if (count < (uint32_t)length) {
+        if (playing) fifo_underruns++;
+        else fifo_last = 0x80;
+        memset(stream + count, fifo_last, (size_t)length - count);
+    }
     SDL_UnlockMutex(audio_lock);
+}
+
+/* What the card keeps ahead of the output: a piece of the output and 60 ms
+ * (the output's thread may take several pieces at once). */
+static uint32_t fifo_target(void)
+{
+    const uint32_t target = (uint32_t)audio_samples + play_rate * 60u / 1000u;
+    return target < FIFO_SIZE ? target : FIFO_SIZE;
+}
+
+/* The card takes from the DMA buffer what the output will need, up to the end
+ * of the block it is in; 1 when it got there (its IRQ is due). */
+static int sb_capture(void)
+{
+    const uint8_t *buffer = Game_DosMemPtr(play_start, play_length);
+    uint32_t need, to_end, count;
+
+    SDL_LockMutex(audio_lock);
+    need = fifo_target();
+    if (fifo_count >= need) {
+        SDL_UnlockMutex(audio_lock);
+        return 0;
+    }
+    need -= fifo_count;
+    to_end = dsp_block_size - play_position % dsp_block_size;
+    if (to_end > play_length - play_position) to_end = play_length - play_position;
+    count = need < to_end ? need : to_end;
+    for (uint32_t index = 0; index < count; index++) {
+        const uint8_t value = (buffer != NULL && dsp_speaker)
+            ? (uint8_t)(0x80 + ((buffer[play_position] - 0x80) * mixer_gain >> 8)) : 0x80u;
+        fifo[(fifo_read + fifo_count) % FIFO_SIZE] = value;
+        fifo_count++;
+        if (++play_position >= play_length) play_position = 0;
+    }
+    SDL_UnlockMutex(audio_lock);
+    return count == to_end;
 }
 
 static void audio_open(void)
@@ -178,7 +298,6 @@ static void audio_open(void)
         ? (int)((uint64_t)Game_AudioBufferSize * rate / (uint32_t)Game_AudioRate)
         : have.samples;
     play_rate = rate;
-    play_stamp = SDL_GetPerformanceCounter();
     Game_AudioSourcePause(audio_source, 0);
 }
 
@@ -194,9 +313,11 @@ static void dsp_start(void)
     play_start = linear;
     play_length = (uint32_t)channel->count + 1u;
     play_position = 0;
-    irq_last_position = 0;
+    irq_due = 0;
     playing = 1;
     SDL_UnlockMutex(audio_lock);
+    if (trace_sb()) fprintf(stderr, "SB start: buffer %05x, %u bytes, block %u, %u Hz\n",
+                            play_start, play_length, dsp_block_size, current_rate());
     audio_open();
 }
 
@@ -209,6 +330,8 @@ static void dsp_reset(void)
 {
     SDL_LockMutex(audio_lock != NULL ? audio_lock : (audio_lock = SDL_CreateMutex()));
     playing = 0;
+    fifo_count = 0;
+    irq_due = 0;
     SDL_UnlockMutex(audio_lock);
     dsp_command = 0;
     dsp_param_need = 0;
@@ -222,7 +345,11 @@ static void dsp_reset(void)
 static void dsp_execute(void)
 {
     switch (dsp_command) {
-        case 0x40: dsp_time_constant = dsp_params[0]; break;
+        case 0x40:
+            dsp_time_constant = dsp_params[0];
+            /* a driver pauses (D0h), sets the rate and continues (D4h) */
+            if (audio_source != NULL) audio_open();
+            break;
         case 0x48: dsp_block_size = ((uint32_t)dsp_params[1] << 8 | dsp_params[0]) + 1u; break;
         case 0x14: case 0x1c: dsp_start(); break;
         default: break;
@@ -265,23 +392,12 @@ static void dsp_write(uint8_t value)
  * 8237's address and count registers follow the transfer, and the guest's own
  * sound engine (the game's driver, not AIL) reads the address register to
  * tell which half of its double buffer is being played, so both registers
- * have to move with the transfer. */
+ * have to move with the transfer: they are where the card takes its samples
+ * (sb_capture), the place its IRQs come from. */
 static uint32_t sb_position(void)
 {
-    uint32_t position;
-
     if (play_length == 0) return 0;
-    SDL_LockMutex(audio_lock);
-    position = play_position;
-    if (playing && audio_source != NULL) {
-        const uint64_t elapsed = SDL_GetPerformanceCounter() - play_stamp;
-        uint64_t ahead = elapsed * play_rate / SDL_GetPerformanceFrequency();
-
-        if (ahead > (uint64_t)audio_samples) ahead = (uint64_t)audio_samples;
-        position = (position + (uint32_t)ahead) % play_length;
-    }
-    SDL_UnlockMutex(audio_lock);
-    return position;
+    return play_position;
 }
 
 /* The 8237 counts the address up as the transfer runs and the auto-init
@@ -317,6 +433,13 @@ static int sb_disabled(void)
 
 int Game_DosSbIn(uint16_t port, uint32_t *value)
 {
+#ifdef GAME_DOS_SB_OPL
+    if (opl_port(port)) {
+        if (sb_disabled()) return 0;
+        *value = (port & 1u) ? 0xffu : opl_read_status();
+        return 1;
+    }
+#endif
     if (port >= SB_BASE && port < SB_BASE + 0x10u) {
         if (sb_disabled()) return 0;
         switch (port - SB_BASE) {
@@ -356,6 +479,15 @@ int Game_DosSbIn(uint16_t port, uint32_t *value)
 int Game_DosSbOut(uint16_t port, uint32_t value)
 {
     unsigned int channel;
+
+#ifdef GAME_DOS_SB_OPL
+    if (opl_port(port)) {
+        if (sb_disabled()) return 0;
+        if (port & 1u) opl_write((uint8_t)value);
+        else opl_index = (uint8_t)value;
+        return 1;
+    }
+#endif
 
     if (port >= SB_BASE && port < SB_BASE + 0x10u) {
         if (sb_disabled()) return 0;
@@ -411,40 +543,38 @@ static int sb_no_irq(void)
     return no_irq;
 }
 
-/* Called from SR_CheckTimer (Game_dostimer.c): deliver IRQ 5 when the auto-init block wraps. */
+/* Called from SR_CheckTimer (Game_dostimer.c): the card takes the samples
+ * the output needs from the DMA buffer, and raises its IRQ at the end of each
+ * block.  It waits at the end of a block while the guest's interrupts are off,
+ * or while the IRQ before is not acknowledged (base+0Eh), 100 ms at most. */
 void Game_DosSbDeliverIrq(void)
 {
-    uint32_t position;
-    uint64_t now;
-
-    if (!playing || play_length == 0 || dsp_block_size == 0) return;
+    if (!playing || play_length == 0 || dsp_block_size == 0 || audio_source == NULL) return;
     if (sb_disabled()) return;
-    if (sb_no_irq()) return;
-    if (!Game_DosGuestInterruptsEnabled()) return;
-    if (dsp_irq_pending) return;
 
-    now = SDL_GetPerformanceCounter();
-    uint32_t block_interval_us = dsp_block_size * 1000000u / play_rate;
-    uint64_t threshold = block_interval_us * SDL_GetPerformanceFrequency() / 1000000u;
-    if (now - irq_last_stamp < threshold) return;
+    for (unsigned int round = 0; round < 16; round++) {
+        if (irq_due) {
+            if (!sb_no_irq()) {
+                const uint8_t vector = (uint8_t)(0x08 + sb_irq);
+                const uint64_t now = SDL_GetPerformanceCounter();
+                int ran;
 
-    SDL_LockMutex(audio_lock);
-    position = play_position;
-    SDL_UnlockMutex(audio_lock);
-
-    if (position / dsp_block_size != irq_last_position / dsp_block_size) {
-        irq_last_position = position;
-        dsp_irq_pending = 1;
-
-        const uint8_t vector = (uint8_t)(0x08 + sb_irq);
-        if (Game_DosGetVector(vector) != 0) {
-            int ran = Game_CallGuestInterrupt(vector);
-            if (trace_sb()) fprintf(stderr, "SB irq %02x: handler %08x, ran=%d\n", vector, Game_DosGetVector(vector), ran);
-        } else {
-            /* No valid handler installed: advance rate limiter so the next
-             * block boundary can fire without starving the main loop. */
+                if (dsp_irq_pending && now - irq_due_stamp < SDL_GetPerformanceFrequency() / 10u) return;
+                if (!Game_DosGuestInterruptsEnabled()) return;
+                irq_due = 0;
+                dsp_irq_pending = 1;
+                ran = Game_DosHardwareInterrupt(vector);
+                if (trace_sb()) fprintf(stderr, "SB irq %02x: handler %08x, ran=%d, ahead %u, underruns %u\n",
+                                        vector, Game_DosGetVector(vector), ran, fifo_count, fifo_underruns);
+            } else {
+                irq_due = 0;
+            }
+            /* the handler may have stopped or restarted the card */
+            if (!playing || play_length == 0 || dsp_block_size == 0 || irq_due) return;
         }
-        irq_last_stamp = SDL_GetPerformanceCounter();
+        if (!sb_capture()) return;
+        irq_due = 1;
+        irq_due_stamp = SDL_GetPerformanceCounter();
     }
 }
 
@@ -453,6 +583,10 @@ void Game_DosSbShutdown(void)
     Game_AudioSourceClose(audio_source);
     audio_source = NULL;
     playing = 0;
+#ifdef GAME_DOS_SB_OPL
+    if (opl_open) Game_OplClose();
+    opl_open = 0;
+#endif
 }
 
 /* The BLASTER variable the game's driver reads to find the card. */

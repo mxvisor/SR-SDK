@@ -182,6 +182,15 @@ void Game_GyroPump(void)
     SDL_AtomicUnlock(&gyro_lock);
 }
 
+void Game_GyroQuit(void)
+{
+    if (gyro_sensor != NULL)
+    {
+        gyro_close();
+        SDL_QuitSubSystem(SDL_INIT_SENSOR);
+    }
+}
+
 int Game_GyroMod(void)
 {
     return SDL_AtomicGet(&gyro_wanted);

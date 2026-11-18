@@ -213,6 +213,9 @@ int Game_FlipThread(void *data)
         if (Thread_Exit) break;
     }
 
+#if FLIP_PUMPS
+    Game_GyroQuit();
+#endif
     Game_Display_FlipEnd();
     return 0;
 }
