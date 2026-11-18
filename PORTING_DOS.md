@@ -142,8 +142,8 @@ replacement with a word llasm lacks, or data that SR took for code (`add al, [ea
 ## 6. The first run
 
 `make distrib-data`, then `./run-sdl.sh --headless=N` (screenshots in `build/shots/sdl/`). An
-`unimplemented interrupt` line names a service the DOS runtime lacks; a harmless one (the cursor
-position of INT 10h, the joystick of INT 15h) can stay.
+`unimplemented interrupt` line names a service the DOS runtime lacks (the runtime answers the cursor
+of INT 10h AH=01h-03h and the joystick of INT 15h AH=84h; it did not always).
 
 **A crash that jumps into data or into the heap** is, most of the time, code SR never decoded: a
 routine whose address the program only stores (`mov ecx, loc_X`, a field of a structure, a table of
@@ -209,6 +209,15 @@ code reads and writes one plane. Find the copies (a call that sets the Bit Mask 
 one ran) and replace each `rep movsb` with a call:
 
     loc_X,2,;rep movsb: a copy between pages through the latches|call Game_DosVgaCopy edi, esi, ecx|add edi, edi, ecx|add esi, esi, ecx|mov ecx, 0
+
+**The joystick.** The game port (201h) and INT 15h AH=84h read the host's first gamepad
+(`Game_dosjoy.c`): an axis is 16 reads of the port at one end, 2015 at the other, 1015 at the
+centre, a scale of the port's (the counts of a real stick depend on the machine). A game that
+calibrates when the player picks the joystick takes any scale; one that reads a calibration from a
+file of its disc (X and Y at the ends and the centre) puts the stick off the centre, often against
+an edge, until the player calibrates it from the game's menu. Give that game a file made for the
+port's scale (`extra_files=` in `game/distrib.cfg`, like any file the install writes). A game finds
+the joystick once, at its start: a pad plugged in later is not seen, as on DOS.
 
 **The mouse after a mode change.** The driver sets its range back to the mode's virtual screen when
 INT 10h sets a mode (640 wide for a 320-pixel mode), as real drivers and DOSBox do. A game may set
@@ -340,4 +349,5 @@ same, every port must still build and start), then every game's SDK copy is move
 | a crash writing into `.text` at a handler the game patches (`mov [loc_X], ds`) | a variable (the old vector) listed in `fixup_interpret_as_code.sci` before the handler: list only the handler |
 | a game's sound driver in a file plays effects, no music | its music is FM: `GAME_DOS_SB_OPL` |
 | a quick tap, or a tap with another key held, is lost | how the game's INT 9 handler keeps the keys; `GAME_DOS_KBD_MIN_HOLD_MS` (§10) |
+| the joystick stays against an edge, the game's calibration helps | a calibration file of the disc, for the hardware of its time: one for the port's scale in `extra_files=` (§6) |
 | data among the `mov`/`daddr` candidates | strings, constants, a chained handler's old vector, jump-table entries: look at the bytes |

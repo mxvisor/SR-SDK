@@ -83,25 +83,40 @@ static uint32_t axis_reads(int value, int flip)
     return JOY_READS_MIN + (uint32_t)position * JOY_READS_RANGE / 65535u;
 }
 
-void Game_DosJoyOut(void)
+/* the four axes as counts of reads (above): A's X and Y, B's X and Y */
+static void axes(uint32_t out[4])
 {
-    int x, y;
-
-    look(1);
-    reads = 0;
-    if (!present) return;
-
-    x = state.left_x;
-    y = state.left_y;
+    int x = state.left_x;
+    int y = state.left_y;
     if (state.buttons & GAME_PAD_DPAD_LEFT) x = -32768;
     if (state.buttons & GAME_PAD_DPAD_RIGHT) x = 32767;
     if (state.buttons & GAME_PAD_DPAD_UP) y = 32767;
     if (state.buttons & GAME_PAD_DPAD_DOWN) y = -32768;
 
-    timeout[0] = axis_reads(x, 0);
-    timeout[1] = axis_reads(y, 1);
-    timeout[2] = axis_reads(state.right_x, 0);
-    timeout[3] = axis_reads(state.right_y, 1);
+    out[0] = axis_reads(x, 0);
+    out[1] = axis_reads(y, 1);
+    out[2] = axis_reads(state.right_x, 0);
+    out[3] = axis_reads(state.right_y, 1);
+}
+
+/* bits 4-7 of the port: the buttons, 0 pressed */
+static uint8_t buttons(void)
+{
+    uint8_t value = 0;
+    if (!(state.buttons & GAME_PAD_A)) value |= 0x10;
+    if (!(state.buttons & GAME_PAD_B)) value |= 0x20;
+    if (!(state.buttons & GAME_PAD_X)) value |= 0x40;
+    if (!(state.buttons & GAME_PAD_Y)) value |= 0x80;
+    return value;
+}
+
+void Game_DosJoyOut(void)
+{
+    look(1);
+    reads = 0;
+    if (!present) return;
+
+    axes(timeout);
 
     if (getenv(GAME_ENV("DEBUG_PAD")) != NULL)
     {
@@ -130,9 +145,26 @@ uint8_t Game_DosJoyIn(void)
     }
     if (reads < 0xffffffffu) reads++;
 
-    if (!(state.buttons & GAME_PAD_A)) value |= 0x10;
-    if (!(state.buttons & GAME_PAD_B)) value |= 0x20;
-    if (!(state.buttons & GAME_PAD_X)) value |= 0x40;
-    if (!(state.buttons & GAME_PAD_Y)) value |= 0x80;
-    return value;
+    return value | buttons();
+}
+
+uint8_t Game_DosJoyButtons(void)
+{
+    look(0);
+    return present ? buttons() : 0xf0;
+}
+
+void Game_DosJoyAxes(uint16_t out[4])
+{
+    uint32_t counts[4];
+    int axis;
+
+    look(0);
+    if (!present)
+    {
+        memset(out, 0, 4 * sizeof(out[0]));
+        return;
+    }
+    axes(counts);
+    for (axis = 0; axis < 4; axis++) out[axis] = (uint16_t)counts[axis];
 }

@@ -39,6 +39,13 @@ extern "C" {
 uint8_t Game_DosJoyIn(void);
 /* OUT to 201h: starts the one-shots. */
 void Game_DosJoyOut(void);
+/* The BIOS joystick (INT 15h AH=84h), which reads the same port.  DX=0: the
+ * buttons as bits 4-7 of the port (F0h without a pad).  DX=1: the axes A X,
+ * A Y, B X, B Y in the port's counts of reads (0 without a pad, as a BIOS
+ * that finds nothing plugged in).  Neither starts the one-shots nor counts
+ * as a read of the port. */
+uint8_t Game_DosJoyButtons(void);
+void Game_DosJoyAxes(uint16_t out[4]);
 
 #ifdef __cplusplus
 }

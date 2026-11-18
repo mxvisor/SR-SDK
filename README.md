@@ -629,6 +629,9 @@ skeleton/               a starting point for a new game repository -- to come
   the port, its time the stream's, for a game whose MCP mixes through a based ES selector;
 - `Game_dossb.c`, `.h`: the Sound Blaster 2.0 of `GAME_DOS_SOUNDBLASTER` (the DSP, the 8-bit
   DMA, the IRQ at the end of a block, the mixer's volume), with the FM chip of `GAME_DOS_SB_OPL`;
+- `Game_dosjoy.c`, `.h`: the game port (201h) and the BIOS joystick (INT 15h AH=84h) on the host's
+  first gamepad (`Game_pad.c`): the left stick and the D-pad are joystick A, the right stick B, the
+  buttons A, B, X, Y the four buttons; without a pad, a port with nothing plugged in;
 - `Game_dosreal.c`, `.h`: real-mode code in the DOS memory (`GAME_DOS_REALMODE`), on an
   interpreter of the 8086 and the 80186 of its own: a driver the game loads into a DOS block
   and calls through a real-mode vector (DPMI 0201h, an INT the protected-mode code does not

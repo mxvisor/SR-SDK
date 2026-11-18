@@ -51,6 +51,7 @@
 #include "Game_dospit.h"
 #include "Game_dosvga.h"
 #include "Game_dosexec.h"
+#include "Game_dosjoy.h"
 #include "Game_dosreal.h"
 #include "Game_hooks.h"
 #include "llasm_cpu.h"
@@ -387,6 +388,9 @@ static void dos_get_time(Game_DosRegs *regs)
 }
 
 static uint8_t video_mode = 3;
+/* the text cursor of the video BIOS (AH=01h/02h), only kept for AH=03h */
+static uint16_t cursor_shape = 0x0607;
+static uint16_t cursor_position;
 
 /* a video mode set: the mouse's range is the mode's virtual screen again */
 static void new_video_mode(uint16_t mode)
@@ -773,8 +777,19 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
             Game_DosSetAL(regs, 0x12);
             Game_DosSetCarry(regs, 0);
             return;
-        case 0x01:      /* cursor shape */
-        case 0x02:      /* cursor position */
+        case 0x01:      /* cursor shape: CH/CL the first/last line */
+            cursor_shape = Game_DosCX(regs);
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x02:      /* cursor position: DH/DL the row/column */
+            cursor_position = Game_DosDX(regs);
+            Game_DosSetCarry(regs, 0);
+            return;
+        case 0x03:      /* the cursor: CX the shape, DX the position */
+            Game_DosSetCX(regs, cursor_shape);
+            Game_DosSetDX(regs, cursor_position);
+            Game_DosSetCarry(regs, 0);
+            return;
         case 0x05:      /* active page */
         case 0x06:      /* scroll */
         case 0x07:
@@ -785,6 +800,25 @@ void Game_DosDispatch(uint8_t number, Game_DosRegs *regs)
             return;
         default:
             break;
+        }
+        break;
+    case 0x15:
+        /* the BIOS joystick (AH=84h) on the game port (Game_dosjoy.c): DX=0
+         * the buttons in AL (bits 4-7, 0 pressed), DX=1 the axes in AX, BX,
+         * CX, DX; the other services of INT 15h are not here */
+        if (Game_DosAH(regs) == 0x84 && Game_DosDX(regs) <= 1) {
+            if (Game_DosDX(regs) == 0) {
+                Game_DosSetAL(regs, Game_DosJoyButtons());
+            } else {
+                uint16_t axes[4];
+                Game_DosJoyAxes(axes);
+                Game_DosSetAX(regs, axes[0]);
+                Game_DosSetBX(regs, axes[1]);
+                Game_DosSetCX(regs, axes[2]);
+                Game_DosSetDX(regs, axes[3]);
+            }
+            Game_DosSetCarry(regs, 0);
+            return;
         }
         break;
     case 0x1a:
