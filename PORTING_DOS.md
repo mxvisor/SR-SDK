@@ -267,6 +267,14 @@ stays in the port is a decision of its own.
   asks in pieces of its own (23 ms on SDL_mixer), bigger than a block, and would read blocks the driver
   has not filled yet (crackle, broken effects). A driver may also change the rate after it starts the
   card (D0h, 40h, D4h).
+- The card's clock is the host's counter, the one the PIT runs on, so its IRQs keep the timer's time. A
+  game may start a piece of sound at a frame of the timer and have the card play it out in whole blocks
+  (a movie's sound: a piece of 9 blocks, 879.4 ms, every 11 frames, 880.0 ms; the next piece takes the
+  channel whatever is left): IRQs that follow the output's pieces (23 ms of jitter against 0.6 ms of
+  margin) cut the last block of a piece now and then, mid-word. The output absorbs the difference of the
+  host's and the sound device's clocks: it reads the card's samples a little faster or slower (a PI
+  control of its FIFO, 1 % at most), between two samples in 16 bits. Skipping or repeating a whole
+  8-bit sample clicks, and a value between two cut back to 8 bits adds noise.
 - Such a driver usually plays its music on the card's FM chip (`out` to base+8/9 or 388h/389h):
   `GAME_DOS_SB_OPL` gives `GAME_DOS_SOUNDBLASTER` that chip. Without it the effects play and the
   music is silent. `$<GAME>_TRACE_PORTS` shows which ports the driver writes.

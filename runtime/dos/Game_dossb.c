@@ -116,18 +116,34 @@ static uint32_t play_position;      /* the card's place in the DMA buffer */
 
 /* The samples the card has taken from the DMA buffer, for the output to play
  * (under audio_lock).  The card takes them on the game's thread, when
- * SR_CheckTimer runs, up to the end of a block, and raises the IRQ there,
- * as the card does: the driver fills the block the card has just played, so
- * what the card takes is always what the driver wrote before.  The output
- * takes them on its own thread, in pieces of its own size, which may be
- * bigger than a block of the driver (a double buffer of 20 ms blocks against
- * the 23 ms of SDL_mixer's buffer): it never reads the DMA buffer itself. */
+ * SR_CheckTimer runs, as many as its clock says are due, up to the end of a
+ * block, and raises the IRQ there, as the card does: the driver fills the
+ * block the card has just played, so what the card takes is always what the
+ * driver wrote before.  The output takes them on its own thread, in pieces of
+ * its own size, which may be bigger than a block of the driver (a double
+ * buffer of 20 ms blocks against the 23 ms of SDL_mixer's buffer): it never
+ * reads the DMA buffer itself. */
 #define FIFO_SIZE 16384u
 static uint8_t fifo[FIFO_SIZE];
 static uint32_t fifo_read;
 static uint32_t fifo_count;
 static uint8_t fifo_last = 0x80;
 static unsigned int fifo_underruns;
+/* The card's clock: the host's counter, the one the PIT runs on, so that its
+ * IRQs keep the time of the timer's (a game that starts a piece of sound at
+ * each frame of the timer and has the card play it out in whole blocks needs
+ * the two in step).  The output takes the samples at the sound device's rate;
+ * the two clocks differ a little, and the output reads the FIFO a little
+ * faster or slower (1 % at most) to keep it at its level. */
+static uint64_t card_origin;            /* the counter at the anchor */
+static uint64_t card_taken_at_origin;
+static uint64_t card_taken;             /* samples the card has taken */
+static int out_primed;
+static int32_t out_error;               /* the FIFO's level off its mark, averaged, 1/256 samples */
+static uint32_t out_fraction;           /* 16.16 */
+static double out_drift;                /* the FIFO's error over time, sample-seconds */
+static int32_t out_adjust;              /* the last step's difference, for the trace */
+static uint32_t out_mark;
 /* the card is at the end of a block, its IRQ not taken yet */
 static int irq_due;
 static uint64_t irq_due_stamp;
@@ -214,29 +230,6 @@ static void mixer_update(void)
     mixer_gain = mixer_level(mixer_regs[0x04]) * mixer_level(mixer_regs[0x22]) / 256;
 }
 
-/* The output: the samples the card has taken.  Short of them, it holds the
- * last one (no click), or the silence when the card has stopped. */
-static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int length)
-{
-    uint32_t count;
-
-    (void)userdata;
-    SDL_LockMutex(audio_lock);
-    count = (uint32_t)length < fifo_count ? (uint32_t)length : fifo_count;
-    for (uint32_t index = 0; index < count; index++) {
-        stream[index] = fifo[fifo_read];
-        fifo_read = (fifo_read + 1u) % FIFO_SIZE;
-    }
-    fifo_count -= count;
-    if (count != 0) fifo_last = stream[count - 1u];
-    if (count < (uint32_t)length) {
-        if (playing) fifo_underruns++;
-        else fifo_last = 0x80;
-        memset(stream + count, fifo_last, (size_t)length - count);
-    }
-    SDL_UnlockMutex(audio_lock);
-}
-
 /* What the card keeps ahead of the output: a piece of the output and 60 ms
  * (the output's thread may take several pieces at once). */
 static uint32_t fifo_target(void)
@@ -245,28 +238,111 @@ static uint32_t fifo_target(void)
     return target < FIFO_SIZE ? target : FIFO_SIZE;
 }
 
-/* The card takes from the DMA buffer what the output will need, up to the end
- * of the block it is in; 1 when it got there (its IRQ is due). */
+/* The output: the samples the card has taken, read a little faster or slower
+ * as the FIFO is above or below its mark (the control below), between two
+ * samples in 16 bits, as DOSBox's mixer resamples: a sample skipped or given
+ * twice clicks, and one cut back to 8 bits adds its own noise.  It starts once
+ * the FIFO has reached the mark; short of samples, it holds the last one (no
+ * click), or the silence when the card has stopped, and starts again from the
+ * mark. */
+static void SDLCALL audio_callback(void *userdata, Uint8 *bytes, int size)
+{
+    const uint32_t mark = fifo_target();
+    int16_t *stream = (int16_t *)bytes;
+    const int length = size / 2;
+    int index = 0;
+
+    (void)userdata;
+    SDL_LockMutex(audio_lock);
+    if (!out_primed && playing && fifo_count >= mark) {
+        out_primed = 1;
+        out_error = 0;
+        out_fraction = 0;
+    }
+    if (out_primed) {
+        /* A PI control of the FIFO's level by the reading speed, critically
+         * damped at 0.1 rad/s: the clocks' difference (millionths) is learnt
+         * in a minute or so, and the jitter of the level, averaged, moves the
+         * speed by hundredths of a percent. */
+        const double w = 0.1;
+        const double rate = (double)(play_rate != 0 ? play_rate : 1u);
+        double error, speed;
+        int32_t step, adjust;
+
+        out_error += (((int32_t)fifo_count - (int32_t)mark) * 256 - out_error) / 64;
+        error = out_error / 256.0;
+        out_drift += error * length / rate;
+        speed = (2.0 * w * error + w * w * out_drift) / rate;
+        if (speed > 0.01 || speed < -0.01) {
+            out_drift -= error * length / rate;     /* no wind-up */
+            speed = speed > 0 ? 0.01 : -0.01;
+        }
+        adjust = (int32_t)(speed * 65536.0);
+        step = 65536 + adjust;
+        out_adjust = adjust;
+        out_mark = mark;
+        for (; index < length; index++) {
+            if (fifo_count == 0) {
+                if (playing) fifo_underruns++;
+                out_primed = 0;
+                break;
+            }
+            const int s0 = fifo[fifo_read];
+            const int s1 = fifo_count > 1 ? fifo[(fifo_read + 1u) % FIFO_SIZE] : s0;
+
+            stream[index] = (int16_t)((s0 - 0x80) * 256 + (((s1 - s0) * (int32_t)out_fraction) >> 8));
+            fifo_last = (uint8_t)s0;
+            out_fraction += (uint32_t)step;
+            while (out_fraction >= 65536u && fifo_count != 0) {
+                out_fraction -= 65536u;
+                fifo_read = (fifo_read + 1u) % FIFO_SIZE;
+                fifo_count--;
+            }
+        }
+    }
+    if (!playing && fifo_count == 0) fifo_last = 0x80;
+    for (; index < length; index++) stream[index] = (int16_t)((fifo_last - 0x80) * 256);
+    SDL_UnlockMutex(audio_lock);
+}
+
+/* The card's clock starts (again) from now: at the start, at a new rate, after
+ * a pause. */
+static void card_anchor(void)
+{
+    card_origin = SDL_GetPerformanceCounter();
+    card_taken_at_origin = card_taken;
+}
+
+/* The card takes from the DMA buffer the samples its clock says are due, up to
+ * the end of the block it is in; 1 when it got there (its IRQ is due). */
 static int sb_capture(void)
 {
     const uint8_t *buffer = Game_DosMemPtr(play_start, play_length);
+    const uint64_t now = SDL_GetPerformanceCounter();
+    const uint64_t due = card_taken_at_origin + (now - card_origin) * current_rate() / SDL_GetPerformanceFrequency();
     uint32_t need, to_end, count;
 
-    SDL_LockMutex(audio_lock);
-    need = fifo_target();
-    if (fifo_count >= need) {
-        SDL_UnlockMutex(audio_lock);
+    if (due <= card_taken) return 0;
+    /* the game stood still for half a second: the time is not caught up */
+    if (due - card_taken > current_rate() / 2u) {
+        card_anchor();
         return 0;
     }
-    need -= fifo_count;
+    need = (uint32_t)(due - card_taken);
+    SDL_LockMutex(audio_lock);
     to_end = dsp_block_size - play_position % dsp_block_size;
     if (to_end > play_length - play_position) to_end = play_length - play_position;
     count = need < to_end ? need : to_end;
     for (uint32_t index = 0; index < count; index++) {
         const uint8_t value = (buffer != NULL && dsp_speaker)
             ? (uint8_t)(0x80 + ((buffer[play_position] - 0x80) * mixer_gain >> 8)) : 0x80u;
+        if (fifo_count == FIFO_SIZE) {
+            fifo_read = (fifo_read + 1u) % FIFO_SIZE;
+            fifo_count--;
+        }
         fifo[(fifo_read + fifo_count) % FIFO_SIZE] = value;
         fifo_count++;
+        card_taken++;
         if (++play_position >= play_length) play_position = 0;
     }
     SDL_UnlockMutex(audio_lock);
@@ -284,7 +360,7 @@ static void audio_open(void)
     Game_AudioSourceClose(audio_source);
     SDL_zero(want);
     want.freq = (int)rate;
-    want.format = AUDIO_U8;
+    want.format = AUDIO_S16SYS;
     want.channels = 1;
     want.samples = 128;
     want.callback = audio_callback;
@@ -315,6 +391,7 @@ static void dsp_start(void)
     play_position = 0;
     irq_due = 0;
     playing = 1;
+    card_anchor();
     SDL_UnlockMutex(audio_lock);
     if (trace_sb()) fprintf(stderr, "SB start: buffer %05x, %u bytes, block %u, %u Hz\n",
                             play_start, play_length, dsp_block_size, current_rate());
@@ -332,6 +409,7 @@ static void dsp_reset(void)
     playing = 0;
     fifo_count = 0;
     irq_due = 0;
+    out_primed = 0;
     SDL_UnlockMutex(audio_lock);
     dsp_command = 0;
     dsp_param_need = 0;
@@ -347,6 +425,7 @@ static void dsp_execute(void)
     switch (dsp_command) {
         case 0x40:
             dsp_time_constant = dsp_params[0];
+            card_anchor();
             /* a driver pauses (D0h), sets the rate and continues (D4h) */
             if (audio_source != NULL) audio_open();
             break;
@@ -380,7 +459,10 @@ static void dsp_write(uint8_t value)
             SDL_UnlockMutex(audio_lock);
             break;
         case 0xd4:
-            if (play_length != 0) playing = 1;
+            if (play_length != 0 && !playing) {
+                card_anchor();
+                playing = 1;
+            }
             break;
         case 0xe1: dsp_put(2); dsp_put(1); break;
         case 0xd8: dsp_put(dsp_speaker ? 0xff : 0x00); break;
@@ -544,7 +626,7 @@ static int sb_no_irq(void)
 }
 
 /* Called from SR_CheckTimer (Game_dostimer.c): the card takes the samples
- * the output needs from the DMA buffer, and raises its IRQ at the end of each
+ * that are due from the DMA buffer, and raises its IRQ at the end of each
  * block.  It waits at the end of a block while the guest's interrupts are off,
  * or while the IRQ before is not acknowledged (base+0Eh), 100 ms at most. */
 void Game_DosSbDeliverIrq(void)
@@ -564,8 +646,8 @@ void Game_DosSbDeliverIrq(void)
                 irq_due = 0;
                 dsp_irq_pending = 1;
                 ran = Game_DosHardwareInterrupt(vector);
-                if (trace_sb()) fprintf(stderr, "SB irq %02x: handler %08x, ran=%d, ahead %u, underruns %u\n",
-                                        vector, Game_DosGetVector(vector), ran, fifo_count, fifo_underruns);
+                if (trace_sb()) fprintf(stderr, "SB irq %02x: handler %08x, ran=%d, ahead %u (mark %u, off %d), speed %+d/65536, underruns %u\n",
+                                        vector, Game_DosGetVector(vector), ran, fifo_count, out_mark, out_error / 256, out_adjust, fifo_underruns);
             } else {
                 irq_due = 0;
             }
