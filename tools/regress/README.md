@@ -27,6 +27,26 @@ tools/regress/run_all.sh --sr @worktree     # SR with its uncommitted changes
 tools/regress/run_all.sh --save-ref         # the result becomes the reference
 ```
 
+### Running it in the background, and waiting for it
+
+A whole run takes about an hour. Start `run_all.sh` itself as the background job and wait
+for that job to exit; its log ends with the line `N checks, M same as the reference, ...`:
+
+```sh
+REGRESS_OUT=~/.cache/regressNNN tools/regress/run_all.sh > ~/.cache/regress-NNN.log 2>&1; tail -15 ~/.cache/regress-NNN.log
+```
+
+What has broken the wait before:
+
+- `setsid run_all.sh & echo $!`: `setsid` forks, so `$!` is a process that is already
+  gone, and a loop on `kill -0` of it ends at once;
+- `pgrep -f run_all.sh` inside the waiting loop: it finds the loop's own command line
+  and never ends;
+- a watcher with a time limit shorter than the run.
+
+Without a job of its own, wait on the last line of the log, not on a process id:
+`until grep -q '^[0-9][0-9]* checks' LOG; do sleep 30; done`.
+
 Each row of the comparison is `same`, `REGRESSION` (ok → fail), `improved`
 (fail → ok), `CHANGED` (an SR output hash, or a llasm hash, differs) or `new`.
 A `llasm-gen`/`llasm-llvm` row that says `changed` is always a `CHANGED`, whatever the
